@@ -185,10 +185,17 @@ void main() {
         expect(find.widgetWithText(TextFormField, '1.200'), findsOneWidget);
         expect(find.widgetWithText(TextFormField, '1.680'), findsNWidgets(2));
 
-        // Activar el switch "💾 Actualizar precio/costo permanentemente en el Catálogo (BD)"
-        await tester.tap(
-          find.textContaining('Actualizar precio/costo permanentemente en el Catálogo'),
+        // Expandir Zona 2 ("Corregir en catálogo (BD)") y activar el switch de actualización en BD
+        final zone2Header = find.text('Corregir en catálogo (BD)');
+        await tester.ensureVisible(zone2Header);
+        await tester.tap(zone2Header);
+        await tester.pumpAndSettle();
+
+        final saveDbToggle = find.textContaining(
+          'Actualizar precio/costo permanentemente en el Catálogo',
         );
+        await tester.ensureVisible(saveDbToggle);
+        await tester.tap(saveDbToggle);
         await tester.pumpAndSettle();
 
         // El botón principal cambia a "Aplicar y Guardar en BD (Enter)"
@@ -296,8 +303,15 @@ void main() {
         await tester.tap(find.text('Abrir Modal'));
         await tester.pumpAndSettle();
 
-        // Abrir el editor de código de barras
-        await tester.tap(find.text('Pistolear código nuevo'));
+        // Expandir Zona 2 ("Corregir en catálogo (BD)") y abrir el editor de código de barras
+        final zone2Header = find.text('Corregir en catálogo (BD)');
+        await tester.ensureVisible(zone2Header);
+        await tester.tap(zone2Header);
+        await tester.pumpAndSettle();
+
+        final scanBtn = find.text('Pistolear código nuevo');
+        await tester.ensureVisible(scanBtn);
+        await tester.tap(scanBtn);
         await tester.pumpAndSettle();
 
         final barcodeField = find.widgetWithText(
@@ -322,6 +336,97 @@ void main() {
         expect(dialogResult, isNotNull);
         expect(dialogResult!.barcodeChanged, isTrue);
         expect(dialogResult!.newBarcode, '7791234567890');
+      },
+    );
+
+    testWidgets(
+      'Lenguaje claro de stock (sin Kardex + Mín. alerta) y fracciones universales ÷ 16 / 1/16',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final product = Product(
+          id: 77,
+          name: 'Torta Matilda',
+          internalCode: '00077',
+          barcode: null,
+          sellingPrice: 2000.0,
+          costPrice: 1200.0,
+          stock: -3.0,
+          minStock: 5.0,
+          active: true,
+          isSoldByWeight: false,
+        );
+        final cartItem = CartItem(product: product, quantity: 1);
+        PosRenameCartItemResult? dialogResult;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () async {
+                    dialogResult = await PosRenameCartItemDialog.show(
+                      context,
+                      item: cartItem,
+                    );
+                  },
+                  child: const Text('Abrir Modal'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Abrir Modal'));
+        await tester.pumpAndSettle();
+
+        // Abrir selector de fracciones 1/x: debe mostrar "1 entero" y divisor personalizado
+        await tester.tap(find.text('1/x'));
+        await tester.pumpAndSettle();
+        expect(find.text('1 entero'), findsOneWidget);
+
+        await tester.enterText(find.byKey(const Key('rename_custom_parts_input')), '16');
+        await tester.tap(find.byKey(const Key('rename_apply_custom_parts_btn')));
+        await tester.pumpAndSettle();
+
+        // 1/16 = 0.0625 -> 0.0625 * $2.000 = $125 exactos
+        expect(find.widgetWithText(TextFormField, '0.0625'), findsOneWidget);
+        expect(find.widgetWithText(TextFormField, '125'), findsWidgets);
+
+        // Escritura directa de fracción "1/8" -> 0.125 -> $250, y luego volver a "1/16" -> 0.0625
+        final qtyField = find.widgetWithText(TextFormField, '0.0625');
+        await tester.enterText(qtyField, '1/8');
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(TextFormField, '250'), findsWidgets);
+
+        await tester.enterText(find.widgetWithText(TextFormField, '1/8'), '1/16');
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(TextFormField, '125'), findsWidgets);
+
+        // Expandir Zona 2 y verificar lenguaje claro (sin "Kardex") y mínimo de alerta visible
+        final zone2Header = find.text('Corregir en catálogo (BD)');
+        await tester.ensureVisible(zone2Header);
+        await tester.tap(zone2Header);
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Mín. alerta:'), findsOneWidget);
+
+        final stockField = find.widgetWithText(TextFormField, '-3');
+        await tester.ensureVisible(stockField);
+        await tester.enterText(stockField, '10');
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Kardex:'), findsNothing);
+        expect(find.textContaining('Ajuste de inventario:'), findsOneWidget);
+
+        await tester.tap(find.text('Aplicar y Guardar en BD (Enter)'));
+        await tester.pumpAndSettle();
+
+        expect(dialogResult, isNotNull);
+        expect(dialogResult!.newQuantity, closeTo(0.0625, 0.00001));
+        expect(dialogResult!.newShelfStockBeforeSale, 10.0);
+        expect(tester.takeException(), isNull);
       },
     );
   });

@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/brand.dart';
@@ -162,9 +164,24 @@ class CatalogProvider with ChangeNotifier {
 
   Future<void> loadMetadata({bool force = false}) async {
     try {
-      if (_categories.isEmpty || force) _categories = await repository.getCategories();
-      if (_brands.isEmpty || force) _brands = await repository.getBrands();
-      if (_rubros.isEmpty || force) _rubros = await repository.getRubros();
+      if (_categories.isEmpty || force) {
+        _categories = sortByAlphabeticalName(
+          await repository.getCategories(),
+          (c) => c.name,
+        );
+      }
+      if (_brands.isEmpty || force) {
+        _brands = sortByAlphabeticalName(
+          await repository.getBrands(),
+          (b) => b.name,
+        );
+      }
+      if (_rubros.isEmpty || force) {
+        _rubros = sortByAlphabeticalName(
+          await repository.getRubros(),
+          (r) => r.name,
+        );
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading metadata: $e');
@@ -200,10 +217,16 @@ class CatalogProvider with ChangeNotifier {
       if (page == 1) {
         invalidateQuickAccessExtraCaches();
         if (_categories.isEmpty) {
-          _categories = await repository.getCategories();
+          _categories = sortByAlphabeticalName(
+            await repository.getCategories(),
+            (c) => c.name,
+          );
         }
         if (_brands.isEmpty) {
-          _brands = await repository.getBrands();
+          _brands = sortByAlphabeticalName(
+            await repository.getBrands(),
+            (b) => b.name,
+          );
         }
       }
     } catch (e, stack) {
@@ -641,7 +664,7 @@ class CatalogProvider with ChangeNotifier {
           final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
           final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
           if (q > 0) {
-            final fit = s < 0 ? 0 : (s / q).floor();
+            final fit = calcUnitsFitStock(s, q);
             if (limitingCombos == null || fit < limitingCombos!) {
               limitingCombos = fit;
             }
@@ -856,6 +879,7 @@ class CatalogProvider with ChangeNotifier {
   /// preservando el orden visual de la grilla y sin activar el spinner global de carga.
   Future<Product?> updateProductPriceFromPos(
     int id, {
+    String? name,
     double? sellingPrice,
     double? costPrice,
     double? ivaRate,
@@ -863,7 +887,9 @@ class CatalogProvider with ChangeNotifier {
   }) async {
     _errorMessage = null;
     final cleanBarcode = barcode?.trim();
+    final cleanName = name?.trim();
     final payload = <String, dynamic>{
+      if (cleanName != null && cleanName.isNotEmpty) 'name': cleanName,
       if (sellingPrice != null) 'selling_price': sellingPrice,
       if (costPrice != null) 'cost_price': costPrice,
       if (ivaRate != null) 'iva_rate': ivaRate,
@@ -1123,6 +1149,7 @@ class CatalogProvider with ChangeNotifier {
       }
       if (resolvedStock != null) {
         final stockMap = <int, double>{productId: resolvedStock};
+        _products = applyStockUpdatesToProductList(_products, stockMap);
         if (_categoryExtraProducts.isNotEmpty) {
           for (final key in _categoryExtraProducts.keys.toList()) {
             _categoryExtraProducts[key] = applyStockUpdatesToProductList(
@@ -1154,7 +1181,10 @@ class CatalogProvider with ChangeNotifier {
 
   Future<void> loadRubros() async {
     try {
-      _rubros = await repository.getRubros();
+      _rubros = sortByAlphabeticalName(
+        await repository.getRubros(),
+        (r) => r.name,
+      );
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading rubros: $e');
@@ -1169,7 +1199,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       final created =
           await repository.createRubro(name, description: description);
-      _rubros = [..._rubros, created];
+      _rubros = sortByAlphabeticalName([..._rubros, created], (r) => r.name);
       return created.id;
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -1191,7 +1221,7 @@ class CatalogProvider with ChangeNotifier {
       if (idx != -1) {
         final newList = List.of(_rubros);
         newList[idx] = updated;
-        _rubros = newList;
+        _rubros = sortByAlphabeticalName(newList, (r) => r.name);
       }
       if (_categories.isNotEmpty) {
         _categories = _categories.map((cat) {
@@ -1240,7 +1270,10 @@ class CatalogProvider with ChangeNotifier {
     try {
       final created = await repository.createCategory(name,
           description: description, rubroId: rubroId);
-      _categories = [..._categories, created];
+      _categories = sortByAlphabeticalName(
+        [..._categories, created],
+        (c) => c.name,
+      );
       return created.id;
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -1263,7 +1296,7 @@ class CatalogProvider with ChangeNotifier {
       if (idx != -1) {
         final newList = List.of(_categories);
         newList[idx] = updated;
-        _categories = newList;
+        _categories = sortByAlphabeticalName(newList, (c) => c.name);
       }
       return true;
     } catch (e) {
@@ -1303,7 +1336,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       final created =
           await repository.createBrand(name, description: description);
-      _brands = [..._brands, created];
+      _brands = sortByAlphabeticalName([..._brands, created], (b) => b.name);
       return created.id;
     } catch (e) {
       _errorMessage = e.toString();
@@ -1325,7 +1358,7 @@ class CatalogProvider with ChangeNotifier {
       if (idx != -1) {
         final newList = List.of(_brands);
         newList[idx] = updated;
-        _brands = newList;
+        _brands = sortByAlphabeticalName(newList, (b) => b.name);
       }
       return true;
     } catch (e) {
@@ -1449,7 +1482,10 @@ class CatalogProvider with ChangeNotifier {
 
   Future<void> loadBrands() async {
     try {
-      _brands = await repository.getBrands();
+      _brands = sortByAlphabeticalName(
+        await repository.getBrands(),
+        (b) => b.name,
+      );
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading brands: $e');

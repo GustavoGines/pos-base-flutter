@@ -10,6 +10,7 @@ import '../../domain/entities/payment_method.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/constants/app_permissions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/domain/entities/business_settings.dart';
@@ -1524,6 +1525,306 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   double get _baseTotal => _effectiveCartTotal + _currentIibbAmount;
 
   double get _grandTotal => _baseTotal + _totalSurcharge + _shippingCostToApply;
+
+  Future<void> _openAgreedTotalRoundingDialog() async {
+    if (widget.saleId != null) return;
+    final posProvider = context.read<PosProvider>();
+    if (posProvider.cart.isEmpty) return;
+
+    final currentMerch = _effectiveCartTotal;
+    if (currentMerch <= 0) return;
+
+    final currentExtras = _grandTotal - currentMerch;
+
+    // Generar chips rápidos de redondeo inferior sin duplicados
+    final seenTargets = <int>{};
+    final quickTargets = <double>[];
+    for (final step in [100, 500, 1000]) {
+      double candidate = ((currentMerch / step).floor() * step).toDouble();
+      if ((currentMerch - candidate).abs() < 0.01) {
+        candidate = (currentMerch - step).floorToDouble();
+      }
+      if (candidate > 0 && candidate < currentMerch - 0.01) {
+        final centsKey = (candidate * 100).round();
+        if (seenTargets.add(centsKey)) {
+          quickTargets.add(candidate);
+        }
+      }
+    }
+
+    final ctrl = TextEditingController(text: currentMerch.toArsInput());
+    final focusNode = FocusNode();
+
+    final double? target = await showDialog<double>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final parsed = ArsThousandsInputFormatter.parse(ctrl.text);
+            final diff = parsed > 0 ? parsed - currentMerch : 0.0;
+            final estimatedGrand =
+                parsed > 0 ? (parsed + currentExtras) : _grandTotal;
+
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Row(
+                children: [
+                  Text('🎯 ', style: TextStyle(fontSize: 20)),
+                  Expanded(
+                    child: Text(
+                      'Pactar / Redondear Total de Mercadería',
+                      style: TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Prorratea la diferencia en cada línea del ticket para que el subtotal de ARCA y el comprobante cierren al centavo.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Mercadería actual:',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '\$${currentMerch.toCurrency()}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: ctrl,
+                      focusNode: focusNode,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: const [ArsThousandsInputFormatter()],
+                      onChanged: (_) => setDialogState(() {}),
+                      onSubmitted: (_) {
+                        final v = ArsThousandsInputFormatter.parse(ctrl.text);
+                        if (v > 0) Navigator.of(dialogCtx).pop(v);
+                      },
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Nuevo Subtotal de Mercadería Pactado',
+                        prefixText: '\$ ',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    if (quickTargets.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Redondeo rápido:',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                          for (final t in quickTargets)
+                            ActionChip(
+                              label: Text(
+                                '\$${t.toCurrency()}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1E40AF),
+                                ),
+                              ),
+                              backgroundColor: const Color(0xFFEFF6FF),
+                              side: const BorderSide(color: Color(0xFFBFDBFE)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                ctrl.text = t.toArsInput();
+                                ctrl.selection = TextSelection.collapsed(
+                                  offset: ctrl.text.length,
+                                );
+                                setDialogState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: diff < -0.01
+                            ? Colors.green.shade50
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: diff < -0.01
+                              ? Colors.green.shade200
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                diff < -0.01
+                                    ? 'Bonificación por redondeo:'
+                                    : 'Ajuste mercadería:',
+                                style: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                '${diff >= 0 ? '+' : '-'}\$${diff.abs().toCurrency()}',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: diff < -0.01
+                                      ? Colors.green.shade800
+                                      : const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (currentExtras.abs() > 0.01) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Extras (IIBB / Envío / Recargo):',
+                                  style: TextStyle(fontSize: 11.5),
+                                ),
+                                Text(
+                                  '+\$${currentExtras.toCurrency()}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const Divider(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total Final a Cobrar est.:',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '\$${estimatedGrand.toCurrency()}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.blue.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: parsed > 0
+                      ? () => Navigator.of(dialogCtx).pop(parsed)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Aplicar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    ctrl.dispose();
+    focusNode.dispose();
+
+    if (!mounted || target == null || target <= 0) return;
+    if ((target - currentMerch).abs() < 0.01) return;
+
+    if (target < currentMerch - 0.01) {
+      final pinResult = await AdminPinDialog.verifyAndGetPin(
+        context,
+        action:
+            'Pactar / redondear mercadería de \$${currentMerch.toCurrency()} a \$${target.toCurrency()}',
+        permissionKey: AppPermissions.applyDiscounts,
+      );
+      if (!mounted || pinResult == null) return;
+      if (pinResult != 'ALREADY_AUTHORIZED') {
+        posProvider.setAuthorizedDiscountPin(pinResult);
+      }
+    }
+
+    posProvider.applyAgreedTotalRounding(target);
+    setState(() {});
+    _syncPaymentsWithGrandTotal();
+    SnackBarService.success(
+      context,
+      '🎯 Mercadería pactada en \$${target.toCurrency()} (Total a cobrar: \$${_grandTotal.toCurrency()}).',
+    );
+  }
   double get _pendingBalance =>
       _baseTotal + _shippingCostToApply - _totalBaseAmount;
 
@@ -3648,6 +3949,34 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         ],
                                       ),
                               ),
+
+                              if (widget.saleId == null &&
+                                  context.read<PosProvider>().cart.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: Align(
+                                    alignment: Alignment.center,
+                                    child: ActionChip(
+                                      avatar: const Text('🎯',
+                                          style: TextStyle(fontSize: 13)),
+                                      label: const Text(
+                                        'Pactar / Redondear Mercadería',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E40AF),
+                                        ),
+                                      ),
+                                      backgroundColor: const Color(0xFFEFF6FF),
+                                      side: const BorderSide(
+                                          color: Color(0xFFBFDBFE)),
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: _lines.any((l) => l.mpPaid)
+                                          ? null
+                                          : _openAgreedTotalRoundingDialog,
+                                    ),
+                                  ),
+                                ),
 
                               const SizedBox(height: 24),
 

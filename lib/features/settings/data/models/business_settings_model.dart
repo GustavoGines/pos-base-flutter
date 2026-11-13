@@ -24,6 +24,7 @@ class BusinessSettingsModel extends BusinessSettings {
     super.globalWholesalePercentage,
     super.globalCardPercentage,
     super.customPriceTiers,
+    super.cardSurchargeOnOffersMode,
     super.businessType,
     super.features,
     super.enableAdvancedPriceTiers,
@@ -153,6 +154,8 @@ class BusinessSettingsModel extends BusinessSettings {
           double.tryParse(json['card_percentage']?.toString() ?? '15.0') ??
               15.0,
       customPriceTiers: _parseCustomTiers(json['custom_price_tiers']),
+      cardSurchargeOnOffersMode: _parseCardSurchargeOnOffersMode(
+          json['card_surcharge_on_offers_mode']),
       businessType: json['license_business_type'] ?? 'retail',
       features: featureFlags,
       enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
@@ -179,6 +182,14 @@ class BusinessSettingsModel extends BusinessSettings {
       posPopularityResetAt: json['pos_popularity_reset_at']?.toString(),
       bankTransferAccounts: _parseCustomTiers(json['bank_transfer_accounts']),
     );
+  }
+
+  static String _parseCardSurchargeOnOffersMode(dynamic raw) {
+    final s = raw?.toString().trim().toLowerCase() ?? '';
+    if (s == 'card_overrides_offer' || s == 'offer_no_surcharge') {
+      return s;
+    }
+    return 'surcharge_on_offer';
   }
 
   /// Parsea el campo custom_price_tiers de forma segura (acepta JSON string o lista directa)
@@ -219,6 +230,7 @@ class BusinessSettingsModel extends BusinessSettings {
       // Motor de precios globales
       'card_percentage': globalCardPercentage,
       'wholesale_percentage': globalWholesalePercentage,
+      'card_surcharge_on_offers_mode': cardSurchargeOnOffersMode,
       // Listas de precios personalizadas
       'custom_price_tiers': customPriceTiers,
       // Feature Toggle Multi-Tenant

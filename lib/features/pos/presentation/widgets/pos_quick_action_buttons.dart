@@ -11,12 +11,14 @@ import 'pos_quick_offers_dialog.dart';
 class PosQuickActionButtons extends StatelessWidget {
   final VoidCallback onHoldOrder;
   final VoidCallback onOpenPendingList;
+  final VoidCallback? onOpenPriceLookup;
   final VoidCallback? onAfterDialogClosed;
 
   const PosQuickActionButtons({
     super.key,
     required this.onHoldOrder,
     required this.onOpenPendingList,
+    this.onOpenPriceLookup,
     this.onAfterDialogClosed,
   });
 
@@ -153,6 +155,22 @@ class PosQuickActionButtons extends StatelessWidget {
                 },
               ),
             ),
+            if (onOpenPriceLookup != null) ...[
+              const SizedBox(width: 8),
+
+              // 5. Consultar Precio (F5)
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.qr_code_scanner_rounded,
+                  label: 'Precios',
+                  color: const Color(0xFF0284C7),
+                  badgeText: 'F5',
+                  badgeColor: const Color(0xFF0369A1),
+                  tooltip: 'Consultar precio sin agregar (F5)',
+                  onTap: onOpenPriceLookup!,
+                ),
+              ),
+            ],
           ],
         );
       },

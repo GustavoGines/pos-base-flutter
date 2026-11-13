@@ -22,6 +22,7 @@ import 'package:frontend_desktop/features/settings/domain/entities/business_sett
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
@@ -455,8 +456,8 @@ void main() {
 
       expect(find.text('Asignar Categoría'), findsOneWidget);
 
-      // Open dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      // Open selector
+      await tester.tap(find.byType(SearchableSelectField<int?>));
       await tester.pumpAndSettle();
 
       // Choose — Quitar Categoría —
@@ -501,8 +502,8 @@ void main() {
       await tester.tap(find.text('Asignar Marca'));
       await tester.pumpAndSettle();
 
-      // Open dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      // Open selector
+      await tester.tap(find.byType(SearchableSelectField<int?>));
       await tester.pumpAndSettle();
 
       // Choose — Quitar Marca —
@@ -543,8 +544,8 @@ void main() {
       await tester.tap(find.text('Asignar Proveedor'));
       await tester.pumpAndSettle();
 
-      // Open dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      // Open selector
+      await tester.tap(find.byType(SearchableSelectField<int?>));
       await tester.pumpAndSettle();
 
       // Choose — Quitar Proveedor —
@@ -619,7 +620,7 @@ void main() {
       await tester.tap(find.text('Asignar Categoría'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      await tester.tap(find.byType(SearchableSelectField<int?>));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('— Quitar Categoría —').last);

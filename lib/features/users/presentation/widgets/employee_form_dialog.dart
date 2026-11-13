@@ -169,7 +169,7 @@ const List<PermissionCategory> kCategorizedPermissions = [
       ),
       PermissionItem(
         key: AppPermissions.viewKardex,
-        label: 'Kardex de Mercadería',
+        label: 'Movimientos de Stock (Historial)',
         description: 'Auditoría detallada de entradas y salidas de existencias.',
         icon: Icons.history_edu_outlined,
       ),

@@ -6,7 +6,9 @@ import 'package:file_picker/file_picker.dart' as fp;
 import 'package:http/http.dart' as http;
 import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import '../../../../core/services/remote_scanner_service.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/utils/snack_bar_service.dart';
 
 import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
@@ -356,6 +358,43 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     _searchFocus.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  Future<void> _onSearchSubmittedOrScanned(String rawQuery) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty || !mounted) return;
+    _debounce?.cancel();
+    _searchController.text = q;
+    _searchController.selection = TextSelection.collapsed(offset: q.length);
+    setState(() => _isSearching = true);
+    try {
+      final results = await context.read<PosProvider>().search(q);
+      if (!mounted) return;
+      final exact = RemoteScannerService.findExactProductMatch(
+        results,
+        q,
+        activeOnly: false,
+      );
+      final Product? match =
+          exact ?? (results.length == 1 ? results.first : null);
+      if (match != null) {
+        setState(() => _isSearching = false);
+        _addProduct(match);
+        return;
+      }
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+      if (results.isEmpty) {
+        SnackBarService.info(
+          context,
+          'No se encontraron productos para "$q".',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSearching = false);
+    }
   }
 
   void _onSearchChanged(String query) {
@@ -1246,7 +1285,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       isRIHeader = context.watch<SettingsProvider>().isResponsableInscripto;
     } catch (_) {}
 
-    return Dialog(
+    return RemoteScannerListener(
+      debugLabel: 'SupplierInvoiceFormDialog',
+      onBarcodeScanned: _onSearchSubmittedOrScanned,
+      child: Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
@@ -1384,6 +1426,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   TextField(
                                     controller: _searchController,
                                     focusNode: _searchFocus,
+                                    onSubmitted: _onSearchSubmittedOrScanned,
                                     decoration: InputDecoration(
                                       hintText: 'Buscar producto por nombre o código...',
                                       prefixIcon: const Icon(Icons.search),
@@ -1966,6 +2009,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

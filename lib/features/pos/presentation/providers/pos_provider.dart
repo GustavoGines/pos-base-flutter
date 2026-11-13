@@ -22,6 +22,7 @@ import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
@@ -217,9 +218,22 @@ class PosProvider with ChangeNotifier {
   double _currentWholesaleFactor = 1.0;
   double _currentCardFactor = 1.0;
   double _currentCustomFactor = 1.0;
+  CardSurchargeOnOffersMode _cardSurchargeOnOffersMode =
+      CardSurchargeOnOffersMode.surchargeOnOffer;
   double get currentCustomFactor => _currentCustomFactor;
   double get wholesaleFactor => _currentWholesaleFactor;
   double get cardFactor => _currentCardFactor;
+  CardSurchargeOnOffersMode get cardSurchargeOnOffersMode =>
+      _cardSurchargeOnOffersMode;
+
+  void setCardSurchargeOnOffersMode(CardSurchargeOnOffersMode mode) {
+    if (_cardSurchargeOnOffersMode == mode) return;
+    _cardSurchargeOnOffersMode = mode;
+    for (final item in _cart) {
+      item.cardSurchargeOnOffersMode = mode;
+    }
+    notifyListeners();
+  }
 
   void setPriceTier(
     PriceTier tier, {
@@ -245,8 +259,9 @@ class PosProvider with ChangeNotifier {
       item.cardFactor = _currentCardFactor;
       item.customFactor = _currentCustomFactor;
       item.customTierLabel = _customTierLabel;
-      // Si promotionalPrice provenía de un precio congelado de lista (sin label ni periodType),
-      // limpiarlo al cambiar manualmente de lista para que recalcule al nuevo tier
+      item.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
+      // Limpiar precios pactados/congelados al cambiar de lista para recalcular con la nueva lista
+      item.agreedUnitPrice = null;
       if (item.promotionalLabel == null && item.promotionalPeriodType == null) {
         item.promotionalPrice = null;
       }
@@ -337,6 +352,11 @@ class PosProvider with ChangeNotifier {
     if (settings != null) {
       setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
       setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
+      setCardSurchargeOnOffersMode(
+        CardSurchargeOnOffersMode.fromApiString(
+          settings.cardSurchargeOnOffersMode,
+        ),
+      );
     }
   }
 
@@ -675,8 +695,133 @@ class PosProvider with ChangeNotifier {
     if (product.isSoldByWeight) {
       return false;
     }
+    if (validateUnitStockConstraint(product, 1.0) != null) {
+      return false;
+    }
     _addToCartDirectly(product, 1.0, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
     return true;
+  }
+
+  /// Consumo total acumulado de [productId] en el carrito actual
+  /// (incluyendo combos que consumen dicho producto como ingrediente).
+  double _getOtherCartUsageForProduct(
+    int productId, {
+    CartItem? excludingItem,
+    List<Product>? catalogProducts,
+  }) {
+    double total = 0.0;
+    for (final ci in _cart) {
+      if (identical(ci, excludingItem)) continue;
+      final prod = (catalogProducts != null && ci.product.id > 0)
+          ? (catalogProducts.where((p) => p.id == ci.product.id).firstOrNull ??
+              ci.product)
+          : ci.product;
+      if (prod.isCombo &&
+          prod.comboIngredients != null &&
+          prod.comboIngredients!.isNotEmpty) {
+        for (final ing in prod.comboIngredients!) {
+          final ingId = (ing['id'] as num?)?.toInt();
+          final reqQty = (ing['quantity'] as num?)?.toDouble() ?? 0.0;
+          if (ingId == productId && reqQty > 0) {
+            total += ci.quantity * reqQty;
+          }
+        }
+      } else if (prod.id == productId) {
+        total += ci.quantity;
+      }
+    }
+    return total;
+  }
+
+  /// Cantidad máxima de unidades enteras completas disponibles considerando stock fraccionado.
+  int maxWholeUnitsAvailable(
+    Product product, {
+    CartItem? excludingItem,
+    List<Product>? catalogProducts,
+  }) {
+    final freshProd = (catalogProducts != null && product.id > 0)
+        ? (catalogProducts.where((p) => p.id == product.id).firstOrNull ??
+            product)
+        : product;
+    final otherUsage = freshProd.id > 0
+        ? _getOtherCartUsageForProduct(
+            freshProd.id,
+            excludingItem: excludingItem,
+            catalogProducts: catalogProducts,
+          )
+        : 0.0;
+    final effectiveStock = freshProd.stock - otherUsage;
+    if (effectiveStock <= 0) return 0;
+    return (effectiveStock + 0.010).floor();
+  }
+
+  /// Valida si [requestedQuantity] viola la disponibilidad de unidades enteras en
+  /// productos con stock fraccionado (porciones). Retorna `null` si está permitido.
+  String? validateUnitStockConstraint(
+    Product product,
+    double requestedQuantity, {
+    CartItem? excludingItem,
+    List<Product>? catalogProducts,
+  }) {
+    if (product.isSoldByWeight ||
+        product.isService ||
+        product.isCombo ||
+        product.id <= 0 ||
+        requestedQuantity <= 0) {
+      return null;
+    }
+
+    final freshProd = (catalogProducts != null)
+        ? (catalogProducts.where((p) => p.id == product.id).firstOrNull ??
+            product)
+        : product;
+
+    final otherUsage = _getOtherCartUsageForProduct(
+      freshProd.id,
+      excludingItem: excludingItem,
+      catalogProducts: catalogProducts,
+    );
+    final effectiveStock = freshProd.stock - otherUsage;
+
+    final hasFractionalCatalogStock = freshProd.stock > 0 &&
+        (freshProd.stock - freshProd.stock.roundToDouble()).abs() > 0.005;
+    final hasPartialOtherUsage = otherUsage > 0 &&
+        (otherUsage - otherUsage.roundToDouble()).abs() > 0.005;
+
+    // Preservar comportamiento histórico si el producto no está fraccionado.
+    if (!hasFractionalCatalogStock && !hasPartialOtherUsage) {
+      return null;
+    }
+
+    final safeEffective = effectiveStock < 0 ? 0.0 : effectiveStock;
+    final maxWhole = (safeEffective + 0.010).floor();
+    final isWholeUnitRequest = requestedQuantity >= 0.995 &&
+        (requestedQuantity - requestedQuantity.roundToDouble()).abs() < 0.005;
+
+    if (isWholeUnitRequest && requestedQuantity.round() > maxWhole) {
+      final availLabel = safeEffective.toUnitStockDisplay(
+        isSoldByWeight: false,
+        unitSuffix: 'u',
+      );
+      if (maxWhole <= 0) {
+        return 'No quedan unidades enteras completas de "${freshProd.name}" '
+            '(disponible: $availLabel por porciones cortadas).';
+      }
+      return 'Solo podés vender hasta $maxWhole '
+          '${maxWhole == 1 ? 'unidad entera' : 'unidades enteras'} '
+          'de "${freshProd.name}" (disponible: $availLabel).';
+    }
+
+    if (requestedQuantity > safeEffective + 0.010) {
+      final availLabel = safeEffective.toUnitStockDisplay(
+        isSoldByWeight: false,
+        unitSuffix: 'u',
+      );
+      return 'La cantidad solicitada supera el stock disponible de "${freshProd.name}" '
+          '(disponible: $availLabel).';
+    }
+
+    return null;
   }
 
   void submitWeighedProductWithPromo(Product product, double weightInKg, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
@@ -739,6 +884,7 @@ class PosProvider with ChangeNotifier {
         promotionalPrice: resolvedPromoPrice,
         promotionalLabel: resolvedPromoLabel,
         promotionalPeriodType: resolvedPromoPeriodType,
+        cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
       ));
     } else {
       final index = _cart.indexWhere(
@@ -763,7 +909,9 @@ class PosProvider with ChangeNotifier {
         }
         existing.quantity += quantity;
         existing.manualSubtotal = null;
+        existing.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
         if (resolvedPromoPrice != null) {
+          _cart[index].agreedUnitPrice = null;
           _cart[index].promotionalPrice = resolvedPromoPrice;
           _cart[index].promotionalLabel = resolvedPromoLabel;
           _cart[index].promotionalPeriodType = resolvedPromoPeriodType;
@@ -785,6 +933,7 @@ class PosProvider with ChangeNotifier {
           promotionalPrice: resolvedPromoPrice,
           promotionalLabel: resolvedPromoLabel,
           promotionalPeriodType: resolvedPromoPeriodType,
+          cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
         ));
       }
     }
@@ -793,6 +942,7 @@ class PosProvider with ChangeNotifier {
 
   /// Agrega un Producto o Combo Rápido (temporal o con alta on-the-fly al catálogo) directamente al carrito
   void addQuickOrTemporaryItem(CartItem item) {
+    item.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
     _cart.add(item);
     notifyListeners();
   }
@@ -811,6 +961,7 @@ class PosProvider with ChangeNotifier {
         if (priceChangedInDb) {
           cartIt.manualUnitPrice = null;
           cartIt.manualSubtotal = null;
+          cartIt.agreedUnitPrice = null;
           if (cartIt.promotionalLabel == null &&
               cartIt.promotionalPeriodType == null) {
             cartIt.promotionalPrice = null;
@@ -858,6 +1009,7 @@ class PosProvider with ChangeNotifier {
           if (priceChangedInDb) {
             cartIt.manualUnitPrice = null;
             cartIt.manualSubtotal = null;
+            cartIt.agreedUnitPrice = null;
             if (cartIt.promotionalLabel == null &&
                 cartIt.promotionalPeriodType == null) {
               cartIt.promotionalPrice = null;
@@ -901,7 +1053,9 @@ class PosProvider with ChangeNotifier {
     } else {
       if (clearManualUnitPrice) {
         item.manualUnitPrice = null;
+        item.agreedUnitPrice = null;
       } else if (newUnitPrice != null && newUnitPrice > 0) {
+        item.agreedUnitPrice = null;
         if ((newUnitPrice - item.defaultCalculatedUnitPrice).abs() < 0.005) {
           item.manualUnitPrice = null;
         } else {
@@ -966,15 +1120,24 @@ class PosProvider with ChangeNotifier {
       if (bestOffer != null) {
         final discounted = bestOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
         final periodType = bestOffer.periodType as String?;
-        // Salvaguarda: si el ítem proviene de un Presupuesto o Venta en Espera con precio congelado
-        // (sin label ni periodType) y ese precio pactado ya es menor o igual a la oferta actual,
+        // Salvaguarda: si el ítem proviene de un Presupuesto o Venta en Espera con precio pactado
+        // y ese precio pactado ya es menor o igual a la oferta actual,
         // respetarlo para no encarecer el acuerdo pactado con el cliente.
-        final isFrozenAgreement = item.promotionalPrice != null &&
-            item.promotionalPrice! > 0 &&
-            item.promotionalLabel == null &&
-            item.promotionalPeriodType == null;
-        if (isFrozenAgreement && item.promotionalPrice! <= discounted) {
+        final double? frozenAgreementPrice =
+            (item.agreedUnitPrice != null && item.agreedUnitPrice! > 0)
+                ? item.agreedUnitPrice
+                : ((item.promotionalPrice != null &&
+                        item.promotionalPrice! > 0 &&
+                        item.promotionalLabel == null &&
+                        item.promotionalPeriodType == null)
+                    ? item.promotionalPrice
+                    : null);
+        if (frozenAgreementPrice != null && frozenAgreementPrice <= discounted) {
           continue;
+        }
+        if (item.agreedUnitPrice != null && discounted < item.agreedUnitPrice!) {
+          item.agreedUnitPrice = null;
+          hasChanges = true;
         }
         if (item.promotionalPrice != discounted ||
             item.promotionalLabel != bestOffer.name ||
@@ -1036,6 +1199,67 @@ class PosProvider with ChangeNotifier {
       _cart[index].manualSubtotal = null;
       notifyListeners();
     }
+  }
+
+  /// Pacta un subtotal total de mercadería exacto (ej. redondear \$25.430 a \$25.000)
+  /// prorrateándolo en centavos enteros proporcionales al subtotal actual de cada línea
+  /// y asignando el centavo de resto al ítem de mayor subtotal.
+  /// Garantiza que `cartSubtotal == targetMerchandiseTotal` al centavo y cumple la
+  /// tolerancia exacta de `SaleService` y `AfipWsfeService`.
+  void applyAgreedTotalRounding(double targetMerchandiseTotal) {
+    if (_cart.isEmpty) return;
+    final currentTotal = cartSubtotal;
+    final targetCents = (targetMerchandiseTotal * 100).round();
+    if (currentTotal <= 0 || targetCents <= 0) return;
+
+    int largestIdx = -1;
+    double largestSub = -1.0;
+    for (int i = 0; i < _cart.length; i++) {
+      final sub = _cart[i].subtotal;
+      if (sub > largestSub) {
+        largestSub = sub;
+        largestIdx = i;
+      }
+    }
+    if (largestIdx < 0) return;
+
+    final newCentsList = List<int>.filled(_cart.length, 0);
+    int allocatedCents = 0;
+
+    for (int i = 0; i < _cart.length; i++) {
+      final lineSub = _cart[i].subtotal;
+      int lineCents = ((lineSub / currentTotal) * targetCents).round();
+      if (targetCents >= _cart.length && lineSub > 0 && lineCents < 1) {
+        lineCents = 1;
+      }
+      newCentsList[i] = lineCents;
+      allocatedCents += lineCents;
+    }
+
+    final int diffCents = targetCents - allocatedCents;
+    if (newCentsList[largestIdx] + diffCents >= 1) {
+      newCentsList[largestIdx] += diffCents;
+    } else {
+      int remaining = targetCents;
+      for (int i = 0; i < _cart.length; i++) {
+        if (i == largestIdx) continue;
+        final share = ((_cart[i].subtotal / currentTotal) * targetCents).floor();
+        newCentsList[i] = share;
+        remaining -= share;
+      }
+      newCentsList[largestIdx] = remaining > 0 ? remaining : 0;
+    }
+
+    for (int i = 0; i < _cart.length; i++) {
+      final item = _cart[i];
+      final newLineSub = newCentsList[i] / 100.0;
+      final qty = item.quantity > 0 ? item.quantity : 1.0;
+      final roundedUnit = ((newLineSub / qty) * 100).round() / 100.0;
+      item.manualUnitPrice = roundedUnit;
+      item.manualSubtotal = newLineSub;
+    }
+
+    notifyListeners();
   }
 
   void removeFromCart(CartItem cartItem) {
@@ -1122,16 +1346,17 @@ class PosProvider with ChangeNotifier {
       if (item.product != null) {
         final prod = item.product!;
         double calculatedCustomFactor = _activeTier == PriceTier.custom ? _currentCustomFactor : 1.0;
-        if (item.unitPrice > 0 && prod.sellingPrice > 0 && (item.unitPrice - prod.sellingPrice).abs() > 0.001) {
-          if (_activeTier == PriceTier.base && item.unitPrice > prod.sellingPrice) {
-            calculatedCustomFactor = item.unitPrice / prod.sellingPrice;
-          } else if (_activeTier == PriceTier.custom) {
-            calculatedCustomFactor = item.unitPrice / prod.sellingPrice;
-          }
+        if (_activeTier == PriceTier.custom &&
+            item.unitPrice > 0 &&
+            prod.sellingPrice > 0 &&
+            (item.unitPrice - prod.sellingPrice).abs() > 0.001) {
+          calculatedCustomFactor = item.unitPrice / prod.sellingPrice;
         }
+        final hasHigherBasePrice = _activeTier == PriceTier.base &&
+            item.unitPrice > prod.sellingPrice + 0.009;
         // Si el precio pactado en el presupuesto es menor al precio de lista actual,
-        // congelamos ese precio usando promotionalPrice (sin label/periodType para no mostrarlo como "Oferta")
-        final hasDiscountedPrice = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
+        // congelamos ese precio en agreedUnitPrice (sin inventar una "Oferta")
+        final hasDiscountedPrice = item.unitPrice < prod.sellingPrice - 0.009 && item.unitPrice > 0;
         final customDesc = (item.productName.trim().isNotEmpty &&
                 item.productName.trim() != prod.name.trim())
             ? item.productName.trim()
@@ -1144,9 +1369,9 @@ class PosProvider with ChangeNotifier {
           cardFactor: _currentCardFactor,
           customFactor: calculatedCustomFactor,
           customTierLabel: _customTierLabel,
-          promotionalPrice: hasDiscountedPrice ? item.unitPrice : null,
-          promotionalLabel: null, // Sin label para no mostrar como "Oferta"
-          promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
+          agreedUnitPrice: hasDiscountedPrice ? item.unitPrice : null,
+          manualUnitPrice: hasHigherBasePrice ? item.unitPrice : null,
+          cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
           customDescription: customDesc,
         ));
       } else {
@@ -1253,16 +1478,21 @@ class PosProvider with ChangeNotifier {
         isService: resolvedIsService,
       );
 
-      // Calcular el factor real si el precio pactado difiere del de lista (descuento o recargo)
-      // En v1.8.5 prod['selling_price'] es null, por lo que originalSellingPrice == unitPriceCharged y el factor permanece 1.0.
+      // Calcular el factor real solo cuando estamos en lista custom y el precio pactado difiere.
+      // En Base, los acuerdos menores van a agreedUnitPrice y los mayores a manualUnitPrice.
       double calculatedCustomFactor = _activeTier == PriceTier.custom ? _currentCustomFactor : 1.0;
-      if (unitPriceCharged > 0 && originalSellingPrice > 0 && (unitPriceCharged - originalSellingPrice).abs() > 0.001) {
+      if (_activeTier == PriceTier.custom &&
+          unitPriceCharged > 0 &&
+          originalSellingPrice > 0 &&
+          (unitPriceCharged - originalSellingPrice).abs() > 0.001) {
         calculatedCustomFactor = unitPriceCharged / originalSellingPrice;
       }
 
-      // Si el precio pactado es menor al de lista, congelarlo con promotionalPrice
-      // (sin label/periodType para no mostrar como "Oferta")
-      final hasDiscountedPrice = unitPriceCharged < originalSellingPrice && unitPriceCharged > 0;
+      // Si el precio pactado es menor al de lista, congelarlo en agreedUnitPrice
+      // (separado de promotionalPrice para no inventar una etiqueta de "Oferta")
+      final hasDiscountedPrice = unitPriceCharged < originalSellingPrice - 0.009 && unitPriceCharged > 0;
+      final hasHigherBasePrice = _activeTier == PriceTier.base &&
+          unitPriceCharged > originalSellingPrice + 0.009;
 
       final isTempItem = itemMap['is_temporary'] == true ||
           itemMap['is_temporary'] == 1 ||
@@ -1291,9 +1521,9 @@ class PosProvider with ChangeNotifier {
         cardFactor: _currentCardFactor,
         customFactor: calculatedCustomFactor,
         customTierLabel: _customTierLabel,
-        promotionalPrice: hasDiscountedPrice ? unitPriceCharged : null,
-        promotionalLabel: null, // Sin label para no mostrar como "Oferta"
-        promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
+        agreedUnitPrice: hasDiscountedPrice ? unitPriceCharged : null,
+        manualUnitPrice: hasHigherBasePrice ? unitPriceCharged : null,
+        cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
         isTemporary: isTempItem,
         customDescription: customDesc,
         customDetails: customDet,
@@ -1659,7 +1889,9 @@ class PosProvider with ChangeNotifier {
                 'has_discount': i.hasDiscount,
                 'discount_label': i.hasActiveOffer
                     ? i.offerBadgeLabel
-                    : (i.promotionalLabel ?? ''),
+                    : (i.hasAgreedPrice
+                        ? 'Precio pactado'
+                        : (i.promotionalLabel ?? '')),
                 'surcharge_amount': i.surchargeAmount,
                 'product': {
                   'name': i.effectiveDisplayName,
@@ -2405,7 +2637,9 @@ class PosProvider with ChangeNotifier {
                           'has_discount': i.hasDiscount,
                           'discount_label': i.hasActiveOffer
                               ? i.offerBadgeLabel
-                              : (i.promotionalLabel ?? ''),
+                              : (i.hasAgreedPrice
+                                  ? 'Precio pactado'
+                                  : (i.promotionalLabel ?? '')),
                           'surcharge_amount': i.surchargeAmount,
                           'product': {
                             'name': i.effectiveDisplayName,

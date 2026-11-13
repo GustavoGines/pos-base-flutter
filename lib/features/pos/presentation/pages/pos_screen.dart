@@ -23,6 +23,7 @@ import '../widgets/pos_financial_summary.dart';
 import '../widgets/pos_quick_action_buttons.dart';
 import '../widgets/pos_quick_customer_dialog.dart';
 import '../widgets/pos_quick_item_dialog.dart';
+import '../widgets/pos_price_lookup_dialog.dart';
 import '../widgets/pos_rename_cart_item_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
@@ -40,7 +41,7 @@ import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
-import 'package:dart_pusher_channels/dart_pusher_channels.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class PosScreen extends StatefulWidget {
@@ -79,14 +80,14 @@ class _PosScreenState extends State<PosScreen> {
   // Candado anti-doble-modal para preventir abrir CheckoutDialog dos veces
   bool _isCheckingOut = false;
 
-  PusherChannelsClient? _pusher;
+  StreamSubscription<int>? _printLabelSub;
 
   @override
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handlePosHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initReverb();
+      _initPrintLabelListener();
       _searchFocusNode.requestFocus();
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
       // búsqueda u ordenamiento que el módulo de Catálogo haya dejado activo.
@@ -153,109 +154,52 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
-  Future<void> _initReverb() async {
-    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
-    final terminalId = localTerminal.terminalId;
+  void _initPrintLabelListener() {
+    final scanner = Provider.of<RemoteScannerService?>(context, listen: false);
+    if (scanner == null) return;
+    _printLabelSub?.cancel();
+    _printLabelSub =
+        scanner.onPrintLabelRequested.listen(_handlePrintLabelRequest);
+  }
 
+  Future<void> _handlePrintLabelRequest(int productId) async {
+    if (!mounted) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-      final uri = Uri.parse(currentUrl);
-      
-      final isSecure = currentUrl.startsWith('https');
-      String pusherHost = uri.host;
-      if (pusherHost.startsWith('api.')) {
-        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
-      } else if (pusherHost.startsWith('api-')) {
-        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
+      final catalog = Provider.of<CatalogProvider>(context, listen: false);
+      Product? product;
+      try {
+        product = catalog.products.firstWhere((p) => p.id == productId);
+      } catch (_) {
+        final auth = Provider.of<AuthProvider>(context, listen: false);
+        final prefs = await SharedPreferences.getInstance();
+        final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+        final response = await http.get(
+          Uri.parse('$apiUrl/catalog/products/$productId'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer ${auth.sessionToken}',
+          },
+        );
+        if (response.statusCode == 200) {
+          product = ProductModel.fromJson(jsonDecode(response.body));
+        }
       }
-          
-      // Cloudflare rutea WSS por el puerto estándar 443. En red local directa usamos el 8080 de Reverb.
-      final int pusherPort = isSecure ? 443 : 8080;
-      
-      final options = PusherChannelsOptions.fromHost(
-        scheme: isSecure ? 'wss' : 'ws',
-        host: pusherHost,
-        port: pusherPort,
-        key: 'kz786cdfeldnzispymxq',
-      );
 
-      _pusher = PusherChannelsClient.websocket(
-        options: options,
-        connectionErrorHandler: (error, trace, refresh) {},
-      );
-
-      // Escáner Inalámbrico
-      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-      // Impresora Inalámbrica (Mobile Label Printing)
-      final printerChannel = _pusher!.publicChannel('pos.printers.$terminalId');
-
-      _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribe();
-        printerChannel.subscribe();
-      });
-
-      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-        try {
-          if (event.data == null) return;
-          final data = jsonDecode(event.data.toString());
-          final barcode = data['barcode'];
-          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-            _searchController.text = barcode;
-            _onProductScannedOrSearched(barcode);
-          }
-        } catch (e) {
-          debugPrint("Error parsing MobileScanned event: $e");
+      if (product != null) {
+        await ReceiptPrinterService.instance.printLabel(product);
+        if (mounted) {
+          SnackBarService.success(context, 'Etiqueta impresa remotamente');
         }
-      });
-
-      printerChannel.bind('App\\Events\\PrintLabelRequested').listen((event) async {
-        try {
-          if (event.data == null) return;
-          final data = jsonDecode(event.data.toString());
-          final productId = data['productId'];
-          if (mounted && productId != null) {
-             // Encontrar producto por id e imprimir
-             final catalog = Provider.of<CatalogProvider>(context, listen: false);
-             Product? product;
-             try {
-                product = catalog.products.firstWhere((p) => p.id == productId);
-             } catch (_) {
-               final auth = Provider.of<AuthProvider>(context, listen: false);
-               final prefs = await SharedPreferences.getInstance();
-               final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-               final response = await http.get(
-                 Uri.parse('$apiUrl/catalog/products/$productId'),
-                 headers: {
-                   'Accept': 'application/json',
-                   'Authorization': 'Bearer ${auth.sessionToken}',
-                 }
-               );
-               if (response.statusCode == 200) {
-                  product = ProductModel.fromJson(jsonDecode(response.body));
-               }
-             }
-             
-             if (product != null) {
-               await ReceiptPrinterService.instance.printLabel(product);
-               if (mounted) SnackBarService.success(context, 'Etiqueta impresa remotamente');
-             }
-          }
-        } catch (e) {
-          debugPrint("Error parsing PrintLabelRequested event: $e");
-        }
-      });
-
-      await _pusher!.connect();
+      }
     } catch (e) {
-      debugPrint("Error connecting Reverb: $e");
+      debugPrint("Error parsing PrintLabelRequested event: $e");
     }
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handlePosHardwareKey);
-    _pusher?.disconnect();
+    _printLabelSub?.cancel();
     _pendingOrdersTimer?.cancel();
     _debounceSearchTimer?.cancel();
     _searchFocusNode.dispose();
@@ -430,7 +374,7 @@ class _PosScreenState extends State<PosScreen> {
 
     if (results.isEmpty) {
       SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
-      if (RegExp(r'^\d{6,24}$').hasMatch(cleanQuery)) {
+      if (RegExp(r'^(?=.*\d)[A-Za-z0-9\-_]{5,32}$').hasMatch(cleanQuery)) {
         await _showUnrecognizedBarcodeDialog(cleanQuery);
       }
     } else if (appliedScaleLogic) {
@@ -537,6 +481,20 @@ class _PosScreenState extends State<PosScreen> {
 
   void _handleProductSelection(Product product) {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
+    if (!product.isSoldByWeight) {
+      final catalogProducts =
+          Provider.of<CatalogProvider>(context, listen: false).products;
+      final blockMsg = posProvider.validateUnitStockConstraint(
+        product,
+        1.0,
+        catalogProducts: catalogProducts,
+      );
+      if (blockMsg != null) {
+        SnackBarService.error(context, blockMsg);
+        _searchFocusNode.requestFocus();
+        return;
+      }
+    }
     final offerProvider = Provider.of<OfferProvider>(context, listen: false);
     final promoPrice = offerProvider.getDiscountedPrice(product);
     final promoOffer = offerProvider.getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);
@@ -603,7 +561,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   String _formatQuickLookStock(double qty, bool isByWeight) =>
-      isByWeight ? '${qty.toStringAsFixed(3)} Kg' : '${qty.toInt()} u.';
+      qty.toUnitStockDisplay(isSoldByWeight: isByWeight, unitSuffix: 'u.');
 
   void _showImageZoomDialog(BuildContext context, Product product) {
     if (product.imageUrl == null || product.imageUrl!.isEmpty) return;
@@ -1168,9 +1126,7 @@ class _PosScreenState extends State<PosScreen> {
                               (ing['is_sold_by_weight'] == true ||
                                   ing['is_sold_by_weight'] == 1);
                           final hasEnough = ingStock >= reqQty;
-                          final reqFmt = reqQty == reqQty.toInt()
-                              ? reqQty.toInt().toString()
-                              : reqQty.toStringAsFixed(2);
+                          final reqFmt = reqQty.toQty();
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -1464,6 +1420,7 @@ class _PosScreenState extends State<PosScreen> {
                   '🗂️ Orden en Espera, Clientes y Filtros',
                   [
                     _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
+                    _shortcutRow(['F5'], 'Consultar precio y stock sin agregar al carrito'),
                     _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
                     _shortcutRow([
                       'Esc'
@@ -2863,8 +2820,15 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: GlobalAppBar(
+    return RemoteScannerListener(
+      debugLabel: 'PosScreen',
+      onBarcodeScanned: (barcode) {
+        if (!mounted || _isCheckingOut) return;
+        _searchController.text = barcode;
+        _onProductScannedOrSearched(barcode);
+      },
+      child: Scaffold(
+        appBar: GlobalAppBar(
         currentRoute: '/pos',
         extraAction: Row(
           mainAxisSize: MainAxisSize.min,
@@ -3089,6 +3053,7 @@ class _PosScreenState extends State<PosScreen> {
             }),
           );
         },
+      ),
       ),
     );
   }
@@ -3322,101 +3287,179 @@ class _PosScreenState extends State<PosScreen> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final item = pos.cart[index];
-                      final String qtyDisplay = item.product.isSoldByWeight
+                      final bool isRI = context
+                              .read<SettingsProvider?>()
+                              ?.settings
+                              ?.isResponsableInscripto ??
+                          false;
+                      final String qtyDisplay = (item.product.isSoldByWeight ||
+                              (item.quantity - item.quantity.roundToDouble())
+                                      .abs() >
+                                  0.0005)
                           ? item.quantity.toQty()
-                          : item.quantity.toInt().toString();
+                          : item.quantity.round().toString();
 
-                      Widget? priceBadge;
-                      if (item.hasActiveOffer) {
-                        priceBadge = Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFF7B1FA2)
-                                  .withValues(alpha: 0.10),
-                              border: Border.all(
-                                  color: const Color(0xFF7B1FA2)
-                                      .withValues(alpha: 0.35)),
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text('🏷️ ${item.offerBadgeLabel}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFF7B1FA2),
-                                  fontWeight: FontWeight.bold)),
-                        );
+                      // Fila 3 unificada (Orden estricto: 1.Estrategia -> 2.Stock/Vto -> 3.Origen/Costo -> 4.Fiscal IVA)
+                      final leadingBadges = <Widget>[];
+                      if (item.hasManualSellingPriceOverride) {
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: '✏️ Precio manual',
+                          bgColor: Colors.teal.shade50,
+                          borderColor: Colors.teal.shade300,
+                          textColor: Colors.teal.shade900,
+                          tooltip:
+                              'Precio ajustado manualmente (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                        ));
+                      } else if (item.hasActiveOffer) {
+                        if (item.hasSurchargeOnOffer) {
+                          final tierName = item.activeTier == PriceTier.card
+                              ? 'Tarjeta'
+                              : ((item.customTierLabel ?? '').trim().isNotEmpty
+                                  ? item.customTierLabel!.trim()
+                                  : 'Lista +%');
+                          final f = item.calculatedPrice.appliedSurchargeFactor;
+                          final pctStr = (f != null && f > 1.0001)
+                              ? ' (+${((f - 1.0) * 100.0).toCleanMargin()}%)'
+                              : '';
+                          leadingBadges.add(_buildCartMicroChip(
+                            label: '💳 $tierName s/ Oferta$pctStr',
+                            bgColor: Colors.deepOrange.shade50,
+                            borderColor: Colors.deepOrange.shade300,
+                            textColor: Colors.deepOrange.shade900,
+                            tooltip:
+                                '${item.offerBadgeLabel} (\$${item.calculatedPrice.preSurchargeUnitPrice.toCurrency()}) + recargo de lista ($tierName) = \$${item.unitPrice.toCurrency()}',
+                          ));
+                        } else if (item.isOfferSurchargeExempt) {
+                          leadingBadges.add(_buildCartMicroChip(
+                            label: '🏷️ ${item.offerBadgeLabel} (Sin recargo)',
+                            bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
+                            borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
+                            textColor: const Color(0xFF7B1FA2),
+                            tooltip: 'Oferta vigente aplicada sin recargo de lista',
+                          ));
+                        } else {
+                          leadingBadges.add(_buildCartMicroChip(
+                            label: '🏷️ ${item.offerBadgeLabel}',
+                            bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
+                            borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
+                            textColor: const Color(0xFF7B1FA2),
+                            tooltip:
+                                'Oferta promocional aplicada (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                          ));
+                        }
+                      } else if (item.hasAgreedPrice) {
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: '📋 Precio pactado',
+                          bgColor: Colors.blueGrey.shade50,
+                          borderColor: Colors.blueGrey.shade300,
+                          textColor: Colors.blueGrey.shade800,
+                          tooltip:
+                              'Precio congelado de orden o presupuesto (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                        ));
                       } else if (item.activeTier == PriceTier.wholesale) {
-                        priceBadge = Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              border: Border.all(color: Colors.blue.shade300),
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text('🏷️ Lista Mayorista Aplicada',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.blue.shade800,
-                                  fontWeight: FontWeight.bold)),
-                        );
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: '🏭 Mayorista',
+                          bgColor: Colors.blue.shade50,
+                          borderColor: Colors.blue.shade300,
+                          textColor: Colors.blue.shade800,
+                          tooltip: 'Lista Mayorista aplicada',
+                        ));
                       } else if (item.activeTier == PriceTier.card) {
-                        priceBadge = Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              border: Border.all(color: Colors.orange.shade300),
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text('💳 Recargo Tarjeta',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.orange.shade800,
-                                  fontWeight: FontWeight.bold)),
-                        );
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: '💳 Tarjeta',
+                          bgColor: Colors.orange.shade50,
+                          borderColor: Colors.orange.shade300,
+                          textColor: Colors.orange.shade800,
+                          tooltip: 'Recargo Lista Tarjeta aplicado',
+                        ));
                       } else if (item.activeTier == PriceTier.custom) {
-                        priceBadge = Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: Colors.purple.shade50,
-                              border: Border.all(color: Colors.purple.shade300),
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text(
-                              '🏷️ Lista: ${item.customTierLabel ?? 'Personalizada'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.purple.shade800,
-                                  fontWeight: FontWeight.bold)),
-                        );
-                      } else if (item.product
-                                  .getApplicableTier(item.quantity) !=
-                              null &&
-                          item.unitPrice < item.product.sellingPrice) {
-                        priceBadge = Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              border: Border.all(color: Colors.green.shade300),
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text(
-                            '📦 Desc. Volumétrico (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.green.shade800,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        );
+                        final pct = (item.customFactor - 1.0) * 100.0;
+                        final pctStr = pct.abs() >= 0.05
+                            ? ' (${pct > 0 ? '+' : ''}${pct.toCleanMargin()}%)'
+                            : '';
+                        final tierLabel =
+                            (item.customTierLabel ?? '').trim().isNotEmpty
+                                ? item.customTierLabel!.trim()
+                                : 'Lista Esp.';
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: '🏷️ $tierLabel$pctStr',
+                          bgColor: Colors.purple.shade50,
+                          borderColor: Colors.purple.shade300,
+                          textColor: Colors.purple.shade800,
+                          tooltip: 'Lista personalizada: $tierLabel$pctStr',
+                        ));
+                      } else if (item.hasVolumeScale) {
+                        final tier = item.product.getApplicableTier(item.quantity);
+                        final minQ = tier != null
+                            ? ((tier['min_quantity'] as num?)?.toQty() ?? '')
+                            : '';
+                        leadingBadges.add(_buildCartMicroChip(
+                          label: minQ.isNotEmpty ? '📦 Escala x$minQ' : '📦 Escala',
+                          bgColor: Colors.green.shade50,
+                          borderColor: Colors.green.shade300,
+                          textColor: Colors.green.shade800,
+                          tooltip: 'Descuento por cantidad/volumen aplicado',
+                        ));
                       }
+
+                      final trailingBadges = <Widget>[
+                        if (item.isTemporary && !item.saveToCatalog)
+                          _buildCartMicroChip(
+                            label: item.product.isCombo
+                                ? '⚡ Combo Temp.'
+                                : '⚡ Temporal',
+                            bgColor: Colors.amber.shade50,
+                            borderColor: Colors.amber.shade300,
+                            textColor: Colors.amber.shade900,
+                            tooltip: 'Ítem temporal solo para esta venta (no descuenta stock propio)',
+                          ),
+                        if (item.saveToCatalog)
+                          _buildCartMicroChip(
+                            label: '🆕 A catálogo',
+                            bgColor: Colors.blue.shade50,
+                            borderColor: Colors.blue.shade300,
+                            textColor: Colors.blue.shade900,
+                            tooltip: 'Se creará automáticamente en el catálogo al cobrar',
+                          ),
+                        if (item.isRenamed)
+                          _buildCartMicroChip(
+                            label: '✏️ Alias',
+                            bgColor: Colors.indigo.shade50,
+                            borderColor: Colors.indigo.shade200,
+                            textColor: Colors.indigo.shade800,
+                            tooltip: 'Nombre original en catálogo: ${item.product.name}',
+                          ),
+                        if (item.hasManualCostOverride)
+                          _buildCartMicroChip(
+                            label: '✏️ Costo',
+                            bgColor: Colors.teal.shade50,
+                            borderColor: Colors.teal.shade200,
+                            textColor: Colors.teal.shade800,
+                            tooltip:
+                                'Costo ajustado para esta venta: \$${item.effectiveCostPrice.toCurrency()}',
+                          ),
+                        if (isRI)
+                          _buildCartMicroChip(
+                            label: item.product.ivaRate == 0
+                                ? 'Exento 0%'
+                                : 'IVA ${item.product.ivaRate.toCleanMargin()}%',
+                            bgColor: item.product.ivaRate == 0
+                                ? Colors.blueGrey.shade50
+                                : (item.product.ivaRate == 10.5
+                                    ? Colors.indigo.shade50
+                                    : Colors.purple.shade50),
+                            borderColor: item.product.ivaRate == 0
+                                ? Colors.blueGrey.shade200
+                                : (item.product.ivaRate == 10.5
+                                    ? Colors.indigo.shade200
+                                    : Colors.purple.shade200),
+                            textColor: item.product.ivaRate == 0
+                                ? Colors.blueGrey.shade700
+                                : (item.product.ivaRate == 10.5
+                                    ? Colors.indigo.shade800
+                                    : Colors.purple.shade800),
+                          ),
+                      ];
 
                       final nameColumn = Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3641,6 +3684,26 @@ class _PosScreenState extends State<PosScreen> {
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                               onTap: () {
+                                                final catalogProducts = Provider
+                                                        .of<CatalogProvider>(
+                                                            context,
+                                                            listen: false)
+                                                    .products;
+                                                final blockMsg = pos
+                                                    .validateUnitStockConstraint(
+                                                  item.product,
+                                                  item.quantity + 1,
+                                                  excludingItem: item,
+                                                  catalogProducts:
+                                                      catalogProducts,
+                                                );
+                                                if (blockMsg != null) {
+                                                  SnackBarService.error(
+                                                      context, blockMsg);
+                                                  _searchFocusNode
+                                                      .requestFocus();
+                                                  return;
+                                                }
                                                 pos.updateQuantity(
                                                     item, item.quantity + 1);
                                                 _searchFocusNode.requestFocus();
@@ -3669,93 +3732,12 @@ class _PosScreenState extends State<PosScreen> {
                                 ],
                               ),
 
-                              // Fila 3: Badges de Oferta / Lista / Ítem Rápido / Alias y Alerta de Stock Crítico
-                              if (item.isTemporary || item.saveToCatalog || item.isRenamed || item.hasManualPriceOverride) ...[
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: [
-                                    if (item.isTemporary && !item.saveToCatalog)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.amber.shade50,
-                                          border: Border.all(color: Colors.amber.shade300),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          item.product.isCombo ? '⚡ Combo Temporal' : '⚡ Ítem Temporal',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.amber.shade900,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    if (item.saveToCatalog)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.shade50,
-                                          border: Border.all(color: Colors.blue.shade300),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '🆕 Se guardará en catálogo',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.blue.shade900,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    if (item.isRenamed)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.indigo.shade50,
-                                          border: Border.all(color: Colors.indigo.shade200),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '✏️ Alias (Orig: ${item.product.name})',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.indigo.shade800,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    if (item.hasManualPriceOverride)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.teal.shade50,
-                                          border: Border.all(color: Colors.teal.shade200),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '💲 Precio/Costo ajustado (Solo esta venta)',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.teal.shade900,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                              if (priceBadge != null) ...[
-                                const SizedBox(height: 4),
-                                priceBadge,
-                              ],
-                              _CartItemStockIndicator(item: item),
+                              // Fila 3 unificada: Estrategia/Precio -> Stock/Vto -> Origen/Costo -> Fiscal IVA
+                              _CartItemStockIndicator(
+                                item: item,
+                                leadingBadges: leadingBadges,
+                                trailingBadges: trailingBadges,
+                              ),
                             ],
                           ),
                         ),
@@ -3960,10 +3942,11 @@ class _PosScreenState extends State<PosScreen> {
                 const PosFinancialSummary(),
                 const SizedBox(height: 8),
 
-                // ── Atajos Rápidos Modernos (Espera, Presupuestos, Clientes, Ofertas) ──
+                // ── Atajos Rápidos Modernos (Espera, Presupuestos, Clientes, Ofertas, Precios) ──
                 PosQuickActionButtons(
                   onHoldOrder: _handleHoldOrder,
                   onOpenPendingList: () => _pendingOrdersPortalController.toggle(),
+                  onOpenPriceLookup: _openPriceLookupDialog,
                   onAfterDialogClosed: () {
                     if (mounted) _searchFocusNode.requestFocus();
                   },
@@ -4288,6 +4271,12 @@ class _PosScreenState extends State<PosScreen> {
       return true;
     }
 
+    // F5 → Consultar Precio sin agregar al carrito
+    if (event.logicalKey == LogicalKeyboardKey.f5) {
+      _openPriceLookupDialog();
+      return true;
+    }
+
     // F6 → Abrir selector rápido de clientes
     if (event.logicalKey == LogicalKeyboardKey.f6) {
       final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
@@ -4391,6 +4380,18 @@ class _PosScreenState extends State<PosScreen> {
         if (posProvider.cart.isNotEmpty) {
           final lastItem = posProvider.cart.last;
           if (!lastItem.product.isSoldByWeight) {
+            final catalogProducts =
+                Provider.of<CatalogProvider>(context, listen: false).products;
+            final blockMsg = posProvider.validateUnitStockConstraint(
+              lastItem.product,
+              lastItem.quantity + 1,
+              excludingItem: lastItem,
+              catalogProducts: catalogProducts,
+            );
+            if (blockMsg != null) {
+              SnackBarService.error(context, blockMsg);
+              return true;
+            }
             posProvider.updateQuantity(lastItem, lastItem.quantity + 1);
           }
           return true;
@@ -4426,25 +4427,55 @@ class _PosScreenState extends State<PosScreen> {
     return false;
   }
 
-  Future<void> _openQuickItemDialog() async {
+  Future<void> _openQuickItemDialog({String? initialQuery}) async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    final newItem = await PosQuickItemDialog.show(
+    final result = await PosQuickItemDialog.show(
       context,
       activeTier: posProvider.activeTier,
       wholesaleFactor: posProvider.wholesaleFactor,
       cardFactor: posProvider.cardFactor,
       customFactor: posProvider.currentCustomFactor,
       customTierLabel: posProvider.customTierLabel,
+      initialQuery: initialQuery,
     );
     if (!mounted) return;
-    if (newItem != null) {
+    if (result != null) {
+      for (final oldItem in result.replacedCartItems) {
+        posProvider.removeFromCart(oldItem);
+      }
+      final newItem = result.item;
       posProvider.addQuickOrTemporaryItem(newItem);
       SnackBarService.success(
         context,
         newItem.saveToCatalog
             ? '🆕 "${newItem.effectiveDisplayName}" agregado (se guardará en el catálogo al cobrar).'
-            : '⚡ "${newItem.effectiveDisplayName}" agregado como ítem temporal.',
+            : (result.replacedCartItems.isNotEmpty
+                ? '📦 "${newItem.effectiveDisplayName}" armado con ${result.replacedCartItems.length} ítem(s) del carrito.'
+                : '⚡ "${newItem.effectiveDisplayName}" agregado como ítem temporal.'),
       );
+    }
+    _searchFocusNode.requestFocus();
+  }
+
+  Future<void> _openPriceLookupDialog() async {
+    String? followUpQuickCreateQuery;
+    String? followUpAssociateBarcode;
+    final selectedProduct = await PosPriceLookupDialog.show(
+      context,
+      onQuickCreateRequested: (q) => followUpQuickCreateQuery = q,
+      onAssociateBarcodeRequested: (code) => followUpAssociateBarcode = code,
+    );
+    if (!mounted) return;
+    if (followUpQuickCreateQuery != null) {
+      await _openQuickItemDialog(initialQuery: followUpQuickCreateQuery);
+      return;
+    }
+    if (followUpAssociateBarcode != null) {
+      await _showUnrecognizedBarcodeDialog(followUpAssociateBarcode!);
+      return;
+    }
+    if (selectedProduct != null) {
+      _handleProductSelection(selectedProduct);
     }
     _searchFocusNode.requestFocus();
   }
@@ -4467,12 +4498,35 @@ class _PosScreenState extends State<PosScreen> {
 
     final isCatalogItem =
         !item.isTemporary && !item.saveToCatalog && item.product.id > 0;
+    final hasShelfStockChange = isCatalogItem &&
+        res.shelfStockChanged &&
+        res.newShelfStockBeforeSale != null;
+
+    final baseProd = catalogProvider.products
+            .where((p) => p.id == item.product.id)
+            .firstOrNull ??
+        item.product;
+    final effectiveQty = res.newQuantity ?? item.quantity;
+    final simulatedProd = hasShelfStockChange
+        ? baseProd.copyWith(stock: res.newShelfStockBeforeSale!)
+        : baseProd;
+    final unitBlockMsg = posProvider.validateUnitStockConstraint(
+      simulatedProd,
+      effectiveQty,
+      excludingItem: item,
+      catalogProducts: hasShelfStockChange ? null : catalogProvider.products,
+    );
+    if (unitBlockMsg != null) {
+      SnackBarService.error(context, unitBlockMsg);
+      _searchFocusNode.requestFocus();
+      return;
+    }
 
     final needsDbUpdate = isCatalogItem &&
-        ((res.updateCatalogInDb &&
-                (res.sellingPriceChanged ||
-                    res.costPriceChanged ||
-                    res.ivaRateChanged)) ||
+        (res.updateCatalogName ||
+            (res.updateCatalogInDb &&
+                (res.sellingPriceChanged || res.costPriceChanged)) ||
+            res.updateIvaInDb ||
             res.barcodeChanged);
 
     // Si hay una rebaja temporal para esta venta (sin guardar el precio en BD), validar apply_discounts
@@ -4497,27 +4551,29 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
 
-    // Impacto permanente en Base de Datos (Precio/Costo y/o Código de Barras)
+    // Impacto permanente en Base de Datos (Nombre/Precio/Costo/IVA y/o Código de Barras)
     Product? updatedProduct;
     if (needsDbUpdate) {
       final authorized = await AdminPinDialog.protectAction(
         context,
-        action: res.barcodeChanged && !res.updateCatalogInDb
+        action: res.barcodeChanged &&
+                !res.updateCatalogInDb &&
+                !res.updateCatalogName &&
+                !res.updateIvaInDb
             ? 'Asociar Código de Barras en Catálogo (${item.product.name})'
             : 'Actualizar Producto en Catálogo (${item.product.name})',
         permissionKey: AppPermissions.manageCatalog,
         onAuthorized: () async {
           updatedProduct = await catalogProvider.updateProductPriceFromPos(
             item.product.id,
+            name: res.updateCatalogName ? res.customDescription : null,
             sellingPrice: (res.updateCatalogInDb && res.sellingPriceChanged)
                 ? res.newUnitPrice
                 : null,
             costPrice: (res.updateCatalogInDb && res.costPriceChanged)
                 ? res.newCostPrice
                 : null,
-            ivaRate: (res.updateCatalogInDb && res.ivaRateChanged)
-                ? res.newIvaRate
-                : null,
+            ivaRate: res.updateIvaInDb ? res.newIvaRate : null,
             barcode: res.barcodeChanged ? res.newBarcode : null,
           );
         },
@@ -4539,18 +4595,84 @@ class _PosScreenState extends State<PosScreen> {
         _searchFocusNode.requestFocus();
         return;
       }
+    }
 
-      // Actualizar también en resultados de búsqueda activos si existieran
-      if (_searchResults.isNotEmpty) {
-        final idx =
-            _searchResults.indexWhere((p) => p.id == updatedProduct!.id);
-        if (idx != -1) {
-          setState(() {
-            final copy = List<Product>.from(_searchResults);
-            copy[idx] = updatedProduct!;
-            _searchResults = copy;
-          });
+    // Ajuste físico de stock en góndola (antes de cobrar esta venta)
+    bool shelfStockAdjustedOk = false;
+    if (hasShelfStockChange) {
+      final baseStockForDelta = updatedProduct?.stock ?? baseProd.stock;
+      final delta = res.newShelfStockBeforeSale! - baseStockForDelta;
+      if (delta.abs() >= 0.0005) {
+        bool ok = false;
+        final authorized = await AdminPinDialog.protectAction(
+          context,
+          action: 'Ajustar stock físico en góndola (${item.product.name})',
+          permissionKey: AppPermissions.adjustStock,
+          onAuthorized: () async {
+            ok = await catalogProvider.adjustStock(
+              productId: item.product.id,
+              type: delta > 0 ? 'increment' : 'decrement',
+              quantity: delta.abs(),
+              notes: 'Ajuste rápido en caja POS (antes de venta)',
+            );
+          },
+        );
+        if (!mounted) return;
+        if (!authorized) {
+          _searchFocusNode.requestFocus();
+          return;
         }
+        if (!ok) {
+          SnackBarService.error(
+            context,
+            catalogProvider.errorMessage ??
+                'No se pudo ajustar el stock en la Base de Datos.',
+          );
+          _searchFocusNode.requestFocus();
+          return;
+        }
+        shelfStockAdjustedOk = true;
+        final refreshedFromCat =
+            catalogProvider.lastUpdatedProduct?.id == item.product.id
+                ? catalogProvider.lastUpdatedProduct!
+                : catalogProvider.products
+                    .where((p) => p.id == item.product.id)
+                    .firstOrNull;
+        updatedProduct = refreshedFromCat ??
+            (updatedProduct ?? baseProd)
+                .copyWith(stock: res.newShelfStockBeforeSale!);
+      }
+    }
+
+    // Actualizar también en resultados de búsqueda activos y Ofertas si existieran
+    if (updatedProduct != null) {
+      if (_searchResults.isNotEmpty) {
+        final updatedSearch = catalogProvider.applyStockUpdatesToProductList(
+          _searchResults,
+          {updatedProduct!.id: updatedProduct!.stock},
+        );
+        final idx = updatedSearch.indexWhere((p) => p.id == updatedProduct!.id);
+        final copy = List<Product>.from(updatedSearch);
+        if (idx != -1) {
+          copy[idx] = updatedProduct!;
+        }
+        setState(() {
+          _searchResults = copy;
+        });
+      }
+      if (shelfStockAdjustedOk) {
+        try {
+          final offerProv = Provider.of<OfferProvider>(context, listen: false);
+          if (offerProv.offerOnlyProducts.isNotEmpty) {
+            final updatedOffers = catalogProvider.applyStockUpdatesToProductList(
+              offerProv.offerOnlyProducts,
+              {updatedProduct!.id: updatedProduct!.stock},
+            );
+            if (!identical(updatedOffers, offerProv.offerOnlyProducts)) {
+              offerProv.replaceOfferOnlyProducts(updatedOffers);
+            }
+          }
+        } catch (_) {}
       }
     }
 
@@ -4558,21 +4680,39 @@ class _PosScreenState extends State<PosScreen> {
       item,
       customDescription: res.customDescription,
       customDetails: res.customDetails,
-      newUnitPrice: res.updateCatalogInDb ? null : res.newUnitPrice,
+      newUnitPrice: (res.updateCatalogInDb && res.sellingPriceChanged)
+          ? null
+          : res.newUnitPrice,
       clearManualUnitPrice: res.clearManualUnitPrice,
-      newCostPrice: res.updateCatalogInDb ? null : res.newCostPrice,
+      newCostPrice: (res.updateCatalogInDb && res.costPriceChanged)
+          ? null
+          : res.newCostPrice,
       clearManualCostPrice: res.clearManualCostPrice,
       newManualSubtotal: res.newManualSubtotal,
       clearManualSubtotal: res.clearManualSubtotal,
       newQuantity: res.newQuantity,
-      newIvaRate: res.updateCatalogInDb ? null : res.newIvaRate,
+      newIvaRate: isCatalogItem ? null : res.newIvaRate,
       updatedCatalogProduct: updatedProduct,
     );
 
+    if (shelfStockAdjustedOk) {
+      // Sincronizar la campanita de alertas y el estado backend del indicador del carrito
+      try {
+        Provider.of<InventoryAlertsProvider>(context, listen: false)
+            .fetchAlerts();
+      } catch (_) {}
+    }
+
     if (updatedProduct != null) {
-      final msg = res.barcodeChanged && !res.updateCatalogInDb
-          ? '🔫 Código de barras (${res.newBarcode}) asociado en la Base de Datos a "${item.product.name}".'
-          : '💾 Cambios guardados en la Base de Datos para "${item.product.name}".';
+      final msg = shelfStockAdjustedOk && !needsDbUpdate
+          ? '📦 Stock en góndola actualizado en BD a ${updatedProduct!.stock.toUnitStockDisplay(isSoldByWeight: updatedProduct!.isSoldByWeight, unitSuffix: 'u')} para "${updatedProduct!.name}".'
+          : (res.barcodeChanged &&
+                  !res.updateCatalogInDb &&
+                  !res.updateCatalogName &&
+                  !res.updateIvaInDb &&
+                  !shelfStockAdjustedOk
+              ? '🔫 Código de barras (${res.newBarcode}) asociado en la Base de Datos a "${updatedProduct!.name}".'
+              : '💾 Cambios guardados en la Base de Datos para "${updatedProduct!.name}".');
       SnackBarService.success(context, msg);
     }
     _searchFocusNode.requestFocus();
@@ -4666,7 +4806,31 @@ class _PosScreenState extends State<PosScreen> {
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
-            return AlertDialog(
+            return RemoteScannerListener(
+              debugLabel: 'UnrecognizedBarcodeDialog',
+              onBarcodeScanned: (barcode) async {
+                final clean = barcode.trim();
+                if (clean.isEmpty || !ctx.mounted) return;
+                if (clean.toUpperCase() == scannedBarcode.trim().toUpperCase()) {
+                  SnackBarService.info(
+                    ctx,
+                    'Ese es el mismo código nuevo ($scannedBarcode). Elegí el producto abajo o escaneá un código existente.',
+                  );
+                  return;
+                }
+                searchCtrl.text = clean;
+                searchCtrl.selection =
+                    TextSelection.collapsed(offset: clean.length);
+                setModalState(() => isSearchingCatalog = true);
+                final found = await posProvider.search(clean);
+                if (!ctx.mounted || searchCtrl.text.trim() != clean) return;
+                setModalState(() {
+                  candidateProducts =
+                      found.where((p) => !p.isCombo).take(8).toList();
+                  isSearchingCatalog = false;
+                });
+              },
+              child: AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -4870,6 +5034,7 @@ class _PosScreenState extends State<PosScreen> {
                   child: const Text('Cerrar (Esc)'),
                 ),
               ],
+            ),
             );
           },
         );
@@ -6025,39 +6190,38 @@ class _PosScreenState extends State<PosScreen> {
   }) {
     return Consumer2<PosProvider, OfferProvider>(
       builder: (context, pos, offerProv, _) {
-        double displayPrice = product.sellingPrice;
-        if (pos.activeTier == PriceTier.wholesale) {
-          displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0)
-            ? product.priceWholesale!
-            : product.sellingPrice * pos.wholesaleFactor;
-        } else if (pos.activeTier == PriceTier.card) {
-          displayPrice = (product.priceCard != null && product.priceCard! > 0)
-            ? product.priceCard!
-            : product.sellingPrice * pos.cardFactor;
-        } else if (pos.activeTier == PriceTier.custom) {
-          displayPrice = product.sellingPrice * pos.currentCustomFactor;
-        }
-
         final promoPrice = offerProv.getDiscountedPrice(product);
-        final hasPromo = promoPrice != null && promoPrice > 0 && promoPrice < displayPrice;
-        final originalPrice = displayPrice;
-        if (hasPromo) {
-          displayPrice = promoPrice;
-        }
+        final hasOffer = promoPrice != null &&
+            promoPrice > 0 &&
+            promoPrice < product.sellingPrice;
+        final calc = ProductPricingCalculator.calculate(
+          product: product,
+          activeTier: pos.activeTier,
+          wholesaleFactor: pos.wholesaleFactor,
+          cardFactor: pos.cardFactor,
+          customFactor: pos.currentCustomFactor,
+          promotionalPrice: promoPrice,
+          hasExplicitOffer: hasOffer,
+          cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
+        );
 
+        final displayPrice = calc.finalUnitPrice;
         final formattedMain = isByWeight
             ? '\$${displayPrice.toCurrency()}/Kg'
             : '\$${displayPrice.toCurrency()}';
         final isRightAligned = viewMode == 'list' || viewMode == 'compact';
+        final Color highlightColor = calc.hasActiveOffer
+            ? const Color(0xFF7B1FA2)
+            : (isByWeight ? Colors.orange.shade800 : const Color(0xFF1B873A));
 
-        if (hasPromo) {
+        if (calc.crossedOutPrice != null) {
           final formattedOrig = isByWeight
-              ? '\$${originalPrice.toCurrency()}/Kg'
-              : '\$${originalPrice.toCurrency()}';
+              ? '\$${calc.crossedOutPrice!.toCurrency()}/Kg'
+              : '\$${calc.crossedOutPrice!.toCurrency()}';
 
           // En modo lista mantenemos el diseño horizontal limpio que ya tiene buen espacio;
           // en tarjetas (grandes/medianas) y botones compactos apilamos verticalmente
-          // para que el precio de oferta se vea grande y nunca se comprima.
+          // para que el precio destacado se vea grande y nunca se comprima.
           if (viewMode == 'list') {
             return FittedBox(
               fit: BoxFit.scaleDown,
@@ -6079,7 +6243,7 @@ class _PosScreenState extends State<PosScreen> {
                   Text(
                     formattedMain,
                     style: TextStyle(
-                      color: const Color(0xFF7B1FA2),
+                      color: highlightColor,
                       fontWeight: FontWeight.w900,
                       fontSize: fontSize,
                     ),
@@ -6112,7 +6276,7 @@ class _PosScreenState extends State<PosScreen> {
                 Text(
                   formattedMain,
                   style: TextStyle(
-                    color: const Color(0xFF7B1FA2),
+                    color: highlightColor,
                     fontWeight: FontWeight.w900,
                     fontSize: fontSize,
                     height: 1.05,
@@ -6143,31 +6307,99 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  Widget _buildCartMicroChip({
+    required String label,
+    required Color bgColor,
+    required Color borderColor,
+    required Color textColor,
+    String? tooltip,
+  }) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        border: Border.all(color: borderColor),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 9.5,
+          color: textColor,
+          fontWeight: FontWeight.w700,
+          height: 1.15,
+        ),
+      ),
+    );
+    if (tooltip != null && tooltip.isNotEmpty) {
+      return Tooltip(message: tooltip, child: chip);
+    }
+    return chip;
+  }
+
 }
 
 // ── Componentes Encapsulados ──────────────────────────────────────────────
 
 class _CartItemStockIndicator extends StatelessWidget {
   final CartItem item;
+  final List<Widget> leadingBadges;
+  final List<Widget> trailingBadges;
 
-  const _CartItemStockIndicator({required this.item});
+  const _CartItemStockIndicator({
+    required this.item,
+    this.leadingBadges = const [],
+    this.trailingBadges = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
     // 💡 IMPORTANTE: Todo context.select() debe estar siempre en la raíz del build, NUNCA condicionado.
     final status = context.select<InventoryAlertsProvider, String?>(
         (p) => p.getAlertStatusForProduct(item.product.id));
+    final criticalExpAlert =
+        context.select<InventoryAlertsProvider, Map<String, dynamic>?>((p) {
+      for (final raw in p.expirationAlerts) {
+        if ((raw['product_id'] as num?)?.toInt() == item.product.id &&
+            raw['alert_level'] == 'critical') {
+          return raw is Map<String, dynamic>
+              ? raw
+              : Map<String, dynamic>.from(raw as Map);
+        }
+      }
+      return null;
+    });
     final hasPredictive = context
         .select<SettingsProvider, bool>((s) => s.features.predictiveAlerts);
     final cart = context.select<PosProvider, List<CartItem>>((p) => p.cart);
     final catalogProducts =
         context.select<CatalogProvider, List<Product>>((c) => c.products);
 
+    Widget wrapWithSurroundingBadges(Widget? alertChip) {
+      final allChips = <Widget>[
+        ...leadingBadges,
+        if (alertChip != null) alertChip,
+        ...trailingBadges,
+      ];
+      if (allChips.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Wrap(
+          spacing: 5,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: allChips,
+        ),
+      );
+    }
+
     if (item.isTemporary ||
         item.saveToCatalog ||
         item.product.id <= 0 ||
         item.product.isService) {
-      return const SizedBox.shrink();
+      return wrapWithSurroundingBadges(null);
     }
 
     // Mapa rápido de productos del catálogo para consultar siempre el stock más fresco
@@ -6177,7 +6409,7 @@ class _CartItemStockIndicator extends StatelessWidget {
 
     final currentProduct = productById[item.product.id] ?? item.product;
     if (currentProduct.isService) {
-      return const SizedBox.shrink();
+      return wrapWithSurroundingBadges(null);
     }
 
     // Acumular el consumo real de cada producto/ingrediente en todo el carrito actual
@@ -6225,8 +6457,16 @@ class _CartItemStockIndicator extends StatelessWidget {
             : (item.quantity * reqPerCombo);
 
         final remainingIngStock = baseIngStock - totalIngConsumed;
-        final combosRemainingForIng =
-            (remainingIngStock / reqPerCombo).floorToDouble();
+        final double combosRemainingForIng;
+        if (remainingIngStock < -0.010) {
+          combosRemainingForIng =
+              (remainingIngStock / reqPerCombo).floorToDouble();
+        } else if (remainingIngStock <= 0) {
+          combosRemainingForIng = 0.0;
+        } else {
+          combosRemainingForIng =
+              calcUnitsFitStock(remainingIngStock, reqPerCombo).toDouble();
+        }
 
         if (minProjectedCombos == null ||
             combosRemainingForIng < minProjectedCombos) {
@@ -6238,61 +6478,125 @@ class _CartItemStockIndicator extends StatelessWidget {
     } else {
       final totalConsumed =
           consumedByProductId[currentProduct.id] ?? item.quantity;
-      projectedStock = currentProduct.stock - totalConsumed;
+      final rawProjected = currentProduct.stock - totalConsumed;
+      projectedStock =
+          (rawProjected < 0 && rawProjected >= -0.010) ? 0.0 : rawProjected;
     }
 
     final minStock = currentProduct.minStock ?? 0;
     final bool isCriticalLocally = projectedStock <= minStock;
 
     // 2. Estado persistente del servidor (Backend)
-    final bool isCriticalBackend = status == 'out_of_stock';
+    // Si el stock local actualizado en memoria ya es positivo y supera el mínimo,
+    // no dejamos que un estado 'out_of_stock' cacheado antes de recargar alertas
+    // mantenga trabado el badge en rojo (salvo vencimiento crítico o combo sin receta).
+    final hasComboRecipe = currentProduct.isCombo &&
+        currentProduct.comboIngredients != null &&
+        currentProduct.comboIngredients!.isNotEmpty;
+    final bool staleReactiveOverriddenByFreshStock =
+        (!currentProduct.isCombo || hasComboRecipe) &&
+            currentProduct.stock > 0 &&
+            projectedStock > minStock;
+    final bool hasCriticalExpiration = criticalExpAlert != null;
+    final bool isCriticalBackend = hasCriticalExpiration ||
+        (status == 'out_of_stock' && !staleReactiveOverriddenByFreshStock);
     final bool isPredictiveBackend = status == 'predictive';
 
     final bool isCritical = isCriticalLocally || isCriticalBackend;
 
-    // Si no es crítico y no hay estado predictivo del server, ocultamos
-    if (!isCritical && !isPredictiveBackend) return const SizedBox.shrink();
+    // Si no es crítico y no hay estado predictivo del server, solo renderizar surrounding badges
+    if (!isCritical && !isPredictiveBackend) {
+      return wrapWithSurroundingBadges(null);
+    }
 
     // 🔒 CANDADO 2: La alerta predictiva naranja solo se muestra con el addon activo.
     if (!isCritical && isPredictiveBackend && !hasPredictive) {
-      return const SizedBox.shrink();
+      return wrapWithSurroundingBadges(null);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: isCritical ? Colors.red.shade50 : Colors.orange.shade50,
-        border: Border.all(
-            color: isCritical ? Colors.red.shade200 : Colors.orange.shade200),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isCritical ? Icons.error_outline : Icons.warning_amber_rounded,
-            color: isCritical ? Colors.red.shade600 : Colors.orange.shade700,
-            size: 10,
+    late final Widget alertBadge;
+    if (hasCriticalExpiration) {
+      final stage = criticalExpAlert['stage_code']?.toString() ?? '';
+      final daysRaw =
+          criticalExpAlert['days_until_expiry'] ?? criticalExpAlert['days_remaining'];
+      final int? days = (daysRaw is num)
+          ? daysRaw.toInt()
+          : int.tryParse(daysRaw?.toString() ?? '');
+      final bool isExpired = stage == 'expired' || (days != null && days <= 0);
+      final String labelText = isExpired
+          ? '⏰ Vencido'
+          : (days != null ? '⏰ Vence ${days}d' : '⏰ Por vencer');
+      final String expDate =
+          criticalExpAlert['expiration_date']?.toString() ?? '';
+      final String stockNote = (isCriticalLocally ||
+              (status == 'out_of_stock' && !staleReactiveOverriddenByFreshStock))
+          ? ' · Stock proyectado: ${projectedStock.toUnitStockDisplay(isSoldByWeight: currentProduct.isSoldByWeight, unitSuffix: 'u')}'
+          : '';
+      final String tooltip = (isExpired
+              ? 'Lote vencido${expDate.isNotEmpty ? ' ($expDate)' : ''}'
+              : 'Próximo a vencer${expDate.isNotEmpty ? ' ($expDate)' : ''}') +
+          stockNote;
+
+      alertBadge = Tooltip(
+        message: tooltip,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.deepOrange.shade50,
+            border: Border.all(color: Colors.deepOrange.shade300),
+            borderRadius: BorderRadius.circular(5),
           ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              isCritical
-                  ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)'
-                  : '🟠 Quiebre en <3d',
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
-              ),
+          child: Text(
+            labelText,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.deepOrange.shade900,
+              height: 1.15,
             ),
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    } else {
+      final stockDisp = projectedStock.toUnitStockDisplay(
+        isSoldByWeight: currentProduct.isSoldByWeight,
+        unitSuffix: 'u',
+      );
+      final String labelText =
+          isCritical ? '🔴 Crítico: $stockDisp' : '🟠 <3d';
+      final String tooltip = isCritical
+          ? 'Stock proyectado crítico ($stockDisp)'
+          : 'Quiebre de stock estimado en menos de 3 días';
+
+      alertBadge = Tooltip(
+        message: tooltip,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: isCritical ? Colors.red.shade50 : Colors.orange.shade50,
+            border: Border.all(
+              color: isCritical ? Colors.red.shade200 : Colors.orange.shade200,
+            ),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Text(
+            labelText,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
+              height: 1.15,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return wrapWithSurroundingBadges(alertBadge);
   }
 }
 

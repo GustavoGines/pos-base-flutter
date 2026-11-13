@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/brand.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
@@ -141,7 +142,7 @@ void main() {
   }
 
   group('M4: ProductFormDialog Single Category Reversion & Anti-Overflow', () {
-    testWidgets('Test 1: Plan Básico displays single DropdownButtonFormField without PRO badge or chips', (tester) async {
+    testWidgets('Test 1: Plan Básico displays single SearchableSelectField without PRO badge or chips', (tester) async {
       final catalogProv = FakeCatalogProvider();
       final settingsProv = FakeSettingsProvider(
         settings: const BusinessSettings(
@@ -154,8 +155,8 @@ void main() {
       await tester.tap(find.text('Open Dialog'));
       await tester.pumpAndSettle();
 
-      // Debe haber Dropdown de Categoría
-      expect(find.byType(DropdownButtonFormField<int?>), findsWidgets);
+      // Debe haber selector buscable de Categoría
+      expect(find.byType(SearchableSelectField<int?>), findsWidgets);
       expect(find.text('Categoría'), findsOneWidget);
 
       // NO debe existir badge PRO en el campo de Categoría
@@ -167,7 +168,7 @@ void main() {
       expect(find.byType(InputChip), findsNothing);
     });
 
-    testWidgets('Test 2: Plan Premium ALSO displays classic single Category dropdown without multi-chips', (tester) async {
+    testWidgets('Test 2: Plan Premium ALSO displays classic single Category selector without multi-chips', (tester) async {
       final catalogProv = FakeCatalogProvider();
       final settingsProv = FakeSettingsProvider(
         settings: const BusinessSettings(
@@ -182,7 +183,7 @@ void main() {
 
       // En Plan Premium la selección de categoría del producto vuelve a ser simple (1 producto = 1 categoría)
       expect(find.text('Categoría'), findsOneWidget);
-      expect(find.byType(DropdownButtonFormField<int?>), findsWidgets);
+      expect(find.byType(SearchableSelectField<int?>), findsWidgets);
       expect(find.text('Rubros / Categorías'), findsNothing);
       expect(find.text('Asignar'), findsNothing);
       expect(find.byType(InputChip), findsNothing);

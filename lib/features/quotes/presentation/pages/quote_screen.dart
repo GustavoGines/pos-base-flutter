@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -83,6 +84,43 @@ class _QuoteScreenState extends State<QuoteScreen> {
       if (!mounted) return;
       setState(() { _searchResults = results; _isSearching = false; });
     });
+  }
+
+  Future<void> _onSearchSubmittedOrScanned(String rawQuery) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty || !mounted) return;
+    _debounceTimer?.cancel();
+    _searchCtrl.text = q;
+    _searchCtrl.selection = TextSelection.collapsed(offset: q.length);
+    setState(() {
+      _searchQuery = q;
+      _isSearching = true;
+    });
+
+    try {
+      final results = await context.read<PosProvider>().search(q);
+      if (!mounted) return;
+      final exact = RemoteScannerService.findExactProductMatch(results, q);
+      final Product? match = exact ??
+          (results.length == 1 && results.first.active ? results.first : null);
+      if (match != null) {
+        setState(() => _isSearching = false);
+        _addProduct(match);
+        return;
+      }
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+      if (results.isEmpty) {
+        SnackBarService.info(
+          context,
+          'No se encontraron productos para "$q".',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSearching = false);
+    }
   }
 
   void _addProduct(Product product) {
@@ -203,7 +241,10 @@ class _QuoteScreenState extends State<QuoteScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return RemoteScannerListener(
+      debugLabel: 'QuoteScreen',
+      onBarcodeScanned: _onSearchSubmittedOrScanned,
+      child: Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/quotes', title: 'Nuevo Presupuesto', showBackButton: true),
       body: Row(
         children: [
@@ -218,12 +259,13 @@ class _QuoteScreenState extends State<QuoteScreen> {
             ),
           ),
           const VerticalDivider(width: 1),
-          // -- Panel Derecho: Carrito ---------------------------------------
-          Expanded(
-            flex: 4,
-            child: _buildCart(),
-          ),
-        ],
+            // -- Panel Derecho: Carrito ---------------------------------------
+            Expanded(
+              flex: 4,
+              child: _buildCart(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -265,6 +307,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   controller: _searchCtrl,
                   focusNode: _searchFocus,
                   onChanged: _onSearchChanged,
+                  onSubmitted: _onSearchSubmittedOrScanned,
                   autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Buscar producto por nombre o código...',

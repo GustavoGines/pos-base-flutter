@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/supplier_model.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/utils/search_text_utils.dart';
 
 class SupplierProvider extends ChangeNotifier {
   final String baseUrl;
@@ -45,7 +46,10 @@ class SupplierProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        _suppliers = data.map((e) => Supplier.fromJson(e)).toList();
+        _suppliers = sortByAlphabeticalName(
+          data.map((e) => Supplier.fromJson(e)),
+          (s) => s.name,
+        );
 
         if (search != null && search.isNotEmpty) {
           final query = search.toLowerCase();

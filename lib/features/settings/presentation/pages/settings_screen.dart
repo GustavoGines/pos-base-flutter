@@ -68,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Precios Globales
   final _cardPercentageCtrl = TextEditingController();
   final _wholesalePercentageCtrl = TextEditingController();
+  String _cardSurchargeOnOffersMode = 'surcharge_on_offer';
   bool _advancedPriceTiersEnabled = false; // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   bool _isIibbPerceptionAgent = false;
   final _defaultIibbRateCtrl = TextEditingController();
@@ -219,6 +220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _cardPercentageCtrl.text = settings.globalCardPercentage.toString();
         _wholesalePercentageCtrl.text =
             settings.globalWholesalePercentage.toString();
+        _cardSurchargeOnOffersMode = settings.cardSurchargeOnOffersMode;
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
         _isIibbPerceptionAgent = settings.isIibbPerceptionAgent;
         _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
@@ -1896,6 +1898,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'wholesale_percentage': double.tryParse(
               _wholesalePercentageCtrl.text.trim().replaceAll(',', '.')) ??
           -15.0,
+      'card_surcharge_on_offers_mode': _cardSurchargeOnOffersMode,
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
       'is_iibb_perception_agent':
@@ -5550,6 +5553,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           hint: 'Ej: -15.0',
                           enabled: !isLocked && _advancedPriceTiersEnabled)),
                 ],
+              ),
+              const SizedBox(height: 20),
+              Opacity(
+                opacity: (!isLocked && _advancedPriceTiersEnabled) ? 1.0 : 0.5,
+                child: IgnorePointer(
+                  ignoring: isLocked || !_advancedPriceTiersEnabled,
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F9FC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: const [
+                            'surcharge_on_offer',
+                            'card_overrides_offer',
+                            'offer_no_surcharge',
+                          ].contains(_cardSurchargeOnOffersMode)
+                              ? _cardSurchargeOnOffersMode
+                              : 'surcharge_on_offer',
+                          decoration: InputDecoration(
+                            labelText:
+                                'Regla de Tarjeta / Listas con Recargo (+%) sobre Productos en Oferta',
+                            prefixIcon: const Icon(Icons.local_offer_outlined,
+                                size: 20, color: Color(0xFF3F51B5)),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade300),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'surcharge_on_offer',
+                              child: Text(
+                                'Aplicar recargo sobre precio de oferta (Ej: Oferta +15%)',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'card_overrides_offer',
+                              child: Text(
+                                'Lista Tarjeta (+%) anula la oferta (cobra precio Tarjeta normal)',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'offer_no_surcharge',
+                              child: Text(
+                                'Respetar oferta sin aplicar recargo de tarjeta/lista',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _cardSurchargeOnOffersMode = val);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _cardSurchargeOnOffersMode == 'card_overrides_offer'
+                              ? 'Al seleccionar Tarjeta o una lista con recargo (+%), se ignora la oferta vigente y se cobra el precio normal de esa lista.'
+                              : _cardSurchargeOnOffersMode ==
+                                      'offer_no_surcharge'
+                                  ? 'La oferta vigente mantiene su precio contado incluso si seleccionás Lista Tarjeta o una lista con recargo (+%).'
+                                  : 'Sobre el precio promocional activo se aplica el porcentaje de recargo configurado en la lista seleccionada (recomendado).',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           );

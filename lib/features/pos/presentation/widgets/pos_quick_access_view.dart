@@ -210,9 +210,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
-            isByWeight
-                ? cartQty.toStringAsFixed(2)
-                : cartQty.toInt().toString(),
+            (isByWeight || (cartQty - cartQty.roundToDouble()).abs() > 0.001)
+                ? cartQty.toQty()
+                : cartQty.round().toString(),
             style: const TextStyle(
               fontSize: 9,
               color: Color(0xFF1E88E5),
@@ -962,7 +962,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  isByWeight ? cartQty.toStringAsFixed(2) : cartQty.toInt().toString(),
+                                  (isByWeight || (cartQty - cartQty.roundToDouble()).abs() > 0.001)
+                                      ? cartQty.toQty()
+                                      : cartQty.round().toString(),
                                   style: const TextStyle(
                                     fontSize: 9,
                                     color: Color(0xFF1E88E5),
@@ -1136,7 +1138,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  isByWeight ? cartQty.toStringAsFixed(2) : cartQty.toInt().toString(),
+                                  (isByWeight || (cartQty - cartQty.roundToDouble()).abs() > 0.001)
+                                      ? cartQty.toQty()
+                                      : cartQty.round().toString(),
                                   style: const TextStyle(
                                     fontSize: 9,
                                     color: Color(0xFF1E88E5),
@@ -1175,18 +1179,17 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     double displayPrice = product.sellingPrice;
     try {
       final pos = Provider.of<PosProvider>(context, listen: false);
-      if (pos.activeTier == PriceTier.wholesale) {
-        displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0)
-            ? product.priceWholesale!
-            : product.sellingPrice * pos.wholesaleFactor;
-      } else if (pos.activeTier == PriceTier.card) {
-        displayPrice = (product.priceCard != null && product.priceCard! > 0)
-            ? product.priceCard!
-            : product.sellingPrice * pos.cardFactor;
-      } else if (pos.activeTier == PriceTier.custom) {
-        displayPrice = product.sellingPrice * pos.currentCustomFactor;
-      }
-    } catch (_) {}
+      displayPrice = ProductPricingCalculator.calculate(
+        product: product,
+        activeTier: pos.activeTier,
+        wholesaleFactor: pos.wholesaleFactor,
+        cardFactor: pos.cardFactor,
+        customFactor: pos.currentCustomFactor,
+        cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
+      ).finalUnitPrice;
+    } catch (_) {
+      displayPrice = ProductPricingCalculator.roundMoney(displayPrice);
+    }
 
     return FittedBox(
       fit: BoxFit.scaleDown,

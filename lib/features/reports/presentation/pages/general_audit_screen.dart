@@ -790,7 +790,7 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
         if (overridePin == null && mounted) {
           final newPin = await AdminPinDialog.verifyAndGetPin(
             context,
-            action: 'Ver Kardex',
+            action: 'Ver Movimientos de Stock',
             permissionKey: AppPermissions.viewKardex,
           );
           
@@ -813,7 +813,7 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
       setState(() {
         final errorStr = e.toString();
         if (errorStr.contains('403')) {
-          _errorMessage = 'No tienes permiso para visualizar el Kardex (Movimientos de Stock).';
+          _errorMessage = 'No tienes permiso para visualizar los Movimientos de Stock.';
         } else if (errorStr.contains('Servidor respondió con error')) {
           _errorMessage = 'Error en el servidor backend. Contacte a soporte técnico.';
         } else if (errorStr.contains('NetworkException') ||

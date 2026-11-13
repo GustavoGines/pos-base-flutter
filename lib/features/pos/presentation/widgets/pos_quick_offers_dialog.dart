@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
@@ -7,6 +8,7 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
@@ -44,7 +46,11 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   int _searchSeq = 0; // Token de debounce del buscador de productos en formulario
   int _historySearchSeq = 0; // Token de debounce del buscador en historial
   OfferModel? _editingOffer;
-  TextEditingController? _autoCompleteCtrl;
+  final TextEditingController _productSearchCtrl = TextEditingController();
+  final FocusNode _productSearchFocus = FocusNode();
+  Timer? _productSearchDebounce;
+  List<Product> _productSearchResults = [];
+  bool _isSearchingProduct = false;
 
   @override
   void initState() {
@@ -79,10 +85,13 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
 
   @override
   void dispose() {
+    _productSearchDebounce?.cancel();
     _tabController.dispose();
     _offerNameCtrl.dispose();
     _discountCtrl.dispose();
     _historySearchCtrl.dispose();
+    _productSearchCtrl.dispose();
+    _productSearchFocus.dispose();
     super.dispose();
   }
 
@@ -92,17 +101,221 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
-  /// Busca en el servidor (todo el catálogo) con debounce.
-  Future<Iterable<Product>> _searchCatalogProducts(String text) async {
-    final query = text.trim();
-    if (query.isEmpty) return const Iterable<Product>.empty();
+  List<Product> _searchLocalCatalogProducts(String rawQuery) {
+    final q = rawQuery.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    try {
+      final catalog = Provider.of<CatalogProvider>(context, listen: false);
+      final seen = <int>{};
+      final combined = <Product>[];
+      for (final source in [
+        catalog.products,
+        catalog.pinnedExtraProducts,
+        catalog.weightOnlyProducts,
+      ]) {
+        for (final p in source) {
+          if (seen.add(p.id) && p.active) {
+            combined.add(p);
+          }
+        }
+      }
+      final exact = <Product>[];
+      final partial = <Product>[];
+      for (final p in combined) {
+        final barcode = p.barcode?.trim().toLowerCase() ?? '';
+        final code = p.internalCode.trim().toLowerCase();
+        final name = p.name.trim().toLowerCase();
+        if (barcode == q || code == q) {
+          exact.add(p);
+        } else if (name.contains(q) || barcode.contains(q) || code.contains(q)) {
+          partial.add(p);
+        }
+      }
+      return [...exact, ...partial].take(20).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<Product>> _searchCatalogMerged(String query) async {
+    final mergedById = <int, Product>{};
+    for (final p in _searchLocalCatalogProducts(query)) {
+      mergedById[p.id] = p;
+    }
+
+    try {
+      final pos = Provider.of<PosProvider>(context, listen: false);
+      final posResults = await pos.search(query);
+      for (final p in posResults) {
+        if (p.active) mergedById[p.id] = p;
+      }
+    } catch (_) {}
+
+    if (mergedById.isEmpty) {
+      try {
+        final catalog = Provider.of<CatalogProvider>(context, listen: false);
+        final remote = await catalog.searchProductsRemote(query, perPage: 25);
+        for (final p in remote) {
+          if (p.active) mergedById[p.id] = p;
+        }
+      } catch (_) {}
+    }
+
+    return mergedById.values.toList();
+  }
+
+  void _onProductSearchChanged(String rawText) {
+    _productSearchDebounce?.cancel();
+    final q = rawText.trim();
+    if (q.isEmpty) {
+      _searchSeq++;
+      setState(() {
+        _productSearchResults = [];
+        _isSearchingProduct = false;
+      });
+      return;
+    }
+
+    final local = _searchLocalCatalogProducts(q);
     final seq = ++_searchSeq;
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted || seq != _searchSeq) return const Iterable<Product>.empty();
-    final catalog = Provider.of<CatalogProvider>(context, listen: false);
-    final results = await catalog.searchProductsRemote(query);
-    if (!mounted || seq != _searchSeq) return const Iterable<Product>.empty();
-    return results;
+    setState(() {
+      _productSearchResults = local;
+      _isSearchingProduct = true;
+    });
+
+    _productSearchDebounce = Timer(const Duration(milliseconds: 260), () async {
+      final results = await _searchCatalogMerged(q);
+      if (!mounted || seq != _searchSeq) return;
+      setState(() {
+        _productSearchResults = results;
+        _isSearchingProduct = false;
+      });
+    });
+  }
+
+  void _addProductToOffer(Product match, {bool keepFocus = true}) {
+    final alreadyInOffer = _selectedProducts.any((sp) => sp.id == match.id);
+    _searchSeq++;
+    _productSearchDebounce?.cancel();
+    setState(() {
+      if (!alreadyInOffer) {
+        _selectedProducts.add(match);
+      }
+      _productSearchResults = [];
+      _isSearchingProduct = false;
+    });
+    _productSearchCtrl.clear();
+
+    if (!alreadyInOffer) {
+      SnackBarService.success(
+        context,
+        'Agregado a la oferta: ${match.name}',
+      );
+    } else {
+      SnackBarService.info(
+        context,
+        '"${match.name}" ya está en la oferta.',
+      );
+    }
+
+    if (keepFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _productSearchFocus.requestFocus();
+      });
+    }
+  }
+
+  Future<void> _searchAndAddProductByCode(
+    String rawCode, {
+    bool keepFocus = true,
+  }) async {
+    final code = rawCode.trim();
+    if (code.isEmpty || !mounted) {
+      if (keepFocus) _productSearchFocus.requestFocus();
+      return;
+    }
+    _productSearchDebounce?.cancel();
+    final seq = ++_searchSeq;
+
+    final local = _searchLocalCatalogProducts(code);
+    final exactLocal = RemoteScannerService.findExactProductMatch(
+      local,
+      code,
+      activeOnly: true,
+    );
+    if (exactLocal != null) {
+      _addProductToOffer(exactLocal, keepFocus: keepFocus);
+      return;
+    }
+
+    setState(() {
+      _isSearchingProduct = true;
+    });
+
+    try {
+      final results = await _searchCatalogMerged(code);
+      if (!mounted || seq != _searchSeq) return;
+
+      final exact = RemoteScannerService.findExactProductMatch(
+        results,
+        code,
+        activeOnly: true,
+      );
+      final Product? match =
+          exact ?? (results.length == 1 ? results.first : null);
+
+      if (match != null) {
+        _addProductToOffer(match, keepFocus: keepFocus);
+      } else if (results.isEmpty) {
+        setState(() {
+          _productSearchResults = [];
+          _isSearchingProduct = false;
+        });
+        _productSearchCtrl.text = code;
+        _productSearchCtrl.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: code.length,
+        );
+        SnackBarService.info(
+          context,
+          'No se encontraron productos activos para "$code".',
+        );
+        if (keepFocus) _productSearchFocus.requestFocus();
+      } else {
+        setState(() {
+          _productSearchResults = results;
+          _isSearchingProduct = false;
+        });
+        _productSearchCtrl.text = code;
+        _productSearchCtrl.selection = TextSelection.collapsed(offset: code.length);
+        if (keepFocus) _productSearchFocus.requestFocus();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isSearchingProduct = false);
+      }
+    }
+  }
+
+  void _handleRemoteBarcodeScan(String barcode) {
+    final clean = barcode.trim();
+    if (clean.isEmpty || !mounted) return;
+    if (_tabController.index == 1) {
+      _historySearchCtrl.text = clean;
+      _historySearchCtrl.selection =
+          TextSelection.collapsed(offset: clean.length);
+      _onHistorySearchChanged(clean);
+      SnackBarService.info(context, 'Filtrando historial por: $clean');
+      return;
+    }
+    if (_tabController.index != 2) {
+      SnackBarService.warning(
+        context,
+        'Cambiá a "Armar Nueva Oferta" para agregar productos con el lector.',
+      );
+      return;
+    }
+    _searchAndAddProductByCode(clean, keepFocus: false);
   }
 
   void _onHistorySearchChanged(String text) {
@@ -836,7 +1049,10 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return RemoteScannerListener(
+      debugLabel: 'PosQuickOffersDialog',
+      onBarcodeScanned: _handleRemoteBarcodeScan,
+      child: Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Container(
         width: 780,
@@ -881,27 +1097,41 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
 
             // TabBar con 3 pestañas
             Container(
-              height: 40,
+              height: 42,
+              padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: TabBar(
                 controller: _tabController,
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
                 indicator: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4),
                   ],
                 ),
                 labelColor: const Color(0xFF7B1FA2),
                 unselectedLabelColor: Colors.grey.shade600,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                labelPadding: const EdgeInsets.symmetric(horizontal: 8),
                 tabs: [
-                  const Tab(text: '🏷️ Ofertas Activas Hoy'),
-                  const Tab(text: '📜 Historial y Catálogo'),
-                  Tab(text: _editingOffer != null ? '✏️ Editar Oferta' : '✨ Armar Nueva Oferta'),
+                  const Tab(
+                    child: Text('Ofertas Activas Hoy', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  const Tab(
+                    child: Text('Historial y Catálogo', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  Tab(
+                    child: Text(
+                      _editingOffer != null ? 'Editar Oferta' : 'Armar Nueva Oferta',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -920,6 +1150,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1489,10 +1720,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         ? '\$${currentVal.toCurrency()} OFF'
         : '${currentVal.toStringAsFixed(1)}% OFF';
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(right: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
           if (_editingOffer != null)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -1534,12 +1769,12 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           // Selector de Período / Vigencia
           const Text('Vigencia de la Oferta:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 6),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
             children: [
               _buildPeriodChip('daily', '☀️ Diaria (Hoy)'),
-              const SizedBox(width: 8),
               _buildPeriodChip('weekly', '📅 Semanal (7 días)'),
-              const SizedBox(width: 8),
               _buildPeriodChip('monthly', '📆 Mensual (30 días)'),
             ],
           ),
@@ -1704,100 +1939,180 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           const SizedBox(height: 12),
 
           // Cabecera de Productos + Botones de Carga Masiva por Categoría / Marca / Proveedor
-          Row(
-            children: [
-              Text(
-                'Productos en la Oferta (${_selectedProducts.length}):',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              if (_isLoadingGroup) ...[
-                const SizedBox(width: 8),
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ],
-              const Spacer(),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  _buildBulkGroupButton(
-                    icon: Icons.category_outlined,
-                    label: '+ Categoría',
-                    onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'category'),
-                  ),
-                  _buildBulkGroupButton(
-                    icon: Icons.sell_outlined,
-                    label: '+ Marca',
-                    onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'brand'),
-                  ),
-                  if (hasSuppliersFeature)
-                    _buildBulkGroupButton(
-                      icon: Icons.local_shipping_outlined,
-                      label: '+ Proveedor',
-                      onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'supplier'),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Productos en la Oferta (${_selectedProducts.length}):',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
-                  if (_selectedProducts.isNotEmpty)
-                     InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () => setState(() => _selectedProducts.clear()),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.red.shade200),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.delete_sweep_outlined, size: 14, color: Colors.red.shade700),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Vaciar',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade700),
-                            ),
-                          ],
+                    if (_isLoadingGroup) ...[
+                      const SizedBox(width: 8),
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
+                ),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _buildBulkGroupButton(
+                      icon: Icons.category_outlined,
+                      label: '+ Categoría',
+                      onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'category'),
+                    ),
+                    _buildBulkGroupButton(
+                      icon: Icons.sell_outlined,
+                      label: '+ Marca',
+                      onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'brand'),
+                    ),
+                    if (hasSuppliersFeature)
+                      _buildBulkGroupButton(
+                        icon: Icons.local_shipping_outlined,
+                        label: '+ Proveedor',
+                        onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'supplier'),
+                      ),
+                    if (_selectedProducts.isNotEmpty)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => setState(() => _selectedProducts.clear()),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.delete_sweep_outlined, size: 14, color: Colors.red.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Vaciar',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
-          Autocomplete<Product>(
-            displayStringForOption: (Product p) => '${p.name} (\$${p.sellingPrice.toCurrency()})',
-            optionsBuilder: (TextEditingValue textValue) => _searchCatalogProducts(textValue.text),
-            onSelected: (Product p) {
-              setState(() {
-                if (!_selectedProducts.any((sp) => sp.id == p.id)) {
-                  _selectedProducts.add(p);
-                }
-              });
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _autoCompleteCtrl?.clear();
-              });
-            },
-            fieldViewBuilder: (ctx, ctrl, focusNode, onFieldSubmitted) {
-              _autoCompleteCtrl = ctrl;
-              return TextField(
-                controller: ctrl,
-                focusNode: focusNode,
-                onSubmitted: (value) {
-                  ctrl.clear();
-                },
-                decoration: InputDecoration(
-                  hintText: 'Buscar y agregar productos individuales del catálogo...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                ),
-              );
-            },
+          TextField(
+            controller: _productSearchCtrl,
+            focusNode: _productSearchFocus,
+            onChanged: _onProductSearchChanged,
+            onEditingComplete: () {},
+            onSubmitted: (value) =>
+                _searchAndAddProductByCode(value, keepFocus: true),
+            decoration: InputDecoration(
+              hintText:
+                  'Buscar por nombre o pistolear código (USB / Celular)...',
+              prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+              suffixIcon: _isSearchingProduct
+                  ? const Padding(
+                      padding: EdgeInsets.all(11),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : (_productSearchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          tooltip: 'Limpiar búsqueda',
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: () {
+                            _productSearchCtrl.clear();
+                            _onProductSearchChanged('');
+                            _productSearchFocus.requestFocus();
+                          },
+                        )
+                      : null),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
           ),
+          if (_productSearchResults.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 6),
+              constraints: const BoxConstraints(maxHeight: 160),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.purple.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(7),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _productSearchResults.length,
+                    separatorBuilder: (_, __) =>
+                        Divider(height: 1, color: Colors.grey.shade200),
+                    itemBuilder: (_, idx) {
+                      final p = _productSearchResults[idx];
+                      final codeLabel = (p.barcode != null && p.barcode!.trim().isNotEmpty)
+                          ? 'EAN: ${p.barcode}'
+                          : (p.internalCode.trim().isNotEmpty
+                              ? 'Cód: ${p.internalCode}'
+                              : null);
+                      return ListTile(
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(
+                          p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '\$${p.sellingPrice.toCurrency()}${codeLabel != null ? ' · $codeLabel' : ''}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        trailing: Icon(
+                          Icons.add_circle_outline_rounded,
+                          size: 18,
+                          color: Colors.purple.shade700,
+                        ),
+                        onTap: () => _addProductToOffer(p, keepFocus: true),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
 
           // Chips de productos seleccionados (con scroll acotado para cargas masivas)
@@ -1978,30 +2293,34 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             ),
           ],
 
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7B1FA2),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: _isSaving ? null : _handleSaveOffer,
-              icon: _isSaving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Icon(_editingOffer != null ? Icons.save_rounded : Icons.bolt_rounded, size: 22),
-              label: Text(
-                _isSaving
-                    ? 'Guardando...'
-                    : (_editingOffer != null ? 'Guardar Cambios de la Oferta' : 'Activar Oferta Inmediatamente'),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-            ),
-          ),
+          const SizedBox(height: 8),
         ],
       ),
+    ),
+  ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7B1FA2),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _isSaving ? null : _handleSaveOffer,
+            icon: _isSaving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : Icon(_editingOffer != null ? Icons.save_rounded : Icons.bolt_rounded, size: 22),
+            label: Text(
+              _isSaving
+                  ? 'Guardando...'
+                  : (_editingOffer != null ? 'Guardar Cambios de la Oferta' : 'Activar Oferta Inmediatamente'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2114,6 +2433,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   }
 
   void _showOfferProductsModal(OfferModel offer) {
+    final searchCtrl = TextEditingController();
     showDialog<void>(
       context: context,
       builder: (dialogCtx) {
@@ -2130,7 +2450,16 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     return pName.contains(q) || pCode.contains(q) || pBar.contains(q);
                   }).toList();
 
-            return AlertDialog(
+            return RemoteScannerListener(
+              debugLabel: 'OfferProductsModal',
+              onBarcodeScanned: (barcode) {
+                final clean = barcode.trim();
+                if (clean.isEmpty) return;
+                searchCtrl.text = clean;
+                searchCtrl.selection = TextSelection.collapsed(offset: clean.length);
+                setDialogState(() => search = clean);
+              },
+              child: AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
               contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
@@ -2186,11 +2515,22 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 child: Column(
                   children: [
                     TextField(
+                      controller: searchCtrl,
                       autofocus: true,
                       onChanged: (v) => setDialogState(() => search = v),
+                      onEditingComplete: () {},
                       decoration: InputDecoration(
                         hintText: 'Buscar producto por nombre o código dentro de la oferta...',
-                        prefixIcon: const Icon(Icons.search, size: 18),
+                        prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                        suffixIcon: searchCtrl.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18),
+                                onPressed: () {
+                                  searchCtrl.clear();
+                                  setDialogState(() => search = '');
+                                },
+                              )
+                            : null,
                         isDense: true,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2289,11 +2629,12 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   ],
                 ),
               ),
+            ),
             );
           },
         );
       },
-    );
+    ).then((_) => searchCtrl.dispose());
   }
 
   Widget _buildPeriodChip(String value, String label) {

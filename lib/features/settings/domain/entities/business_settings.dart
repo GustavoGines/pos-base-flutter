@@ -85,6 +85,9 @@ class BusinessSettings extends Equatable {
   final double globalWholesalePercentage; // Ej: -15.0
   final double globalCardPercentage;      // Ej: 15.0
   final List<Map<String, dynamic>> customPriceTiers; // [{"name": "Jubilados", "modifier": -5}]
+  /// Estrategia ante lista con recargo (Tarjeta / Custom +%) sobre productos con oferta activa:
+  /// 'surcharge_on_offer' | 'card_overrides_offer' | 'offer_no_surcharge'
+  final String cardSurchargeOnOffersMode;
   // [feature-flag] Tipo de negocio recibido desde la Licencia remota — solo para uso estético/visual de la UI
   final String businessType;  // 'retail' | 'hardware_store'
   // [feature-flags] Objeto estructurado de características habilitadas
@@ -176,6 +179,7 @@ class BusinessSettings extends Equatable {
     double? globalWholesalePercentage,
     double? globalCardPercentage,
     List<Map<String, dynamic>>? customPriceTiers,
+    String? cardSurchargeOnOffersMode,
     String? businessType,
     FeatureFlags? features,
     bool? enableAdvancedPriceTiers,
@@ -211,6 +215,7 @@ class BusinessSettings extends Equatable {
       globalWholesalePercentage: globalWholesalePercentage ?? this.globalWholesalePercentage,
       globalCardPercentage: globalCardPercentage ?? this.globalCardPercentage,
       customPriceTiers: customPriceTiers ?? this.customPriceTiers,
+      cardSurchargeOnOffersMode: cardSurchargeOnOffersMode ?? this.cardSurchargeOnOffersMode,
       businessType: businessType ?? this.businessType,
       features: features ?? this.features,
       enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
@@ -248,6 +253,7 @@ class BusinessSettings extends Equatable {
     this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
     this.globalCardPercentage = 15.0,
     this.customPriceTiers = const [],
+    this.cardSurchargeOnOffersMode = 'surcharge_on_offer',
     this.businessType = 'retail',
     this.features = const FeatureFlags(),
     this.enableAdvancedPriceTiers = false,
@@ -285,6 +291,7 @@ class BusinessSettings extends Equatable {
         globalWholesalePercentage,
         globalCardPercentage,
         customPriceTiers,
+        cardSurchargeOnOffersMode,
         businessType,
         features,
         enableAdvancedPriceTiers,

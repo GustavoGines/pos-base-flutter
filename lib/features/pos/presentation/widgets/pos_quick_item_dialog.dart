@@ -1,14 +1,31 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+
+/// Resultado devuelto por [PosQuickItemDialog]: incluye el ítem armado
+/// y, cuando se armó un Combo tomando ítems existentes del carrito, la lista
+/// de líneas originales a reemplazar en el carrito para no duplicar cobros ni stock.
+class PosQuickItemResult {
+  final CartItem item;
+  final List<CartItem> replacedCartItems;
+
+  const PosQuickItemResult({
+    required this.item,
+    this.replacedCartItems = const [],
+  });
+}
 
 class PosQuickItemDialog extends StatefulWidget {
   final PriceTier activeTier;
@@ -16,6 +33,7 @@ class PosQuickItemDialog extends StatefulWidget {
   final double cardFactor;
   final double customFactor;
   final String? customTierLabel;
+  final String? initialQuery;
 
   const PosQuickItemDialog({
     super.key,
@@ -24,17 +42,19 @@ class PosQuickItemDialog extends StatefulWidget {
     this.cardFactor = 1.0,
     this.customFactor = 1.0,
     this.customTierLabel,
+    this.initialQuery,
   });
 
-  static Future<CartItem?> show(
+  static Future<PosQuickItemResult?> show(
     BuildContext context, {
     PriceTier activeTier = PriceTier.base,
     double wholesaleFactor = 1.0,
     double cardFactor = 1.0,
     double customFactor = 1.0,
     String? customTierLabel,
+    String? initialQuery,
   }) {
-    return showDialog<CartItem>(
+    return showDialog<PosQuickItemResult>(
       context: context,
       barrierDismissible: true,
       builder: (_) => PosQuickItemDialog(
@@ -43,6 +63,7 @@ class PosQuickItemDialog extends StatefulWidget {
         cardFactor: cardFactor,
         customFactor: customFactor,
         customTierLabel: customTierLabel,
+        initialQuery: initialQuery,
       ),
     );
   }
@@ -66,7 +87,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
 
   bool _isComboMode = false;
   bool _isServiceMode = false;
-  bool _saveToCatalog = false;
+  bool _saveToCatalog = true;
+  bool _userToggledSaveToCatalog = false;
   bool _isSoldByWeight = false;
   bool _isReadingScale = false;
   double _ivaRate = 21.0;
@@ -74,6 +96,30 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   String? _priceAnchor; // 'cost' | 'selling'
   bool _costIsAuto = false;
   bool _priceIsAuto = false;
+
+  // Constructor rápido de Combo / Promoción en mostrador
+  static const List<(String, double)> _comboPortionPresets = [
+    ('1/6', 0.167),
+    ('1/8', 0.125),
+    ('1/10', 0.1),
+    ('1/12', 0.083),
+    ('1', 1.0),
+  ];
+  final List<Map<String, dynamic>> _comboIngredients = [];
+  final Map<int, TextEditingController> _comboQtyCtrls = {};
+  final Map<int, TextEditingController> _comboCustomPartsCtrls = {};
+  final Set<int> _expandedFractionIngredientIds = <int>{};
+  final _comboSearchCtrl = TextEditingController();
+  final _comboSearchFocus = FocusNode();
+  List<Product> _comboSearchResults = [];
+  bool _isSearchingCombo = false;
+  Timer? _comboSearchDebounce;
+  final List<CartItem> _pulledCartItems = [];
+  bool _replacePulledCartItems = true;
+  String? _scannedReferenceCode;
+
+  static bool _looksLikeBarcode(String raw) =>
+      RegExp(r'^(?=.*\d)[A-Za-z0-9\-_]{5,32}$').hasMatch(raw.trim());
 
   Future<void> _readWeightFromScale(String comPort) async {
     final trimmedPort = comPort.trim();
@@ -116,9 +162,26 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handleDialogKey);
+
+    final rawInitial = widget.initialQuery?.trim() ?? '';
+    final prefilledAsName =
+        rawInitial.isNotEmpty && !_looksLikeBarcode(rawInitial);
+    if (rawInitial.isNotEmpty) {
+      if (prefilledAsName) {
+        _nameController.text = rawInitial;
+      } else {
+        _scannedReferenceCode = rawInitial;
+        _detailsController.text = 'Cód. consultado: $rawInitial';
+      }
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _nameFocus.requestFocus();
+        if (prefilledAsName) {
+          _priceFocus.requestFocus();
+        } else {
+          _nameFocus.requestFocus();
+        }
       }
     });
   }
@@ -126,6 +189,17 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleDialogKey);
+    _comboSearchDebounce?.cancel();
+    _comboSearchCtrl.dispose();
+    _comboSearchFocus.dispose();
+    for (final ctrl in _comboQtyCtrls.values) {
+      ctrl.dispose();
+    }
+    _comboQtyCtrls.clear();
+    for (final ctrl in _comboCustomPartsCtrls.values) {
+      ctrl.dispose();
+    }
+    _comboCustomPartsCtrls.clear();
     _nameController.dispose();
     _detailsController.dispose();
     _quantityController.dispose();
@@ -138,6 +212,398 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     super.dispose();
   }
 
+  String _formatComboQty(double qty) => formatQuantityInput(qty);
+
+  double get _comboIndividualTotal => _comboIngredients.fold<double>(
+        0.0,
+        (acc, ing) =>
+            acc +
+            ((ing['selling_price'] as num?)?.toDouble() ?? 0.0) *
+                ((ing['quantity'] as num?)?.toDouble() ?? 1.0),
+      );
+
+  double get _comboCostTotal => _comboIngredients.fold<double>(
+        0.0,
+        (acc, ing) =>
+            acc +
+            ((ing['cost_price'] as num?)?.toDouble() ?? 0.0) *
+                ((ing['quantity'] as num?)?.toDouble() ?? 1.0),
+      );
+
+  TextEditingController _qtyCtrlForIngredient(int productId, double qty) {
+    return _comboQtyCtrls.putIfAbsent(
+      productId,
+      () => TextEditingController(text: _formatComboQty(qty)),
+    );
+  }
+
+  double _roundComboPromoPrice(double value) =>
+      (value * 100).roundToDouble() / 100.0;
+
+  String _buildComboIngredientsSummary() {
+    return _comboIngredients
+        .map((ing) =>
+            '${_formatComboQty((ing['quantity'] as num?)?.toDouble() ?? 1.0)}x ${ing['name']}')
+        .join(' + ');
+  }
+
+  Widget _buildReadonlyComboMetricBox({
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.deepPurple.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? const Color(0xFF0F172A),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComboPriceSuggestionButton({
+    required Key key,
+    required double targetPrice,
+    required String label,
+    required String appliedLabel,
+    required double currentUnitPrice,
+  }) {
+    final isApplied =
+        currentUnitPrice > 0 && (currentUnitPrice - targetPrice).abs() < 0.01;
+    return OutlinedButton.icon(
+      key: key,
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        foregroundColor:
+            isApplied ? Colors.green.shade800 : Colors.deepPurple.shade800,
+        backgroundColor:
+            isApplied ? Colors.green.shade50 : Colors.deepPurple.shade50,
+        side: BorderSide(
+          color:
+              isApplied ? Colors.green.shade300 : Colors.deepPurple.shade300,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      onPressed: () {
+        setState(() {
+          _priceIsAuto = false;
+          _priceController.text = targetPrice.toArsInput();
+        });
+      },
+      icon: Icon(
+        isApplied ? Icons.check_circle_outline : Icons.auto_fix_high_rounded,
+        size: 13.5,
+      ),
+      label: Text(
+        isApplied ? appliedLabel : label,
+        style: const TextStyle(fontSize: 11.2, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  void _addIngredientToCombo(Product product, {double qty = 1.0}) {
+    if (product.id <= 0) return;
+    final existingIdx =
+        _comboIngredients.indexWhere((e) => e['id'] == product.id);
+    setState(() {
+      if (existingIdx >= 0) {
+        final newQty =
+            ((_comboIngredients[existingIdx]['quantity'] as num?)?.toDouble() ??
+                    1.0) +
+                qty;
+        _comboIngredients[existingIdx]['quantity'] = newQty;
+        _comboQtyCtrls[product.id]?.text = _formatComboQty(newQty);
+      } else {
+        _comboIngredients.add({
+          'id': product.id,
+          'name': product.name,
+          'quantity': qty,
+          'cost_price': product.costPrice,
+          'selling_price': product.sellingPrice,
+          'stock': product.stock,
+          'is_sold_by_weight': product.isSoldByWeight,
+        });
+        _qtyCtrlForIngredient(product.id, qty);
+      }
+      _comboSearchCtrl.clear();
+      _comboSearchResults = [];
+    });
+  }
+
+  void _updateComboIngredientQty(int productId, double newQty) {
+    final idx = _comboIngredients.indexWhere((e) => e['id'] == productId);
+    if (idx < 0) return;
+    setState(() {
+      _comboIngredients[idx]['quantity'] = newQty;
+    });
+  }
+
+  void _applyComboIngredientPreset(int productId, double presetQty) {
+    final idx = _comboIngredients.indexWhere((e) => e['id'] == productId);
+    if (idx < 0) return;
+    setState(() {
+      _comboIngredients[idx]['quantity'] = presetQty;
+      final ctrl = _qtyCtrlForIngredient(productId, presetQty);
+      final text = _formatComboQty(presetQty);
+      ctrl.text = text;
+      ctrl.selection = TextSelection.collapsed(offset: text.length);
+    });
+  }
+
+  TextEditingController _customPartsCtrlForIngredient(int productId) {
+    return _comboCustomPartsCtrls.putIfAbsent(
+      productId,
+      () => TextEditingController(),
+    );
+  }
+
+  void _applyCustomComboIngredientParts(int productId) {
+    final raw = _comboCustomPartsCtrls[productId]?.text.trim() ?? '';
+    final parts = int.tryParse(raw);
+    if (parts == null || parts < 2 || parts > 100) {
+      SnackBarService.warning(
+        context,
+        'Ingresá una cantidad de partes entre 2 y 100 (ej: 16).',
+      );
+      return;
+    }
+    _applyComboIngredientPreset(productId, 1.0 / parts);
+  }
+
+  void _removeComboIngredient(int productId) {
+    setState(() {
+      _comboIngredients.removeWhere((e) => e['id'] == productId);
+      _comboQtyCtrls.remove(productId)?.dispose();
+      _comboCustomPartsCtrls.remove(productId)?.dispose();
+      _expandedFractionIngredientIds.remove(productId);
+      _pulledCartItems.removeWhere((c) => c.product.id == productId);
+    });
+  }
+
+  List<CartItem> _getEligibleCartItems() {
+    try {
+      final cart = context.read<PosProvider>().cart;
+      return cart
+          .where((c) =>
+              !c.isTemporary &&
+              !c.product.isService &&
+              !c.product.isCombo &&
+              c.product.id > 0)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _pullItemsFromCart() {
+    final eligible = _getEligibleCartItems();
+    if (eligible.isEmpty) {
+      SnackBarService.info(
+        context,
+        'No hay productos de catálogo elegibles en el carrito.',
+      );
+      return;
+    }
+
+    final merged = <int, Map<String, dynamic>>{};
+    for (final cartItem in eligible) {
+      final p = cartItem.product;
+      final lineQty = cartItem.quantity;
+      if (merged.containsKey(p.id)) {
+        merged[p.id]!['quantity'] =
+            ((merged[p.id]!['quantity'] as num).toDouble()) + lineQty;
+      } else {
+        merged[p.id] = {
+          'id': p.id,
+          'name': p.name,
+          'quantity': lineQty,
+          'cost_price': p.costPrice,
+          'selling_price': p.sellingPrice,
+          'stock': p.stock,
+          'is_sold_by_weight': p.isSoldByWeight,
+        };
+      }
+    }
+
+    setState(() {
+      for (final ctrl in _comboQtyCtrls.values) {
+        ctrl.dispose();
+      }
+      _comboQtyCtrls.clear();
+      for (final ctrl in _comboCustomPartsCtrls.values) {
+        ctrl.dispose();
+      }
+      _comboCustomPartsCtrls.clear();
+      _comboIngredients
+        ..clear()
+        ..addAll(merged.values);
+      for (final ing in _comboIngredients) {
+        _qtyCtrlForIngredient(
+          ing['id'] as int,
+          (ing['quantity'] as num).toDouble(),
+        );
+      }
+      _pulledCartItems
+        ..clear()
+        ..addAll(eligible);
+      _replacePulledCartItems = true;
+      _quantityController.text = '1';
+      if (_nameController.text.trim().isEmpty) {
+        _nameController.text =
+            'Combo Mostrador (${_comboIngredients.length} art.)';
+      }
+    });
+    _priceFocus.requestFocus();
+  }
+
+  void _onComboSearchChanged(String rawQuery) {
+    _comboSearchDebounce?.cancel();
+    final q = rawQuery.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _comboSearchResults = [];
+        _isSearchingCombo = false;
+      });
+      return;
+    }
+
+    // Coincidencia local instantánea (0 ms)
+    List<Product> localMatches = [];
+    try {
+      final catalog = context.read<CatalogProvider>();
+      final qLower = q.toLowerCase();
+      localMatches = catalog.products
+          .where((p) =>
+              p.active &&
+              !p.isCombo &&
+              !p.isService &&
+              (p.name.toLowerCase().contains(qLower) ||
+                  (p.barcode?.toLowerCase().contains(qLower) ?? false) ||
+                  p.internalCode.toLowerCase().contains(qLower)))
+          .take(15)
+          .toList();
+    } catch (_) {}
+
+    setState(() {
+      _comboSearchResults = localMatches;
+      _isSearchingCombo = true;
+    });
+
+    _comboSearchDebounce = Timer(const Duration(milliseconds: 260), () async {
+      if (!mounted) return;
+      try {
+        final remote = await context.read<CatalogProvider>().searchProductsForCombo(q);
+        if (!mounted || _comboSearchCtrl.text.trim() != q) return;
+        final filtered = remote
+            .where((p) => p.active && !p.isCombo && !p.isService)
+            .take(25)
+            .toList();
+        setState(() {
+          _comboSearchResults = filtered;
+          _isSearchingCombo = false;
+        });
+      } catch (_) {
+        if (mounted) {
+          setState(() => _isSearchingCombo = false);
+        }
+      }
+    });
+  }
+
+  Future<void> _onComboSearchSubmitted(String rawQuery) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty) return;
+
+    // Si hay coincidencia exacta de código de barras/interno o único resultado, agregar directo
+    Product? exactMatch =
+        RemoteScannerService.findExactProductMatch(_comboSearchResults, q);
+    if (exactMatch != null) {
+      _addIngredientToCombo(exactMatch);
+      _comboSearchFocus.requestFocus();
+      return;
+    }
+
+    if (_comboSearchResults.length == 1) {
+      _addIngredientToCombo(_comboSearchResults.first);
+      _comboSearchFocus.requestFocus();
+      return;
+    }
+
+    try {
+      final remote = await context.read<CatalogProvider>().searchProductsForCombo(q);
+      if (!mounted) return;
+      final eligible =
+          remote.where((p) => p.active && !p.isCombo && !p.isService).toList();
+      if (eligible.isEmpty) {
+        SnackBarService.info(context, 'No se encontraron productos para "$q".');
+        return;
+      }
+      final exactRemote =
+          RemoteScannerService.findExactProductMatch(eligible, q);
+      if (exactRemote != null) {
+        _addIngredientToCombo(exactRemote);
+        _comboSearchFocus.requestFocus();
+        return;
+      }
+      if (eligible.length == 1) {
+        _addIngredientToCombo(eligible.first);
+        _comboSearchFocus.requestFocus();
+      } else {
+        setState(() {
+          _comboSearchResults = eligible.take(25).toList();
+          _isSearchingCombo = false;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _handleRemoteBarcodeScan(String barcode) {
+    final clean = barcode.trim();
+    if (clean.isEmpty || !mounted) return;
+    if (_isComboMode) {
+      _comboSearchDebounce?.cancel();
+      _comboSearchCtrl.text = clean;
+      _comboSearchCtrl.selection = TextSelection.collapsed(offset: clean.length);
+      _onComboSearchSubmitted(clean);
+    } else {
+      SnackBarService.warning(
+        context,
+        'Cambiá a la pestaña "Combo / Promoción" para escanear ingredientes.',
+      );
+    }
+  }
+
   double _parseArs(String text) => ArsThousandsInputFormatter.parse(text);
 
   double _parseDouble(String text) {
@@ -147,6 +613,11 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
 
   void _onSellingPriceChanged(String val) {
     if (_isUpdatingCalc) return;
+    if (_isComboMode && _comboIngredients.isNotEmpty) {
+      _priceIsAuto = false;
+      setState(() {});
+      return;
+    }
     _isUpdatingCalc = true;
     _priceIsAuto = false;
     final price = _parseArs(val);
@@ -182,7 +653,9 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   }
 
   void _onMarginChanged(String val) {
-    if (_isUpdatingCalc) return;
+    if (_isUpdatingCalc || (_isComboMode && _comboIngredients.isNotEmpty)) {
+      return;
+    }
     _isUpdatingCalc = true;
     final marginStr = val.trim();
     final priceStr = _priceController.text.trim();
@@ -223,7 +696,9 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   }
 
   void _onCostChanged(String val) {
-    if (_isUpdatingCalc) return;
+    if (_isUpdatingCalc || (_isComboMode && _comboIngredients.isNotEmpty)) {
+      return;
+    }
     _isUpdatingCalc = true;
     _costIsAuto = false;
     final costStr = val.trim();
@@ -280,6 +755,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       if (HardwareKeyboard.instance.isShiftPressed) return false;
+      if (_comboSearchFocus.hasFocus) return false;
 
       if (_nameFocus.hasFocus &&
           _nameController.text.trim().isNotEmpty &&
@@ -296,13 +772,41 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   void _submit() {
     if (_isSubmitted) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    if (_isComboMode && _comboIngredients.isNotEmpty) {
+      for (final ing in _comboIngredients) {
+        final q = (ing['quantity'] as num?)?.toDouble() ?? 0.0;
+        if (q <= 0) {
+          SnackBarService.warning(
+            context,
+            'La cantidad del ingrediente "${ing['name']}" debe ser mayor a 0.',
+          );
+          return;
+        }
+      }
+    }
+
     _isSubmitted = true;
 
     final name = _nameController.text.trim();
     final details = _detailsController.text.trim();
     final qty = _parseDouble(_quantityController.text);
     final sellingPrice = _parseArs(_priceController.text);
-    final costPrice = _parseArs(_costController.text);
+    final rawCostPrice = _parseArs(_costController.text);
+    final effectiveCostPrice = (_isComboMode && _comboIngredients.isNotEmpty)
+        ? _comboCostTotal
+        : (rawCostPrice > 0 ? rawCostPrice : 0.0);
+
+    final serializedIngredients = (_isComboMode && _comboIngredients.isNotEmpty)
+        ? _comboIngredients.map((e) {
+            final copy = Map<String, dynamic>.from(e);
+            if (_saveToCatalog) {
+              final rawQty = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+              copy['quantity'] = roundQtyForStorage(rawQty);
+            }
+            return copy;
+          }).toList()
+        : null;
 
     final product = Product(
       id: 0, // ID 0 identifica producto temporal o alta on-the-fly pendiente de persistir
@@ -310,7 +814,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
       internalCode: _isComboMode
           ? 'COMBO-POS'
           : (_isServiceMode ? 'SERV-POS' : 'TEMP-POS'),
-      costPrice: costPrice >= 0 ? costPrice : 0.0,
+      costPrice: effectiveCostPrice >= 0 ? effectiveCostPrice : 0.0,
       sellingPrice: sellingPrice,
       stock: 0.0,
       active: true,
@@ -320,6 +824,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
       unitType: (!_isServiceMode && _isSoldByWeight) ? 'kg' : 'un',
       ivaRate: _ivaRate,
       needsCatalogReview: _saveToCatalog,
+      comboIngredients: serializedIngredients,
     );
 
     final cartItem = CartItem(
@@ -335,7 +840,945 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
       customDetails: details.isNotEmpty ? details : null,
     );
 
-    Navigator.of(context).pop(cartItem);
+    final shouldReplacePulled =
+        _isComboMode && _replacePulledCartItems && _pulledCartItems.isNotEmpty;
+
+    Navigator.of(context).pop(
+      PosQuickItemResult(
+        item: cartItem,
+        replacedCartItems: shouldReplacePulled
+            ? List<CartItem>.from(_pulledCartItems)
+            : const [],
+      ),
+    );
+  }
+
+  Widget _buildComboBuilderSection(double currentUnitPrice) {
+    final eligibleCart = _getEligibleCartItems();
+    final individualTotal = _comboIndividualTotal;
+    final savings = individualTotal - currentUnitPrice;
+    final savingsPct =
+        individualTotal > 0 ? (savings / individualTotal) * 100.0 : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade50.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.deepPurple.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.layers_rounded,
+                      size: 16, color: Colors.deepPurple.shade700),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Ingredientes para descuento de stock (${_comboIngredients.length})',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.deepPurple.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (eligibleCart.isNotEmpty)
+                FilledButton.tonalIcon(
+                  onPressed: _pullItemsFromCart,
+                  icon: const Icon(Icons.shopping_cart_checkout_rounded, size: 15),
+                  label: Text(
+                    'Tomar ítems actuales del Carrito (${eligibleCart.length})',
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.deepPurple.shade100,
+                    foregroundColor: Colors.deepPurple.shade900,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                  ),
+                ),
+            ],
+          ),
+          if (_pulledCartItems.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(
+                () => _replacePulledCartItems = !_replacePulledCartItems,
+              ),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _replacePulledCartItems,
+                    onChanged: (v) => setState(
+                      () => _replacePulledCartItems = v ?? true,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    activeColor: Colors.deepPurple.shade700,
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Reemplazar las ${_pulledCartItems.length} líneas tomadas del carrito por este Combo (evita doble cobro y doble descuento)',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.deepPurple.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextField(
+            controller: _comboSearchCtrl,
+            focusNode: _comboSearchFocus,
+            onChanged: _onComboSearchChanged,
+            onEditingComplete: () {},
+            onSubmitted: _onComboSearchSubmitted,
+            decoration: InputDecoration(
+              hintText: 'Buscar o pistolear producto para incluir en el combo...',
+              prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+              suffixIcon: _isSearchingCombo
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : (_comboSearchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: () {
+                            _comboSearchCtrl.clear();
+                            setState(() => _comboSearchResults = []);
+                          },
+                        )
+                      : null),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: BorderSide(color: Colors.deepPurple.shade200),
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.hardEdge,
+            child: _comboSearchResults.isNotEmpty
+                ? Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    constraints: const BoxConstraints(maxHeight: 155),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.deepPurple.shade200),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _comboSearchResults.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1, thickness: 0.6),
+                          itemBuilder: (ctx, i) {
+                            final p = _comboSearchResults[i];
+                            return ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              title: Text(
+                                p.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                '\$${p.sellingPrice.toCurrency()} · Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: p.stock <= 0
+                                      ? Colors.amber.shade900
+                                      : Colors.blueGrey.shade700,
+                                ),
+                              ),
+                              trailing: Icon(Icons.add_circle_outline_rounded,
+                                  size: 18, color: Colors.deepPurple.shade700),
+                              onTap: () => _addIngredientToCombo(p),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity, height: 0),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.hardEdge,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_comboIngredients.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Column(
+              children: _comboIngredients.map((ing) {
+                final pid = ing['id'] as int;
+                final qty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+                final stock = (ing['stock'] as num?)?.toDouble() ?? 0.0;
+                final isWeight = ing['is_sold_by_weight'] == true;
+                final sellPrice =
+                    (ing['selling_price'] as num?)?.toDouble() ?? 0.0;
+                final ctrl = _qtyCtrlForIngredient(pid, qty);
+                final hasFractionalQty = (qty - qty.roundToDouble()).abs() >= 0.0005;
+                final showFractions = _expandedFractionIngredientIds.contains(pid);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.deepPurple.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ing['name']?.toString() ?? 'Producto #$pid',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  'Lista: \$${sellPrice.toCurrency()} · Stock: ${stock.toUnitStockDisplay(isSoldByWeight: isWeight)}',
+                                  style: TextStyle(
+                                    fontSize: 10.8,
+                                    color: stock <= 0
+                                        ? Colors.amber.shade900
+                                        : Colors.blueGrey.shade600,
+                                    fontWeight: stock <= 0
+                                        ? FontWeight.w700
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          SizedBox(
+                            width: 78,
+                            child: TextField(
+                              controller: ctrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9.,/]'),
+                                ),
+                              ],
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Cant.',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 7),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                              ),
+                              onChanged: (v) {
+                                final parsed = parseQuantityOrFraction(v);
+                                if (parsed != null && parsed > 0) {
+                                  _updateComboIngredientQty(pid, parsed);
+                                }
+                              },
+                              onSubmitted: (v) {
+                                final parsed = parseQuantityOrFraction(v);
+                                if (parsed != null && parsed > 0) {
+                                  _applyComboIngredientPreset(pid, parsed);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: showFractions
+                                ? 'Ocultar fracciones'
+                                : 'Fraccionar porción (1/6, 1/8, 1/16, ÷ N...)',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: () => setState(() {
+                                if (showFractions) {
+                                  _expandedFractionIngredientIds.remove(pid);
+                                } else {
+                                  _expandedFractionIngredientIds.add(pid);
+                                }
+                              }),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: (showFractions || hasFractionalQty)
+                                      ? Colors.deepPurple.shade600
+                                      : Colors.deepPurple.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: (showFractions || hasFractionalQty)
+                                        ? Colors.deepPurple.shade600
+                                        : Colors.deepPurple.shade200,
+                                  ),
+                                ),
+                                child: Text(
+                                  '1/x',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: (showFractions || hasFractionalQty)
+                                        ? Colors.white
+                                        : Colors.deepPurple.shade700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _removeComboIngredient(pid),
+                            icon: const Icon(Icons.close_rounded, size: 17),
+                            color: Colors.red.shade600,
+                            tooltip: 'Quitar del combo',
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      if (showFractions) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 5,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'Fracción:',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.blueGrey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            for (final preset in _comboPortionPresets)
+                              ActionChip(
+                                label: Text(
+                                  preset.$1,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: (qty - preset.$2).abs() < 0.001
+                                        ? Colors.white
+                                        : Colors.deepPurple.shade800,
+                                  ),
+                                ),
+                                backgroundColor: (qty - preset.$2).abs() < 0.001
+                                    ? Colors.deepPurple.shade600
+                                    : Colors.deepPurple.shade50,
+                                side: BorderSide(
+                                  color: Colors.deepPurple.shade200,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                onPressed: () =>
+                                    _applyComboIngredientPreset(pid, preset.$2),
+                              ),
+                            Text(
+                              'o ÷',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.blueGrey.shade600,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 48,
+                              height: 26,
+                              child: TextField(
+                                key: Key('quick_combo_parts_$pid'),
+                                controller: _customPartsCtrlForIngredient(pid),
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(3),
+                                ],
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                onSubmitted: (_) =>
+                                    _applyCustomComboIngredientParts(pid),
+                                decoration: InputDecoration(
+                                  hintText: 'N',
+                                  hintStyle: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.blueGrey.shade300,
+                                  ),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 4,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              key: Key('quick_combo_apply_parts_$pid'),
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: () =>
+                                  _applyCustomComboIngredientParts(pid),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.deepPurple.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: Colors.deepPurple.shade300,
+                                  ),
+                                ),
+                                child: Text(
+                                  '1/N',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.deepPurple.shade800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Suma lista: \$${individualTotal.toCurrency()} · Combo: \$${currentUnitPrice.toCurrency()}',
+                  style: TextStyle(
+                    fontSize: 11.8,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.deepPurple.shade900,
+                  ),
+                ),
+                if (currentUnitPrice > 0 && individualTotal > 0 && savings > 0.01)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Text(
+                      'Ahorro \$${savings.toCurrency()} (-${savingsPct.toStringAsFixed(1)}%)',
+                      style: TextStyle(
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                  )
+                else if (currentUnitPrice > 0 && individualTotal > 0 && savings < -0.01)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Text(
+                      '+\$${(-savings).toCurrency()} (+${(-savingsPct).toStringAsFixed(1)}%)',
+                      style: TextStyle(
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (individualTotal > 0) ...[
+              const SizedBox(height: 6),
+              Builder(
+                builder: (_) {
+                  final baseTarget = _roundComboPromoPrice(individualTotal);
+                  final promo10 = _roundComboPromoPrice(individualTotal * 0.90);
+                  final promo15 = _roundComboPromoPrice(individualTotal * 0.85);
+                  return Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Sugerido s/ porciones:',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.deepPurple.shade800,
+                        ),
+                      ),
+                      _buildComboPriceSuggestionButton(
+                        key: const Key('quick_combo_apply_base_btn'),
+                        targetPrice: baseTarget,
+                        label: 'Usar \$${baseTarget.toCurrency()}',
+                        appliedLabel: 'Base \$${baseTarget.toCurrency()} aplicada',
+                        currentUnitPrice: currentUnitPrice,
+                      ),
+                      if (promo10 > 0 && (promo10 - baseTarget).abs() >= 0.01)
+                        _buildComboPriceSuggestionButton(
+                          key: const Key('quick_combo_apply_promo10_btn'),
+                          targetPrice: promo10,
+                          label: '-10% (\$${promo10.toCurrency()})',
+                          appliedLabel: '-10% (\$${promo10.toCurrency()}) aplicado',
+                          currentUnitPrice: currentUnitPrice,
+                        ),
+                      if (promo15 > 0 && (promo15 - promo10).abs() >= 0.01)
+                        _buildComboPriceSuggestionButton(
+                          key: const Key('quick_combo_apply_promo15_btn'),
+                          targetPrice: promo15,
+                          label: '-15% (\$${promo15.toCurrency()})',
+                          appliedLabel: '-15% (\$${promo15.toCurrency()}) aplicado',
+                          currentUnitPrice: currentUnitPrice,
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Opcional: seleccioná productos del catálogo o tomalos del carrito para que la venta descuente su stock automáticamente.',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.deepPurple.shade700,
+                ),
+              ),
+            ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selectMode(String mode) {
+    final nextCombo = mode == 'combo';
+    final nextService = mode == 'service';
+    if (nextCombo == _isComboMode && nextService == _isServiceMode) return;
+    setState(() {
+      _isComboMode = nextCombo;
+      _isServiceMode = nextService;
+      if (!_userToggledSaveToCatalog) {
+        _saveToCatalog = !nextCombo;
+      }
+      if (_isServiceMode) {
+        _isSoldByWeight = false;
+        _costController.clear();
+        _marginController.clear();
+      }
+    });
+  }
+
+  Widget _buildModeSelector() {
+    final activeMode = _isComboMode
+        ? 'combo'
+        : (_isServiceMode ? 'service' : 'product');
+    final Alignment pillAlignment = activeMode == 'combo'
+        ? Alignment.centerRight
+        : (activeMode == 'service'
+            ? Alignment.center
+            : Alignment.centerLeft);
+    final Color activeColor = activeMode == 'combo'
+        ? Colors.deepPurple.shade700
+        : (activeMode == 'service'
+            ? Colors.teal.shade700
+            : const Color(0xFF1D4ED8));
+    final Color activeBorder = activeMode == 'combo'
+        ? Colors.deepPurple.shade200
+        : (activeMode == 'service'
+            ? Colors.teal.shade200
+            : const Color(0xFFBFDBFE));
+
+    const tabs = [
+      ('product', Icons.bolt_rounded, 'Producto Rápido'),
+      ('service', Icons.work_outline_rounded, 'Servicio / Honorario'),
+      ('combo', Icons.inventory_2_outlined, 'Combo / Promoción'),
+    ];
+
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            alignment: pillAlignment,
+            child: FractionallySizedBox(
+              widthFactor: 1 / 3,
+              heightFactor: 1.0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: activeBorder, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: activeColor.withValues(alpha: 0.10),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: tabs.map((tab) {
+              final isSelected = activeMode == tab.$1;
+              return Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: isSelected,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(9),
+                    onTap: () => _selectMode(tab.$1),
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              tab.$2,
+                              size: 16,
+                              color: isSelected
+                                  ? activeColor
+                                  : const Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: AnimatedDefaultTextStyle(
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOutCubic,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: isSelected
+                                      ? activeColor
+                                      : const Color(0xFF475569),
+                                ),
+                                child: Text(
+                                  tab.$3,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogHeader({required bool isCompact}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 14 : 22,
+        isCompact ? 12 : 18,
+        isCompact ? 14 : 22,
+        isCompact ? 8 : 12,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.all(isCompact ? 8 : 10),
+                decoration: BoxDecoration(
+                  color: _isComboMode
+                      ? Colors.deepPurple.shade50
+                      : (_isServiceMode
+                          ? Colors.teal.shade50
+                          : Colors.amber.shade50),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.85, end: 1.0)
+                          .animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: Icon(
+                    _isComboMode
+                        ? Icons.layers_rounded
+                        : (_isServiceMode
+                            ? Icons.work_outline_rounded
+                            : Icons.flash_on_rounded),
+                    key: ValueKey<String>(
+                      _isComboMode
+                          ? 'icon_combo'
+                          : (_isServiceMode ? 'icon_service' : 'icon_product'),
+                    ),
+                    color: _isComboMode
+                        ? Colors.deepPurple.shade700
+                        : (_isServiceMode
+                            ? Colors.teal.shade700
+                            : Colors.amber.shade800),
+                    size: isCompact ? 20 : 24,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.14),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: Alignment.centerLeft,
+                        children: <Widget>[
+                          ...previousChildren,
+                          if (currentChild != null) currentChild,
+                        ],
+                      ),
+                      child: Text(
+                        _isComboMode
+                            ? 'Combo / Oferta Rápida en Mostrador'
+                            : (_isServiceMode
+                                ? 'Servicio / Honorario en Mostrador'
+                                : 'Producto Rápido en Mostrador'),
+                        key: ValueKey<String>(
+                          _isComboMode
+                              ? 'title_combo'
+                              : (_isServiceMode
+                                  ? 'title_service'
+                                  : 'title_product'),
+                        ),
+                        style: TextStyle(
+                          fontSize: isCompact ? 15.5 : 17.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA/AFIP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close, size: 20),
+                tooltip: 'Cerrar (Esc)',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildModeSelector(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogFooter({
+    required double previewSubtotal,
+    required bool isCompact,
+  }) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 14 : 22,
+        12,
+        isCompact ? 14 : 22,
+        14,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(18),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 10,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'SUBTOTAL LÍNEA',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              Text(
+                '\$${previewSubtotal.toArsInput()}',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar (Esc)'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _submit,
+                icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                label: const Text('Agregar al Carrito (Enter)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 14 : 18,
+                    vertical: 13,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -345,408 +1788,361 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     final qty = _parseDouble(_quantityController.text);
     final unitPrice = _parseArs(_priceController.text);
     final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactWidth = screenSize.width < 480;
+    final isShortScreen = screenSize.height < 580;
+    final horizontalInset = isCompactWidth ? 10.0 : 24.0;
+    final verticalInset = isShortScreen ? 8.0 : 24.0;
+    final dialogWidth =
+        (screenSize.width - (horizontalInset * 2)).clamp(240.0, 684.0);
 
-    return Focus(
-      autofocus: false,
-      child: Dialog(
+    return RemoteScannerListener(
+      debugLabel: 'PosQuickItemDialog',
+      onBarcodeScanned: _handleRemoteBarcodeScan,
+      child: Focus(
+        autofocus: false,
+        child: Dialog(
         alignment: Alignment.center,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: horizontalInset,
+          vertical: verticalInset,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
+          constraints: BoxConstraints(
+            maxWidth: 684,
+            maxHeight: screenSize.height * (isShortScreen ? 0.96 : 0.92),
+          ),
           child: SizedBox(
-            width: 620,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          curve: Curves.easeOutCubic,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: _isComboMode
-                                ? Colors.deepPurple.shade50
-                                : (_isServiceMode
-                                    ? Colors.teal.shade50
-                                    : Colors.amber.shade50),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: Icon(
-                              _isComboMode
-                                  ? Icons.layers_rounded
-                                  : (_isServiceMode
-                                      ? Icons.work_outline_rounded
-                                      : Icons.flash_on_rounded),
-                              key: ValueKey<String>(
-                                _isComboMode
-                                    ? 'icon_combo'
-                                    : (_isServiceMode ? 'icon_service' : 'icon_product'),
+            width: dialogWidth,
+            child: Builder(
+              builder: (_) {
+                final header = _buildDialogHeader(isCompact: isCompactWidth);
+                final footer = _buildDialogFooter(
+                  previewSubtotal: previewSubtotal,
+                  isCompact: isCompactWidth,
+                );
+                const divider = Divider(height: 1, color: Color(0xFFE2E8F0));
+                final formBody = Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    isCompactWidth ? 14 : 22,
+                    14,
+                    isCompactWidth ? 14 : 22,
+                    14,
+                  ),
+                  child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_scannedReferenceCode != null) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.amber.shade300),
                               ),
-                              color: _isComboMode
-                                  ? Colors.deepPurple.shade700
-                                  : (_isServiceMode
-                                      ? Colors.teal.shade700
-                                      : Colors.amber.shade800),
-                              size: 24,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.qr_code_rounded,
+                                    size: 16,
+                                    color: Colors.amber.shade900,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Código consultado en F5: "$_scannedReferenceCode". Escribí la descripción e importe para cobrarlo.',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.amber.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+
+                          AnimatedCrossFade(
+                            duration: const Duration(milliseconds: 280),
+                            reverseDuration: const Duration(milliseconds: 220),
+                            firstCurve: Curves.easeOut,
+                            secondCurve: Curves.easeOutCubic,
+                            sizeCurve: Curves.easeOutCubic,
+                            alignment: Alignment.topCenter,
+                            crossFadeState: _isComboMode
+                                ? CrossFadeState.showSecond
+                                : CrossFadeState.showFirst,
+                            firstChild: const SizedBox(
+                              width: double.infinity,
+                              height: 0,
+                            ),
+                            secondChild: _buildComboBuilderSection(
+                              unitPrice > 0 ? unitPrice : 0.0,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
+
+                          // 1. Campos obligatorios arriba: Nombre + Fila Precio/Cantidad/IVA
+                          TextFormField(
+                            controller: _nameController,
+                            focusNode: _nameFocus,
+                            textInputAction: TextInputAction.next,
+                            onFieldSubmitted: (_) => _priceFocus.requestFocus(),
+                            decoration: InputDecoration(
+                              labelText: _isComboMode
+                                  ? 'Nombre del Combo / Promoción *'
+                                  : (_isServiceMode
+                                      ? 'Descripción del Servicio / Honorario *'
+                                      : 'Descripción del Producto *'),
+                              hintText: _isComboMode
+                                  ? 'Ej: Combo Asado Familiar / Promo 2x1...'
+                                  : (_isServiceMode
+                                      ? 'Ej: Honorarios Monotributo / Consulta Profesional...'
+                                      : 'Ej: Mercadería recién ingresada / Artículo varios...'),
+                              prefixIcon: const Icon(Icons.description_outlined, size: 20),
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              isDense: true,
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'Ingresa una descripción para el comprobante';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Fila: Precio Unitario + Cantidad + IVA
+                          Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                layoutBuilder: (currentChild, previousChildren) => Stack(
-                                  alignment: Alignment.centerLeft,
-                                  children: <Widget>[
-                                    ...previousChildren,
-                                    if (currentChild != null) currentChild,
+                              Expanded(
+                                flex: 5,
+                                child: TextFormField(
+                                  controller: _priceController,
+                                  focusNode: _priceFocus,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: const [
+                                    ArsThousandsInputFormatter(),
                                   ],
-                                ),
-                                child: Text(
-                                  _isComboMode
-                                      ? 'Combo / Oferta Rápida en Mostrador'
-                                      : (_isServiceMode
-                                          ? 'Servicio / Honorario en Mostrador'
-                                          : 'Producto Rápido en Mostrador'),
-                                  key: ValueKey<String>(
-                                    _isComboMode
-                                        ? 'title_combo'
-                                        : (_isServiceMode ? 'title_service' : 'title_product'),
+                                  textInputAction: TextInputAction.next,
+                                  onChanged: _onSellingPriceChanged,
+                                  onFieldSubmitted: (_) => _submit(),
+                                  decoration: InputDecoration(
+                                    labelText: _isServiceMode
+                                        ? 'Importe / Honorario Unit. *'
+                                        : 'Precio Venta Unit. *',
+                                    prefixText: '\$ ',
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    isDense: true,
                                   ),
-                                  style: const TextStyle(
-                                    fontSize: 17.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF0F172A),
-                                  ),
+                                  validator: (val) {
+                                    final p = _parseArs(val ?? '');
+                                    if (p <= 0) {
+                                      return 'Ingresa un precio > 0';
+                                    }
+                                    return null;
+                                  },
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              const Text(
-                                'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA/AFIP',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF64748B),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                flex: 3,
+                                child: TextFormField(
+                                  controller: _quantityController,
+                                  focusNode: _quantityFocus,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (_) => setState(() {}),
+                                  onFieldSubmitted: (_) => _submit(),
+                                  decoration: InputDecoration(
+                                    labelText: _isSoldByWeight ? 'Peso (Kg) *' : 'Cantidad *',
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    isDense: true,
+                                    suffixIcon: _isSoldByWeight
+                                        ? Consumer<LocalTerminalProvider>(
+                                            builder: (ctx, localTerminal, _) {
+                                              final comPort = localTerminal.scaleComPort;
+                                              final isConfigured = comPort.trim().isNotEmpty;
+                                              return IconButton(
+                                                tooltip: isConfigured
+                                                    ? 'Leer peso desde Balanza ($comPort)'
+                                                    : 'Configurar puerto COM de Balanza',
+                                                onPressed: _isReadingScale
+                                                    ? null
+                                                    : () => _readWeightFromScale(comPort),
+                                                icon: _isReadingScale
+                                                    ? const SizedBox(
+                                                        width: 15,
+                                                        height: 15,
+                                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                                      )
+                                                    : Icon(
+                                                        Icons.scale_rounded,
+                                                        size: 18,
+                                                        color: isConfigured
+                                                            ? Colors.indigo.shade700
+                                                            : Colors.blueGrey.shade400,
+                                                      ),
+                                              );
+                                            },
+                                          )
+                                        : null,
+                                  ),
+                                  validator: (val) {
+                                    final q = _parseDouble(val ?? '');
+                                    if (q <= 0) {
+                                      return '> 0';
+                                    }
+                                    return null;
+                                  },
                                 ),
                               ),
+                              if (isResponsableInscripto) ...[
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 3,
+                                  child: DropdownButtonFormField<double>(
+                                    isExpanded: true,
+                                    initialValue: _ivaRate,
+                                    decoration: InputDecoration(
+                                      labelText: 'IVA AFIP',
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      isDense: true,
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(value: 21.0, child: Text('21%', overflow: TextOverflow.ellipsis)),
+                                      DropdownMenuItem(value: 10.5, child: Text('10.5%', overflow: TextOverflow.ellipsis)),
+                                      DropdownMenuItem(value: 27.0, child: Text('27%', overflow: TextOverflow.ellipsis)),
+                                      DropdownMenuItem(value: 0.0, child: Text('0% Ex.', overflow: TextOverflow.ellipsis)),
+                                    ],
+                                    onChanged: (v) {
+                                      if (v != null) setState(() => _ivaRate = v);
+                                    },
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close, size: 20),
-                          tooltip: 'Cerrar (Esc)',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
+                          const SizedBox(height: 12),
 
-                    // Selector Modo: Producto Rápido vs Servicio vs Combo Rápido
-                    SegmentedButton<String>(
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        padding: const WidgetStatePropertyAll(
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        ),
-                        backgroundColor: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            if (_isComboMode) return Colors.deepPurple.shade50;
-                            if (_isServiceMode) return Colors.teal.shade50;
-                            return const Color(0xFFEFF6FF);
-                          }
-                          return const Color(0xFFF8FAFC);
-                        }),
-                        foregroundColor: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            if (_isComboMode) return Colors.deepPurple.shade800;
-                            if (_isServiceMode) return Colors.teal.shade800;
-                            return const Color(0xFF1D4ED8);
-                          }
-                          return const Color(0xFF475569);
-                        }),
-                        side: WidgetStatePropertyAll(
-                          BorderSide(color: Colors.blueGrey.shade200),
-                        ),
-                      ),
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: 'product',
-                          icon: Icon(Icons.bolt_rounded, size: 16),
-                          label: Text(
-                            'Producto Rápido',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'service',
-                          icon: Icon(Icons.work_outline_rounded, size: 16),
-                          label: Text(
-                            'Servicio / Honorario',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'combo',
-                          icon: Icon(Icons.inventory_2_outlined, size: 16),
-                          label: Text(
-                            'Combo / Promoción',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                      selected: {
-                        _isComboMode
-                            ? 'combo'
-                            : (_isServiceMode ? 'service' : 'product')
-                      },
-                      onSelectionChanged: (selection) {
-                        final mode = selection.first;
-                        setState(() {
-                          _isComboMode = mode == 'combo';
-                          _isServiceMode = mode == 'service';
-                          if (_isServiceMode) {
-                            _isSoldByWeight = false;
-                            _costController.clear();
-                            _marginController.clear();
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Nombre / Descripción para Factura y Ticket
-                    TextFormField(
-                      controller: _nameController,
-                      focusNode: _nameFocus,
-                      textInputAction: TextInputAction.next,
-                      onFieldSubmitted: (_) => _priceFocus.requestFocus(),
-                      decoration: InputDecoration(
-                        labelText: _isComboMode
-                            ? 'Nombre del Combo / Promoción *'
-                            : (_isServiceMode
-                                ? 'Descripción del Servicio / Honorario *'
-                                : 'Descripción del Producto *'),
-                        hintText: _isComboMode
-                            ? 'Ej: Combo Asado Familiar / Promo 2x1...'
-                            : (_isServiceMode
-                                ? 'Ej: Honorarios Monotributo / Consulta Profesional...'
-                                : 'Ej: Mercadería recién ingresada / Artículo varios...'),
-                        prefixIcon: const Icon(Icons.description_outlined, size: 20),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        isDense: true,
-                      ),
-                      validator: (val) {
-                        if (val == null || val.trim().isEmpty) {
-                          return 'Ingresa una descripción para el comprobante';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Notas / Detalles / Sub-ítems del Combo
-                    TextFormField(
-                      controller: _detailsController,
-                      minLines: 1,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        labelText: _isComboMode
-                            ? 'Detalle de artículos incluidos (Opcional — sale en ticket/factura)'
-                            : (_isServiceMode
-                                ? 'Período / Expediente / Detalle para Factura (Opcional)'
-                                : 'Notas adicionales para Factura / Ticket (Opcional)'),
-                        hintText: _isComboMode
-                            ? 'Ej: Incluye 1 Coca-Cola 2.25L + 2 Doc. Empanadas'
-                            : (_isServiceMode
-                                ? 'Ej: Período Mensual Noviembre 2026 / Expte. N° 4182'
-                                : 'Ej: Marca / Medida / Observación solicitada por el cliente'),
-                        prefixIcon: const Icon(Icons.notes_rounded, size: 20),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Fila: Precio Unitario + Cantidad + Unidad
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: TextFormField(
-                            controller: _priceController,
-                            focusNode: _priceFocus,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: const [
-                              ArsThousandsInputFormatter(),
-                            ],
-                            textInputAction: TextInputAction.next,
-                            onChanged: _onSellingPriceChanged,
-                            onFieldSubmitted: (_) => _submit(),
+                          // 2. Opcional: Detalle / Notas para ticket y factura
+                          TextFormField(
+                            controller: _detailsController,
+                            minLines: 1,
+                            maxLines: 2,
                             decoration: InputDecoration(
-                              labelText: _isServiceMode
-                                  ? 'Importe / Honorario Unit. *'
-                                  : 'Precio Venta Unit. *',
-                              prefixText: '\$ ',
-                              prefixIcon: const Icon(Icons.attach_money_rounded, size: 20),
-                              filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              isDense: true,
-                            ),
-                            validator: (val) {
-                              final p = _parseArs(val ?? '');
-                              if (p <= 0) {
-                                return 'Ingresa un precio > 0';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 3,
-                          child: TextFormField(
-                            controller: _quantityController,
-                            focusNode: _quantityFocus,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            onChanged: (_) => setState(() {}),
-                            onFieldSubmitted: (_) => _submit(),
-                            decoration: InputDecoration(
-                              labelText: _isSoldByWeight ? 'Peso (Kg) *' : 'Cantidad *',
-                              filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              isDense: true,
-                              suffixIcon: _isSoldByWeight
-                                  ? Consumer<LocalTerminalProvider>(
-                                      builder: (ctx, localTerminal, _) {
-                                        final comPort = localTerminal.scaleComPort;
-                                        final isConfigured = comPort.trim().isNotEmpty;
-                                        return IconButton(
-                                          tooltip: isConfigured
-                                              ? 'Leer peso desde Balanza ($comPort)'
-                                              : 'Configurar puerto COM de Balanza',
-                                          onPressed: _isReadingScale
-                                              ? null
-                                              : () => _readWeightFromScale(comPort),
-                                          icon: _isReadingScale
-                                              ? const SizedBox(
-                                                  width: 15,
-                                                  height: 15,
-                                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                                )
-                                              : Icon(
-                                                  Icons.scale_rounded,
-                                                  size: 18,
-                                                  color: isConfigured
-                                                      ? Colors.indigo.shade700
-                                                      : Colors.blueGrey.shade400,
-                                                ),
-                                        );
-                                      },
+                              labelText: _isComboMode
+                                  ? 'Detalle de artículos incluidos (Opcional — sale en ticket/factura)'
+                                  : (_isServiceMode
+                                      ? 'Período / Expediente / Detalle para Factura (Opcional)'
+                                      : 'Notas adicionales para Factura / Ticket (Opcional)'),
+                              hintText: _isComboMode
+                                  ? (_comboIngredients.isNotEmpty
+                                      ? 'Opcional — usá el botón derecho para copiar los ingredientes'
+                                      : 'Ej: Incluye 1 Coca-Cola 2.25L + 2 Doc. Empanadas')
+                                  : (_isServiceMode
+                                      ? 'Ej: Período Mensual Noviembre 2026 / Expte. N° 4182'
+                                      : 'Ej: Marca / Medida / Observación solicitada por el cliente'),
+                              prefixIcon: const Icon(Icons.notes_rounded, size: 20),
+                              suffixIcon: (_isComboMode && _comboIngredients.isNotEmpty)
+                                  ? Tooltip(
+                                      message:
+                                          'Copiar resumen de ingredientes al comprobante',
+                                      child: IconButton(
+                                        key: const Key('quick_combo_copy_details_btn'),
+                                        icon: Icon(
+                                          Icons.playlist_add_rounded,
+                                          size: 20,
+                                          color: Colors.deepPurple.shade700,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _detailsController.text =
+                                                _buildComboIngredientsSummary();
+                                          });
+                                        },
+                                      ),
                                     )
                                   : null,
-                            ),
-                            validator: (val) {
-                              final q = _parseDouble(val ?? '');
-                              if (q <= 0) {
-                                return '> 0';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        if (isResponsableInscripto) ...[
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 3,
-                            child: DropdownButtonFormField<double>(
-                              isExpanded: true,
-                              initialValue: _ivaRate,
-                              decoration: InputDecoration(
-                                labelText: 'IVA AFIP',
-                                filled: true,
-                                fillColor: const Color(0xFFF8FAFC),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              items: const [
-                                DropdownMenuItem(value: 21.0, child: Text('21%', overflow: TextOverflow.ellipsis)),
-                                DropdownMenuItem(value: 10.5, child: Text('10.5%', overflow: TextOverflow.ellipsis)),
-                                DropdownMenuItem(value: 27.0, child: Text('27%', overflow: TextOverflow.ellipsis)),
-                                DropdownMenuItem(value: 0.0, child: Text('0% Ex.', overflow: TextOverflow.ellipsis)),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) setState(() => _ivaRate = v);
-                              },
+                              isDense: true,
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                          const SizedBox(height: 12),
 
                     // Panel Contextual con Expansión Suave hacia abajo: Costo y Margen (Productos/Combos) vs Ficha Fiscal (Servicios)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: AnimatedSize(
-                        duration: const Duration(milliseconds: 240),
+                        duration: const Duration(milliseconds: 260),
                         curve: Curves.easeOutCubic,
                         alignment: Alignment.topCenter,
+                        clipBehavior: Clip.hardEdge,
                         child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
+                          duration: const Duration(milliseconds: 240),
                           switchInCurve: Curves.easeOutCubic,
                           switchOutCurve: Curves.easeInCubic,
+                          layoutBuilder: (currentChild, previousChildren) => Stack(
+                            alignment: Alignment.topCenter,
+                            children: <Widget>[
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          ),
                           transitionBuilder: (child, animation) => FadeTransition(
                             opacity: animation,
-                            child: child,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.04),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: child,
+                            ),
                           ),
                           child: !_isServiceMode
-                              ? Container(
+                              ? AnimatedContainer(
                                   key: const ValueKey<String>('quick_item_cost_panel'),
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutCubic,
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
+                                    color: _isComboMode
+                                        ? Colors.deepPurple.shade50.withValues(alpha: 0.18)
+                                        : const Color(0xFFF8FAFC),
                                     borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    border: Border.all(
+                                      color: _isComboMode
+                                          ? Colors.deepPurple.shade200
+                                          : const Color(0xFFE2E8F0),
+                                    ),
                                   ),
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
@@ -758,126 +2154,188 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                           children: [
                                             const Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF475569)),
                                             const SizedBox(width: 6),
-                                            const Expanded(
-                                              child: Text(
-                                                'Costo y Margen (Opcional · Cálculo Automático)',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF475569),
+                                             Expanded(
+                                               child: Text(
+                                                 (_isComboMode && _comboIngredients.isNotEmpty)
+                                                     ? 'Rentabilidad del Combo (Calculada s/ Ingredientes)'
+                                                     : 'Costo y Margen (Opcional · Cálculo Automático)',
+                                                 maxLines: 1,
+                                                 overflow: TextOverflow.ellipsis,
+                                                 style: const TextStyle(
+                                                   fontSize: 12,
+                                                   fontWeight: FontWeight.w700,
+                                                   color: Color(0xFF475569),
+                                                 ),
+                                               ),
+                                             ),
+                                            AnimatedSwitcher(
+                                              duration: const Duration(milliseconds: 200),
+                                              switchInCurve: Curves.easeOutCubic,
+                                              switchOutCurve: Curves.easeInCubic,
+                                              transitionBuilder: (child, animation) =>
+                                                  FadeTransition(
+                                                opacity: animation,
+                                                child: ScaleTransition(
+                                                  scale: Tween<double>(begin: 0.92, end: 1.0)
+                                                      .animate(animation),
+                                                  child: child,
                                                 ),
                                               ),
-                                            ),
-                                            if (!_isComboMode) ...[
-                                              ChoiceChip(
-                                                label: const Text('Por Peso (Kg)', style: TextStyle(fontSize: 11)),
-                                                selected: _isSoldByWeight,
-                                                visualDensity: VisualDensity.compact,
-                                                onSelected: (v) => setState(() => _isSoldByWeight = v),
-                                              ),
-                                              if (_isSoldByWeight) ...[
-                                                const SizedBox(width: 6),
-                                                Consumer<LocalTerminalProvider>(
-                                                  builder: (ctx, localTerminal, _) {
-                                                    final comPort = localTerminal.scaleComPort;
-                                                    final isConfigured = comPort.trim().isNotEmpty;
-                                                    return OutlinedButton.icon(
-                                                      onPressed: _isReadingScale
-                                                          ? null
-                                                          : () => _readWeightFromScale(comPort),
-                                                      icon: const Icon(Icons.scale_rounded, size: 14),
-                                                      label: Text(
-                                                        isConfigured ? 'Leer Balanza' : 'Config. Balanza',
-                                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                                      ),
-                                                      style: OutlinedButton.styleFrom(
-                                                        visualDensity: VisualDensity.compact,
-                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                                        foregroundColor: isConfigured ? Colors.indigo.shade700 : Colors.blueGrey,
-                                                        side: BorderSide(
-                                                          color: isConfigured ? Colors.indigo.shade300 : Colors.blueGrey.shade300,
+                                              child: !_isComboMode
+                                                  ? Row(
+                                                      key: const ValueKey<String>('trailing_weight'),
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        ChoiceChip(
+                                                          label: const Text('Por Peso (Kg)', style: TextStyle(fontSize: 11)),
+                                                          selected: _isSoldByWeight,
+                                                          visualDensity: VisualDensity.compact,
+                                                          onSelected: (v) => setState(() => _isSoldByWeight = v),
                                                         ),
+                                                        if (_isSoldByWeight) ...[
+                                                          const SizedBox(width: 6),
+                                                          Consumer<LocalTerminalProvider>(
+                                                            builder: (ctx, localTerminal, _) {
+                                                              final comPort = localTerminal.scaleComPort;
+                                                              final isConfigured = comPort.trim().isNotEmpty;
+                                                              return OutlinedButton.icon(
+                                                                onPressed: _isReadingScale
+                                                                    ? null
+                                                                    : () => _readWeightFromScale(comPort),
+                                                                icon: const Icon(Icons.scale_rounded, size: 14),
+                                                                label: Text(
+                                                                  isConfigured ? 'Leer Balanza' : 'Config. Balanza',
+                                                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                                                ),
+                                                                style: OutlinedButton.styleFrom(
+                                                                  visualDensity: VisualDensity.compact,
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                                  foregroundColor: isConfigured ? Colors.indigo.shade700 : Colors.blueGrey,
+                                                                  side: BorderSide(
+                                                                    color: isConfigured ? Colors.indigo.shade300 : Colors.blueGrey.shade300,
+                                                                  ),
+                                                                ),
+                                                              );
+                                                            },
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    )
+                                                  : Container(
+                                                      key: const ValueKey<String>('trailing_combo_badge'),
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.deepPurple.shade50,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        border: Border.all(color: Colors.deepPurple.shade200),
                                                       ),
-                                                    );
-                                                  },
-                                                ),
-                                              ],
-                                            ] else
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.deepPurple.shade50,
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  border: Border.all(color: Colors.deepPurple.shade200),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Icon(Icons.layers_outlined, size: 13, color: Colors.deepPurple.shade700),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Pack / Promo',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.w700,
-                                                        color: Colors.deepPurple.shade800,
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Icon(Icons.layers_outlined, size: 13, color: Colors.deepPurple.shade700),
+                                                          const SizedBox(width: 4),
+                                                          Text(
+                                                            'Pack / Promo',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight: FontWeight.w700,
+                                                              color: Colors.deepPurple.shade800,
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
-                                                  ],
-                                                ),
-                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
                                       const SizedBox(height: 10),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller: _costController,
-                                              keyboardType: TextInputType.number,
-                                              inputFormatters: const [
-                                                ArsThousandsInputFormatter(),
+                                      if (_isComboMode && _comboIngredients.isNotEmpty)
+                                        Builder(
+                                          builder: (_) {
+                                            final recipeCost = _comboCostTotal;
+                                            final currentPrice = _parseArs(_priceController.text);
+                                            final hasMargin = recipeCost > 0 && currentPrice > 0;
+                                            final marginPct = hasMargin
+                                                ? ((currentPrice - recipeCost) / recipeCost) * 100.0
+                                                : 0.0;
+                                            final marginText = hasMargin
+                                                ? '${marginPct.toCleanMargin()}%'
+                                                : (currentPrice > 0 && recipeCost <= 0
+                                                    ? 'Sin costo base'
+                                                    : 'Ingresá precio');
+                                            final marginColor = !hasMargin
+                                                ? const Color(0xFF64748B)
+                                                : (marginPct >= 0
+                                                    ? Colors.green.shade700
+                                                    : Colors.red.shade700);
+                                            return Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildReadonlyComboMetricBox(
+                                                    label: 'Costo Receta (Calc.)',
+                                                    value: '\$${recipeCost.toCurrency()}',
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: _buildReadonlyComboMetricBox(
+                                                    label: '% Margen Combo',
+                                                    value: marginText,
+                                                    valueColor: marginColor,
+                                                  ),
+                                                ),
                                               ],
-                                              onChanged: _onCostChanged,
-                                              decoration: InputDecoration(
-                                                labelText: 'Precio de Costo (Opcional)',
-                                                hintText: '0',
-                                                prefixText: '\$ ',
-                                                filled: true,
-                                                fillColor: Colors.white,
-                                                border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
+                                            );
+                                          },
+                                        )
+                                      else
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller: _costController,
+                                                keyboardType: TextInputType.number,
+                                                inputFormatters: const [
+                                                  ArsThousandsInputFormatter(),
+                                                ],
+                                                onChanged: _onCostChanged,
+                                                decoration: InputDecoration(
+                                                  labelText: 'Precio de Costo (Opcional)',
+                                                  hintText: '0',
+                                                  prefixText: '\$ ',
+                                                  filled: true,
+                                                  fillColor: Colors.white,
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  isDense: true,
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                                                 ),
-                                                isDense: true,
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                                               ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller: _marginController,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                              onChanged: _onMarginChanged,
-                                              decoration: InputDecoration(
-                                                labelText: '% Ganancia s/Costo',
-                                                hintText: 'Ej: 30',
-                                                suffixText: '%',
-                                                filled: true,
-                                                fillColor: Colors.white,
-                                                border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller: _marginController,
+                                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                onChanged: _onMarginChanged,
+                                                decoration: InputDecoration(
+                                                  labelText: '% Ganancia s/Costo',
+                                                  hintText: 'Ej: 30',
+                                                  suffixText: '%',
+                                                  filled: true,
+                                                  fillColor: Colors.white,
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  isDense: true,
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                                                 ),
-                                                isDense: true,
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
+                                          ],
+                                        ),
                                     ],
                                   ),
                                 )
@@ -972,13 +2430,12 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                         child: SwitchListTile(
                           dense: true,
                           value: _saveToCatalog,
-                          onChanged: (val) => setState(() => _saveToCatalog = val),
+                          onChanged: (val) => setState(() {
+                            _userToggledSaveToCatalog = true;
+                            _saveToCatalog = val;
+                          }),
                           title: Text(
-                            _saveToCatalog
-                                ? (_isServiceMode
-                                    ? 'Guardar Servicio / Honorario en el Catálogo'
-                                    : 'Guardar permanentemente en el Catálogo')
-                                : 'Ítem Temporal (Solo para esta venta)',
+                            'Guardar en el Catálogo',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 13,
@@ -989,10 +2446,16 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                           ),
                           subtitle: Text(
                             _saveToCatalog
-                                ? (_isServiceMode
-                                    ? 'Quedará disponible en el Catálogo como Servicio sin requerir ni descontar stock físico.'
-                                    : 'Se creará automáticamente en Productos (marcado "Pendiente de revisión" para completar código/rubro luego).')
-                                : 'No altera el catálogo de productos ni bloquea stock. Queda registrado en el historial, ticket y factura.',
+                                ? (_isComboMode
+                                    ? 'Creará el Combo en Productos ("Por revisar") con descuento automático de sus ingredientes.'
+                                    : (_isServiceMode
+                                        ? 'Quedará disponible en el Catálogo como Servicio sin requerir ni descontar stock físico.'
+                                        : 'Se creará automáticamente en Productos (marcado "Pendiente de revisión" para completar código/rubro luego).'))
+                                : (_isComboMode
+                                    ? (_comboIngredients.isNotEmpty
+                                        ? 'Solo para esta venta: no altera el catálogo, pero SÍ descuenta el stock de sus ${_comboIngredients.length} ingredientes al cobrar.'
+                                        : 'Solo para esta venta: no altera el catálogo ni descuenta stock (sin ingredientes). Queda en ticket y factura.')
+                                    : 'Solo para esta venta: no altera el catálogo ni bloquea stock. Queda registrado en el historial, ticket y factura.'),
                             style: TextStyle(
                               fontSize: 11.5,
                               color: _saveToCatalog
@@ -1003,68 +2466,36 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-
-                  // Footer con Subtotal + Botones
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 12,
-                    runSpacing: 10,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'SUBTOTAL LÍNEA',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                          Text(
-                            '\$${previewSubtotal.toArsInput()}',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
                         ],
                       ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Cancelar (Esc)'),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: _submit,
-                            icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
-                            label: const Text('Agregar al Carrito (Enter)'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                );
+                if (isShortScreen) {
+                  return SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [header, divider, formBody, footer],
+                    ),
+                  );
+                }
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    divider,
+                    Flexible(
+                      child: SingleChildScrollView(child: formBody),
+                    ),
+                    footer,
+                  ],
+                );
+              },
             ),
           ),
         ),
-        ),
+      ),
       ),
     );
   }

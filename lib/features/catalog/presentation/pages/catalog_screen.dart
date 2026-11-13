@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -14,6 +14,8 @@ import '../widgets/catalog_import_dialog.dart';
 import '../../domain/entities/brand.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
+import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/brands_manager_dialog.dart';
@@ -23,9 +25,7 @@ import '../widgets/print_labels_dialog.dart';
 import '../widgets/product_image_preview_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
-import 'package:dart_pusher_channels/dart_pusher_channels.dart';
-import 'dart:convert';
-import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
@@ -49,8 +49,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
   Timer? _debounceTimer;
   final Map<int, Product> _selectedProducts = {};
-  
-  PusherChannelsClient? _pusher;
 
   @override
   void initState() {
@@ -75,72 +73,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
         _showProductForm(context, context.read<CatalogProvider>(), product: args);
       }
     });
-
-    _initPusher();
   }
 
-  Future<void> _initPusher() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool('disable_pusher') == true) return;
-      final terminalId = prefs.getString('pos_terminal_id') ?? 'caja-1';
-      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-      final uri = Uri.parse(currentUrl);
-      
-      final isSecure = currentUrl.startsWith('https');
-      String pusherHost = uri.host;
-      if (pusherHost.startsWith('api.')) {
-        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
-      } else if (pusherHost.startsWith('api-')) {
-        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
-      }
-          
-      final int pusherPort = isSecure ? 443 : 8080;
-      
-      final options = PusherChannelsOptions.fromHost(
-        scheme: isSecure ? 'wss' : 'ws',
-        host: pusherHost,
-        port: pusherPort,
-        key: 'kz786cdfeldnzispymxq',
-      );
-
-      _pusher = PusherChannelsClient.websocket(
-        options: options,
-        connectionErrorHandler: (error, trace, refresh) {},
-      );
-
-      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-
-      _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribe();
-      });
-
-      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-        try {
-          if (event.data == null) return;
-          final data = jsonDecode(event.data.toString());
-          final barcode = data['barcode'];
-          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-            setState(() {
-              _searchController.text = barcode;
-            });
-            context.read<CatalogProvider>().loadProducts(page: 1, search: barcode);
-            SnackBarService.success(context, 'Buscando código escaneado: $barcode');
-          }
-        } catch (e) {
-          debugPrint("Error parsing MobileScanned event: $e");
-        }
-      });
-
-      await _pusher!.connect();
-    } catch (e) {
-      debugPrint("Error inicializando Pusher en CatalogScreen: $e");
-    }
+  void _handleRemoteBarcodeScan(String barcode) {
+    _debounceTimer?.cancel();
+    setState(() {
+      _searchController.text = barcode;
+    });
+    context.read<CatalogProvider>().loadProducts(page: 1, search: barcode);
+    SnackBarService.success(context, 'Buscando código escaneado: $barcode');
   }
 
   @override
   void dispose() {
-    _pusher?.disconnect();
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -197,8 +142,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<CatalogProvider>(
-      builder: (context, provider, _) {
+    return RemoteScannerListener(
+      debugLabel: 'CatalogScreen',
+      onBarcodeScanned: _handleRemoteBarcodeScan,
+      child: Consumer<CatalogProvider>(
+        builder: (context, provider, _) {
         return Scaffold(
           appBar: GlobalAppBar(currentRoute: '/catalog'),
           body: Column(
@@ -545,7 +493,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
                     return LayoutBuilder(
                       builder: (context, constraints) {
-                        const double minW = 1020.0;
+                        const double minW = 1180.0;
                         return SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: ConstrainedBox(
@@ -605,6 +553,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         );
       },
+      ),
     );
   }
 
@@ -738,82 +687,204 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
+  Widget _buildExpiryCell(Product p) {
+    final rawExp = p.expirationDate;
+    if (rawExp != null && rawExp.isNotEmpty) {
+      final expDt = DateTime.tryParse(rawExp);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final daysLeft = expDt != null
+          ? DateTime(expDt.year, expDt.month, expDt.day).difference(today).inDays
+          : 999;
+      final label = expDt != null
+          ? '${expDt.day.toString().padLeft(2, '0')}/${expDt.month.toString().padLeft(2, '0')}/${expDt.year}'
+          : rawExp;
+      final warnThreshold = (p.expiryAlertDays ?? 15).clamp(4, 365);
 
-    // Responsive flex values para que quepan en pantalla chica
-    const int fCheck = 1;
-    const int fId = 1;
-    const int fNombre = 5;
-    const int fBarcode = 3;
-    const int fInterno = 2;
-    const int fCat = 3;
-    const int fBrand = 3;
-    const int fProv = 3;
-    const int fCosto = 2;
-    const int fVenta = 2;
-    const int fStock = 2;
-    const int fBal = 1;
-    const int fActivo = 1;
-    const int fVto = 1;
-    const int fAcciones = 3;
+      final Color fgColor;
+      final Color bgColor;
+      final Color borderColor;
+      if (daysLeft <= 3) {
+        fgColor = Colors.red.shade800;
+        bgColor = Colors.red.shade50;
+        borderColor = Colors.red.shade200;
+      } else if (daysLeft <= warnThreshold) {
+        fgColor = Colors.amber.shade900;
+        bgColor = Colors.amber.shade50;
+        borderColor = Colors.amber.shade300;
+      } else {
+        fgColor = Colors.green.shade800;
+        bgColor = Colors.green.shade50;
+        borderColor = Colors.green.shade200;
+      }
 
-    Widget cell(int flexValue, Widget child) => Expanded(
-          flex: flexValue,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: child,
-          ),
-        );
+      final String tooltipMsg;
+      if (expDt == null) {
+        tooltipMsg = 'Vencimiento: $label';
+      } else if (daysLeft < 0) {
+        final overdue = -daysLeft;
+        tooltipMsg = 'Vencido hace $overdue día${overdue == 1 ? '' : 's'} ($label)';
+      } else if (daysLeft == 0) {
+        tooltipMsg = '¡Vence HOY! ($label)';
+      } else if (daysLeft == 1) {
+        tooltipMsg = 'Vence mañana ($label)';
+      } else {
+        tooltipMsg = 'Vence el $label (en $daysLeft días)';
+      }
 
-    TextStyle headerStyle() => const TextStyle(fontWeight: FontWeight.bold, fontSize: 13);
-
-    // Sortable header button (Flex)
-    Widget sortHeader(int flexValue, String label, String sortKey) {
-      final isActive = provider.sortBy == sortKey;
-      final isAsc = provider.sortDirection == 'asc';
-      return Expanded(
-        flex: flexValue,
-        child: InkWell(
-          onTap: () {
-            final newDir = isActive && isAsc ? 'desc' : 'asc';
-            provider.loadProducts(page: 1, sortBy: sortKey, sortDirection: newDir);
-          },
-          borderRadius: BorderRadius.circular(4),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    style: headerStyle().copyWith(color: isActive ? Colors.blue.shade700 : Colors.black87),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isActive) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    isAsc ? Icons.arrow_upward : Icons.arrow_downward,
-                    size: 13,
-                    color: Colors.blue.shade700,
-                  ),
-                ],
-              ],
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: tooltipMsg,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: borderColor),
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: fgColor,
+              ),
             ),
           ),
         ),
       );
     }
 
+    if (p.vencimientoDias != null) {
+      final dias = p.vencimientoDias!;
+      final fgColor = dias <= 30
+          ? Colors.red.shade700
+          : (dias <= 90 ? Colors.amber.shade900 : Colors.green.shade700);
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: 'Vence $dias días después del envasado',
+          child: Text(
+            '$dias d',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: fgColor,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
+
+    return Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13));
+  }
+
+  Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
+    final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
+
+    // Anchos fijos calibrados para columnas cortas/fechas y flex equilibrado para texto/precios
+    const double wCheck = 38;
+    const double wFoto = 46;
+    const double wId = 48;
+    const double wBal = 58;
+    const double wActivo = 70;
+    const double wVto = 104;
+    const double wAcciones = 138;
+
+    const int fNombre = 5;
+    const int fBarcode = 3;
+    const int fInterno = 2;
+    const int fCat = 2;
+    const int fBrand = 2;
+    const int fProv = 2;
+    const int fCosto = 2;
+    const int fVenta = 2;
+    const int fStock = 2;
+
+    Widget tableCell({
+      int? flex,
+      double? width,
+      EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      required Widget child,
+    }) {
+      final padded = Padding(padding: padding, child: child);
+      if (width != null) {
+        return SizedBox(width: width, child: padded);
+      }
+      return Expanded(flex: flex ?? 1, child: padded);
+    }
+
+    TextStyle headerStyle() => const TextStyle(fontWeight: FontWeight.bold, fontSize: 13);
+
+    // Sortable header button (width fija o flex)
+    Widget sortHeader({
+      int? flex,
+      double? width,
+      required String label,
+      required String sortKey,
+      String initialDirection = 'asc',
+      String? tooltip,
+    }) {
+      final isActive = provider.sortBy == sortKey;
+      final isAsc = provider.sortDirection == 'asc';
+      Widget headerBody = InkWell(
+        onTap: () {
+          final newDir = isActive
+              ? (isAsc ? 'desc' : 'asc')
+              : initialDirection;
+          provider.loadProducts(page: 1, sortBy: sortKey, sortDirection: newDir);
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: headerStyle().copyWith(color: isActive ? Colors.blue.shade700 : Colors.black87),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 2),
+                Icon(
+                  isAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 13,
+                  color: Colors.blue.shade700,
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+      if (tooltip != null) {
+        headerBody = Tooltip(message: tooltip, child: headerBody);
+      }
+      if (width != null) {
+        return SizedBox(width: width, child: headerBody);
+      }
+      return Expanded(flex: flex ?? 1, child: headerBody);
+    }
+
+    final vtoTooltip = provider.sortBy == 'expiration_date'
+        ? (provider.sortDirection == 'desc'
+            ? 'Vencimientos más lejanos/recientes primero (clic para invertir)'
+            : 'Vencimientos más próximos o vencidos primero (clic para invertir)')
+        : 'Ordenar por fecha de vencimiento (más recientes primero)';
+
     Widget headerRow() => Container(
           color: Colors.grey.shade100,
           child: Row(
             children: [
-              cell(
-                fCheck,
-                Checkbox(
+              tableCell(
+                width: wCheck,
+                child: Checkbox(
                   value: _selectedProducts.length == products.length && products.isNotEmpty,
                   onChanged: (bool? val) {
                     setState(() {
@@ -829,26 +900,44 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               ),
               const SizedBox(
-                width: 48,
+                width: wFoto,
                 child: Center(
                   child: Icon(Icons.image_outlined, size: 18, color: Colors.blueGrey),
                 ),
               ),
-              sortHeader(fId, '#', 'id'),
-              sortHeader(fNombre, 'Nombre', 'name'),
-              sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
-              sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
-              sortHeader(fCat, 'Categoría', 'category_id'),
-              sortHeader(fBrand, 'Marca', 'brand_id'),
-              if (canSeeSupplier) sortHeader(fProv, 'Proveedor', 'supplier_id'),
-              sortHeader(fCosto, 'Costo', 'cost_price'),
-              sortHeader(fVenta, 'Venta', 'selling_price'),
-
-              sortHeader(fStock, 'Stock', 'stock'),
-              sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
-              sortHeader(fActivo, 'Activo', 'active'),
-              sortHeader(fVto, 'VTO.', 'vencimiento_dias'),
-              cell(fAcciones, Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis)),
+              sortHeader(width: wId, label: '#', sortKey: 'id'),
+              sortHeader(flex: fNombre, label: 'Nombre', sortKey: 'name'),
+              sortHeader(flex: fBarcode, label: 'Cód. Barras', sortKey: 'barcode'),
+              sortHeader(flex: fInterno, label: 'Cód. Interno', sortKey: 'internal_code'),
+              sortHeader(flex: fCat, label: 'Categoría', sortKey: 'category_id'),
+              sortHeader(flex: fBrand, label: 'Marca', sortKey: 'brand_id'),
+              if (canSeeSupplier) sortHeader(flex: fProv, label: 'Proveedor', sortKey: 'supplier_id'),
+              sortHeader(flex: fCosto, label: 'Costo', sortKey: 'cost_price'),
+              sortHeader(flex: fVenta, label: 'Venta', sortKey: 'selling_price'),
+              sortHeader(flex: fStock, label: 'Stock', sortKey: 'stock'),
+              sortHeader(
+                width: wBal,
+                label: 'Bal.',
+                sortKey: 'is_sold_by_weight',
+                tooltip: 'Venta por peso / Balanza',
+              ),
+              sortHeader(
+                width: wActivo,
+                label: 'Activo',
+                sortKey: 'active',
+                tooltip: 'Estado activo en POS',
+              ),
+              sortHeader(
+                width: wVto,
+                label: 'VTO.',
+                sortKey: 'expiration_date',
+                initialDirection: 'desc',
+                tooltip: vtoTooltip,
+              ),
+              tableCell(
+                width: wAcciones,
+                child: Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
         );
@@ -871,9 +960,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
             },
             child: Row(
               children: [
-              cell(
-                fCheck,
-                Checkbox(
+              tableCell(
+                width: wCheck,
+                child: Checkbox(
                   value: _selectedProducts.containsKey(p.id),
                   onChanged: (bool? val) {
                     setState(() {
@@ -887,15 +976,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               ),
               SizedBox(
-                width: 48,
+                width: wFoto,
                 child: Center(
                   child: _buildProductAvatar(p),
                 ),
               ),
-              cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
-              cell(
-                fNombre,
-                Row(
+              tableCell(width: wId, child: Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
+              tableCell(
+                flex: fNombre,
+                child: Row(
                   children: [
                     Flexible(
                       child: Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1),
@@ -925,27 +1014,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ],
                 ),
               ),
-              cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
-              cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
-              cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
-              cell(fBrand, p.brand != null
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.indigo.shade50,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.indigo.shade200),
-                      ),
-                      child: Text(p.brand!.name, style: TextStyle(fontSize: 11, color: Colors.indigo.shade700, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
-                    )
-                  : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
-              if (canSeeSupplier) cell(fProv, Text(p.supplier?.name ?? '—', overflow: TextOverflow.ellipsis)),
-              cell(fCosto, Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
-              cell(fVenta, Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+              tableCell(flex: fBarcode, child: Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
+              tableCell(flex: fInterno, child: Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
+              tableCell(flex: fCat, child: Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              tableCell(
+                flex: fBrand,
+                child: p.brand != null
+                    ? Text(p.brand!.name, overflow: TextOverflow.ellipsis)
+                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              ),
+              if (canSeeSupplier) tableCell(flex: fProv, child: Text(p.supplier?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              tableCell(flex: fCosto, child: Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
+              tableCell(flex: fVenta, child: Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
 
-              cell(
-                fStock,
-                p.isService
+              tableCell(
+                flex: fStock,
+                child: p.isService
                     ? Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -964,63 +1048,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         ),
                       )
                     : Text(
-                        p.isSoldByWeight ? '${p.stock.toCurrency()} kg' : p.stock.toStringAsFixed(0),
+                        p.stock.toUnitStockDisplay(
+                          isSoldByWeight: p.isSoldByWeight,
+                          unitSuffix: 'un.',
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
               ),
-              cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
-              cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
-              // Columna VTO: muestra la fecha de vencimiento del lote o los días de vida útil
-              cell(
-                fVto,
-                p.expirationDate != null && p.expirationDate!.isNotEmpty
-                    ? Builder(builder: (context) {
-                        final expDt = DateTime.tryParse(p.expirationDate!);
-                        final daysLeft = expDt != null
-                            ? expDt.difference(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)).inDays
-                            : 999;
-                        final label = expDt != null
-                            ? '${expDt.day.toString().padLeft(2, '0')}/${expDt.month.toString().padLeft(2, '0')}/${(expDt.year % 100).toString().padLeft(2, '0')}'
-                            : p.expirationDate!;
-                        return Tooltip(
-                          message: daysLeft <= 0
-                              ? '¡Vencido! ($label)'
-                              : 'Vence el $label (en $daysLeft días)',
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: daysLeft <= 3
-                                  ? Colors.red.shade700
-                                  : daysLeft <= 15
-                                      ? Colors.orange.shade700
-                                      : Colors.green.shade700,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      })
-                    : (p.vencimientoDias != null
-                        ? Tooltip(
-                            message: 'Vence ${p.vencimientoDias} días después del envasado',
-                            child: Text(
-                              '${p.vencimientoDias} d',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: p.vencimientoDias! <= 30
-                                    ? Colors.red.shade700
-                                    : p.vencimientoDias! <= 90
-                                        ? Colors.orange.shade700
-                                        : Colors.green.shade700,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )
-                        : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
-              ),
-              cell(fAcciones, Wrap(
+              tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
+              tableCell(width: wActivo, child: Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
+              tableCell(width: wVto, child: _buildExpiryCell(p)),
+              tableCell(width: wAcciones, child: Wrap(
                 spacing: 4,
                 runSpacing: 4,
                 children: [
@@ -1172,35 +1210,64 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
+    final sortedCategories = sortByAlphabeticalName(provider.categories, (c) => c.name);
     int? newCategory = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultCat;
-        return AlertDialog(
-          title: const Text('Asignar Categoría'),
-          content: DropdownButtonFormField<int?>(
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: 'Elige la nueva categoría', border: OutlineInputBorder()),
-            items: [
-              const DropdownMenuItem(value: -1, child: Text('— Quitar Categoría —')),
-              ...provider.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
-            ],
-            onChanged: (val) => selected = val,
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
-              onPressed: () {
-                if (selected == null) {
-                  SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
-                  return;
-                }
-                Navigator.pop(ctx, selected);
-              },
-              child: const Text('Asignar'),
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Asignar Categoría'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: SearchableSelectField<int?>(
+                value: selected,
+                clearValue: -1,
+                showClearButton: false,
+                labelText: 'Elige la nueva categoría',
+                dialogTitle: 'Seleccionar Categoría',
+                searchHintText: 'Buscar categoría o rubro...',
+                prefixIcon: Icons.category_outlined,
+                border: const OutlineInputBorder(),
+                options: [
+                  const SearchableSelectOption<int?>(
+                    value: -1,
+                    label: '— Quitar Categoría —',
+                    isResetOption: true,
+                  ),
+                  ...sortedCategories.map((c) {
+                    final rId = c.rubroId ?? c.rubro?.id;
+                    final rubroName = (rId != null
+                            ? provider.rubros.where((r) => r.id == rId).firstOrNull?.name
+                            : null) ??
+                        c.rubro?.name;
+                    final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
+                    return SearchableSelectOption<int?>(
+                      value: c.id,
+                      label: c.name,
+                      subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                      searchKeywords: hasRubro ? [rubroName] : const [],
+                    );
+                  }),
+                ],
+                onChanged: (val) => setDialogState(() => selected = val),
+              ),
             ),
-          ],
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
+                onPressed: () {
+                  if (selected == null) {
+                    SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
+                    return;
+                  }
+                  Navigator.pop(ctx, selected);
+                },
+                child: const Text('Asignar'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1297,38 +1364,53 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
+    final sortedBrands = sortByAlphabeticalName(provider.brands, (b) => b.name);
     int? newBrand = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultBrand;
-        return AlertDialog(
-          title: const Text('Asignar Marca en Lote'),
-          content: DropdownButtonFormField<int?>(
-            initialValue: selected,
-            decoration: const InputDecoration(
-              labelText: 'Elige la nueva marca',
-              border: OutlineInputBorder(),
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Asignar Marca en Lote'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: SearchableSelectField<int?>(
+                value: selected,
+                clearValue: -1,
+                showClearButton: false,
+                labelText: 'Elige la nueva marca',
+                dialogTitle: 'Seleccionar Marca',
+                searchHintText: 'Buscar marca...',
+                prefixIcon: Icons.branding_watermark_outlined,
+                border: const OutlineInputBorder(),
+                options: [
+                  const SearchableSelectOption<int?>(
+                    value: -1,
+                    label: '— Quitar Marca —',
+                    isResetOption: true,
+                  ),
+                  ...sortedBrands.map(
+                    (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+                  ),
+                ],
+                onChanged: (val) => setDialogState(() => selected = val),
+              ),
             ),
-            items: [
-              const DropdownMenuItem(value: -1, child: Text('— Quitar Marca —')),
-              ...provider.brands.map((b) => DropdownMenuItem(value: b.id, child: Text(b.name))),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
+                onPressed: () {
+                  if (selected == null) {
+                    SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
+                    return;
+                  }
+                  Navigator.pop(ctx, selected);
+                },
+                child: const Text('Asignar'),
+              ),
             ],
-            onChanged: (val) => selected = val,
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
-              onPressed: () {
-                if (selected == null) {
-                  SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
-                  return;
-                }
-                Navigator.pop(ctx, selected);
-              },
-              child: const Text('Asignar'),
-            ),
-          ],
         );
       },
     );
@@ -1385,37 +1467,61 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
+    final sortedSuppliers = sortByAlphabeticalName(supplierProv.suppliers, (s) => s.name);
     int? newSupplier = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultSupplier;
-        return AlertDialog(
-          title: const Text('Asignar Proveedor'),
-          content: supplierProv.isLoading 
-            ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
-            : DropdownButtonFormField<int?>(
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: 'Elige el nuevo proveedor', border: OutlineInputBorder()),
-            items: [
-              const DropdownMenuItem(value: -1, child: Text('— Quitar Proveedor —')),
-              ...supplierProv.suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
-            ],
-            onChanged: (val) => selected = val,
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.brown.shade600),
-              onPressed: () {
-                 if (selected == null) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Asignar Proveedor'),
+            content: supplierProv.isLoading
+                ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: SearchableSelectField<int?>(
+                      value: selected,
+                      clearValue: -1,
+                      showClearButton: false,
+                      labelText: 'Elige el nuevo proveedor',
+                      dialogTitle: 'Seleccionar Proveedor',
+                      searchHintText: 'Buscar proveedor o CUIT...',
+                      prefixIcon: Icons.local_shipping_outlined,
+                      border: const OutlineInputBorder(),
+                      options: [
+                        const SearchableSelectOption<int?>(
+                          value: -1,
+                          label: '— Quitar Proveedor —',
+                          isResetOption: true,
+                        ),
+                        ...sortedSuppliers.map((s) {
+                          final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
+                          return SearchableSelectOption<int?>(
+                            value: s.id,
+                            label: s.name,
+                            subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                            searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                          );
+                        }),
+                      ],
+                      onChanged: (val) => setDialogState(() => selected = val),
+                    ),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.brown.shade600),
+                onPressed: () {
+                  if (selected == null) {
                     SnackBarService.error(ctx, 'Selecciona un proveedor o "— Quitar Proveedor —"');
                     return;
-                 }
-                 Navigator.pop(ctx, selected);
-              }, 
-              child: const Text('Asignar')
-            ),
-          ],
+                  }
+                  Navigator.pop(ctx, selected);
+                },
+                child: const Text('Asignar'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1535,7 +1641,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   bool _isService = false;
   bool _showExpirationSection = false;
   List<Map<String, dynamic>> _comboIngredients = [];
+  final Map<int, TextEditingController> _comboQtyCtrls = {};
+  final Map<int, TextEditingController> _comboCustomPartsCtrls = {};
+  final Set<int> _expandedComboFractionIds = <int>{};
+  final TextEditingController _comboInlineSearchCtrl = TextEditingController();
+  final FocusNode _comboInlineSearchFocus = FocusNode();
+  List<Product> _comboInlineSearchResults = [];
+  bool _isSearchingInlineCombo = false;
+  Timer? _comboInlineSearchDebounce;
   List<Map<String, dynamic>> _priceTiers = [];
+  bool _expandPriceTiers = false;
   String _unitType = 'un';
   double _ivaRate = 21.0;
   int? _categoryId;
@@ -1551,8 +1666,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   String? _selectedImageName;
   bool _isUploadingImage = false;
   bool _deleteExistingImage = false;
-
-  PusherChannelsClient? _pusher;
+  bool _clearStalePriceCard = false;
 
   bool get _isEditing => widget.product != null;
 
@@ -1568,7 +1682,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toArsInput() : '');
     _marginCtrl = TextEditingController();
-    _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
+    final hasFractionalStock =
+        p != null && (p.stock - p.stock.roundToDouble()).abs() > 0.0005;
+    _stockCtrl = TextEditingController(
+      text: p != null
+          ? ((p.isSoldByWeight || hasFractionalStock)
+              ? _formatComboQtyForInput(p.stock)
+              : p.stock.toStringAsFixed(0))
+          : '0',
+    );
     
     _loadSavedMargin();
     
@@ -1587,6 +1709,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
     if (p?.priceTiers != null) {
       _priceTiers = List<Map<String, dynamic>>.from(p!.priceTiers!);
+      _expandPriceTiers = _priceTiers.isNotEmpty;
     }
     _unitType = p?.unitType ?? 'un';
     final rawIva = p?.ivaRate ?? 21.0;
@@ -1611,72 +1734,136 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       _expirationDate = DateTime.tryParse(p.expirationDate!);
     }
     _showExpirationSection = _expirationDate != null || (p?.vencimientoDias != null && p!.vencimientoDias! > 0);
-    _initPusher();
   }
 
-  Future<void> _initPusher() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final terminalId = prefs.getString('pos_terminal_id') ?? 'caja-1';
-      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-      final uri = Uri.parse(currentUrl);
-      
-      final isSecure = currentUrl.startsWith('https');
-      String pusherHost = uri.host;
-      if (pusherHost.startsWith('api.')) {
-        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
-      } else if (pusherHost.startsWith('api-')) {
-        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
-      }
-          
-      final int pusherPort = isSecure ? 443 : 8080;
-      
-      final options = PusherChannelsOptions.fromHost(
-        scheme: isSecure ? 'wss' : 'ws',
-        host: pusherHost,
-        port: pusherPort,
-        key: 'kz786cdfeldnzispymxq',
+  void _handleFormBarcodeScan(String barcode) {
+    if (_isService) {
+      SnackBarService.warning(
+        context,
+        'Los servicios u honorarios no llevan código de barras.',
       );
-
-      _pusher = PusherChannelsClient.websocket(
-        options: options,
-        connectionErrorHandler: (error, trace, refresh) {},
-      );
-
-      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-
-      _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribe();
-      });
-
-      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-        try {
-          if (event.data == null) return;
-          final data = jsonDecode(event.data.toString());
-          final barcode = data['barcode'];
-          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-            setState(() {
-              _barcodeCtrl.text = barcode;
-            });
-            SnackBarService.success(context, 'Código escaneado: $barcode');
-          }
-        } catch (e) {
-          debugPrint("Error parsing MobileScanned event: $e");
-        }
-      });
-
-      await _pusher!.connect();
-    } catch (e) {
-      debugPrint("Error inicializando Pusher en formulario: $e");
+      return;
     }
+    if (_isCombo && _comboInlineSearchFocus.hasFocus) {
+      _onInlineComboSearchSubmitted(barcode);
+      return;
+    }
+    setState(() {
+      _barcodeCtrl.text = barcode;
+    });
+    SnackBarService.success(context, 'Código escaneado: $barcode');
+  }
+
+  double get _comboRecipeTotalCost => _comboIngredients.fold<double>(
+        0.0,
+        (acc, ing) =>
+            acc +
+            ((ing['cost_price'] as num?)?.toDouble() ?? 0.0) *
+                ((ing['quantity'] as num?)?.toDouble() ?? 0.0),
+      );
+
+  List<Product> _filterEligibleInlineComboProducts(List<Product> rawResults) {
+    final excludeId = widget.product?.id;
+    return rawResults.where((p) {
+      if (p.isCombo) return false;
+      if (excludeId != null && p.id == excludeId) return false;
+      return true;
+    }).toList();
+  }
+
+  void _onInlineComboSearchChanged(String rawQuery) {
+    _comboInlineSearchDebounce?.cancel();
+    final q = rawQuery.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _comboInlineSearchResults = [];
+        _isSearchingInlineCombo = false;
+      });
+      return;
+    }
+    _comboInlineSearchDebounce =
+        Timer(const Duration(milliseconds: 280), () async {
+      if (!mounted) return;
+      setState(() => _isSearchingInlineCombo = true);
+      final raw = await widget.provider.searchProductsForCombo(q);
+      if (!mounted) return;
+      setState(() {
+        _isSearchingInlineCombo = false;
+        _comboInlineSearchResults = _filterEligibleInlineComboProducts(raw);
+      });
+    });
+  }
+
+  Future<void> _onInlineComboSearchSubmitted(String rawQuery) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty || !mounted) return;
+    _comboInlineSearchDebounce?.cancel();
+    setState(() => _isSearchingInlineCombo = true);
+    final raw = await widget.provider.searchProductsForCombo(q);
+    if (!mounted) return;
+    final eligible = _filterEligibleInlineComboProducts(raw);
+    final exact = RemoteScannerService.findExactProductMatch(
+      eligible,
+      q,
+      activeOnly: false,
+    );
+    final chosen = exact ?? (eligible.length == 1 ? eligible.first : null);
+    if (chosen != null) {
+      _addProductToComboRecipe(chosen);
+      return;
+    }
+    setState(() {
+      _isSearchingInlineCombo = false;
+      _comboInlineSearchResults = eligible;
+    });
+    if (eligible.isEmpty) {
+      SnackBarService.info(
+        context,
+        'No se encontraron productos elegibles para "$q".',
+      );
+    }
+  }
+
+  void _addProductToComboRecipe(Product p) {
+    final alreadyAdded = _comboIngredients.any((ing) => ing['id'] == p.id);
+    if (alreadyAdded) {
+      setState(() {
+        _isSearchingInlineCombo = false;
+        _comboInlineSearchCtrl.clear();
+        _comboInlineSearchResults = [];
+      });
+      SnackBarService.info(
+        context,
+        '"${p.name}" ya está agregado al combo.',
+      );
+      return;
+    }
+    setState(() {
+      _comboIngredients.add({
+        'id': p.id,
+        'name': p.name,
+        'quantity': 1.0,
+        'cost_price': p.costPrice,
+        'selling_price': p.sellingPrice,
+        'stock': p.stock,
+        'unit_type': p.unitType,
+        'is_sold_by_weight': p.isSoldByWeight,
+      });
+      _getComboQtyCtrl(p.id, 1.0);
+      _isSearchingInlineCombo = false;
+      _comboInlineSearchCtrl.clear();
+      _comboInlineSearchResults = [];
+    });
   }
 
   @override
   void dispose() {
-    _pusher?.disconnect();
     _costCtrl.removeListener(_onCostChanged);
     _marginCtrl.removeListener(_onMarginChanged);
     _priceCtrl.removeListener(_onPriceChanged);
+    _comboInlineSearchDebounce?.cancel();
+    _comboInlineSearchCtrl.dispose();
+    _comboInlineSearchFocus.dispose();
     _nameCtrl.dispose();
     _barcodeCtrl.dispose();
     _internalCodeCtrl.dispose();
@@ -1687,6 +1874,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
     _expiryAlertDaysCtrl.dispose();
+    for (final ctrl in _comboQtyCtrls.values) {
+      ctrl.dispose();
+    }
+    _comboQtyCtrls.clear();
+    for (final ctrl in _comboCustomPartsCtrls.values) {
+      ctrl.dispose();
+    }
+    _comboCustomPartsCtrls.clear();
     super.dispose();
   }
 
@@ -1957,32 +2152,31 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       );
       return;
     }
-    if (_isCombo) {
-      for (final ing in _comboIngredients) {
-        final reqQty = (ing['quantity'] as num?)?.toDouble() ?? 0.0;
-        if (ing['stock'] != null) {
-          final availStock = (ing['stock'] as num).toDouble();
-          if (reqQty > availStock) {
-            SnackBarService.error(
-              context,
-              'La cantidad requerida de "${ing['name']}" (${reqQty.toQty()}) supera su stock disponible actual (${availStock.toQty()}).',
-            );
-            return;
-          }
-        }
-      }
-    }
+
     final parsedStock = double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0;
     final initialStock = widget.product != null
         ? (double.tryParse(widget.product!.stock.toStringAsFixed(widget.product!.isSoldByWeight ? 3 : 0)) ?? widget.product!.stock)
         : null;
     final stockModified = !_isEditing || initialStock == null || (parsedStock - initialStock).abs() > 0.0001;
 
+    final effectiveCostPrice = (_isCombo && !_isService && _comboRecipeTotalCost > 0)
+        ? ((_comboRecipeTotalCost * 100).roundToDouble() / 100.0)
+        : ArsThousandsInputFormatter.parse(_costCtrl.text);
+
+    final serializedComboIngredients = (_isCombo && !_isService)
+        ? _comboIngredients.map((ing) {
+            final copy = Map<String, dynamic>.from(ing);
+            final rawQ = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+            copy['quantity'] = roundQtyForStorage(rawQ);
+            return copy;
+          }).toList()
+        : null;
+
     final data = {
       'name': _nameCtrl.text.trim(),
       'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
-      'cost_price': ArsThousandsInputFormatter.parse(_costCtrl.text),
+      'cost_price': effectiveCostPrice,
       'selling_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
       'iva_rate': _ivaRate,
       if (stockModified) 'stock': parsedStock,
@@ -1990,14 +2184,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'is_sold_by_weight': _isService ? false : _isSoldByWeight,
       'is_combo': _isService ? false : _isCombo,
       'is_service': _isService,
-      if (_isCombo && !_isService) 'combo_ingredients': _comboIngredients,
+      if (serializedComboIngredients != null)
+        'combo_ingredients': serializedComboIngredients,
       if (_isEditing || _priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
       'unit_type': _unitType,
       'active': _active,
       'needs_catalog_review': false,
+      if (_clearStalePriceCard) 'price_card': null,
       'category_id': _categoryId,
-      'brand_id': _brandId,
-      'supplier_id': _supplierId,
+      'brand_id': _isService ? null : _brandId,
+      'supplier_id': _isService ? null : _supplierId,
       'vencimiento_dias': _expiryCtrl.text.trim().isNotEmpty
           ? int.tryParse(_expiryCtrl.text.trim())
           : null,
@@ -2102,52 +2298,64 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
   }
 
-  Widget _buildCategorySelector(List<Category> categories) {
-    final selectedCat = categories.where((c) => c.id == _categoryId).firstOrNull;
-    final rId = selectedCat?.rubroId ?? selectedCat?.rubro?.id;
-    String? selectedRubroName;
+  String? _resolveCategoryRubroName(Category? cat) {
+    if (cat == null) return null;
+    final rId = cat.rubroId ?? cat.rubro?.id;
     if (rId != null) {
       try {
-        selectedRubroName = widget.provider.rubros.where((r) => r.id == rId).firstOrNull?.name;
+        final found = widget.provider.rubros.where((r) => r.id == rId).firstOrNull?.name;
+        if (found != null && found.trim().isNotEmpty) return found;
       } catch (_) {}
     }
-    selectedRubroName ??= selectedCat?.rubro?.name;
+    final direct = cat.rubro?.name;
+    return (direct != null && direct.trim().isNotEmpty) ? direct : null;
+  }
+
+  Widget _buildCategorySelector(List<Category> categories) {
+    final sortedCategories = sortByAlphabeticalName(categories, (c) => c.name);
+    final hasSelection = sortedCategories.any((c) => c.id == _categoryId);
+    final selectedCat = hasSelection
+        ? sortedCategories.where((c) => c.id == _categoryId).firstOrNull
+        : null;
+    final selectedRubroName = _resolveCategoryRubroName(selectedCat);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: DropdownButtonFormField<int?>(
-            isExpanded: true,
-            // ignore: deprecated_member_use
-            value: categories.any((c) => c.id == _categoryId) ? _categoryId : null,
-            decoration: InputDecoration(
-              labelText: 'Categoría',
-              prefixIcon: const Icon(Icons.category_outlined),
-              helperText: (selectedRubroName != null && selectedRubroName.trim().isNotEmpty)
-                  ? 'Rubro: $selectedRubroName'
-                  : null,
-              helperStyle: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.deepPurple.shade700,
-              ),
+          child: SearchableSelectField<int?>(
+            value: hasSelection ? _categoryId : null,
+            clearValue: null,
+            labelText: 'Categoría',
+            dialogTitle: 'Seleccionar Categoría',
+            searchHintText: 'Buscar categoría o rubro...',
+            prefixIcon: Icons.category_outlined,
+            helperText: (selectedRubroName != null && selectedRubroName.trim().isNotEmpty)
+                ? 'Rubro: $selectedRubroName'
+                : null,
+            helperStyle: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.deepPurple.shade700,
             ),
-            items: [
-              const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
-              ...categories.map((c) => DropdownMenuItem<int?>(
-                value: c.id,
-                child: Text(
-                  c.name,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )),
+            options: [
+              const SearchableSelectOption<int?>(
+                value: null,
+                label: '— Sin categoría —',
+                isResetOption: true,
+              ),
+              ...sortedCategories.map((c) {
+                final rubroName = _resolveCategoryRubroName(c);
+                return SearchableSelectOption<int?>(
+                  value: c.id,
+                  label: c.name,
+                  subtitle: rubroName != null ? 'Rubro: $rubroName' : null,
+                  searchKeywords: rubroName != null ? [rubroName] : const [],
+                );
+              }),
             ],
-            onChanged: (val) {
-              setState(() {
-                _categoryId = val;
-              });
-            },
+            onChanged: (val) => setState(() => _categoryId = val),
+            onCreateNew: (query) => _showCreateCategoryQuickDialog(initialName: query),
           ),
         ),
         const SizedBox(width: 8),
@@ -2162,8 +2370,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
-  Future<void> _showCreateCategoryQuickDialog() async {
-    final nameCtrl = TextEditingController();
+  Future<void> _showCreateCategoryQuickDialog({String? initialName}) async {
+    final nameCtrl = TextEditingController(text: initialName ?? '');
     final settingsProv = context.read<SettingsProvider>();
     final isPremium = settingsProv.features.multiRubro;
     final provider = context.read<CatalogProvider>();
@@ -2172,7 +2380,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       await provider.loadRubros();
     }
 
-    int? selectedRubroId = provider.rubros.isNotEmpty ? provider.rubros.first.id : null;
+    final sortedRubros = sortByAlphabeticalName(provider.rubros, (r) => r.name);
+    int? selectedRubroId = sortedRubros.isNotEmpty ? sortedRubros.first.id : null;
 
     final createdId = await showDialog<int?>(
       context: context,
@@ -2194,20 +2403,22 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                     autofocus: true,
                   ),
-                  if (isPremium && provider.rubros.isNotEmpty) ...[
+                  if (isPremium && sortedRubros.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<int?>(
-                      isExpanded: true,
-                      initialValue: selectedRubroId,
-                      decoration: const InputDecoration(
-                        labelText: 'Rubro Padre',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category_outlined),
-                      ),
-                      items: provider.rubros.map((r) => DropdownMenuItem<int?>(
-                        value: r.id,
-                        child: Text(r.name, overflow: TextOverflow.ellipsis),
-                      )).toList(),
+                    SearchableSelectField<int?>(
+                      value: selectedRubroId,
+                      showClearButton: false,
+                      labelText: 'Rubro Padre',
+                      dialogTitle: 'Seleccionar Rubro Padre',
+                      searchHintText: 'Buscar rubro...',
+                      prefixIcon: Icons.category_outlined,
+                      border: const OutlineInputBorder(),
+                      options: sortedRubros
+                          .map((r) => SearchableSelectOption<int?>(
+                                value: r.id,
+                                label: r.name,
+                              ))
+                          .toList(),
                       onChanged: (val) {
                         setDialogState(() {
                           selectedRubroId = val;
@@ -2247,20 +2458,67 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
   }
 
+  Future<void> _showCreateBrandQuickDialog({String? initialName}) async {
+    final nameCtrl = TextEditingController(text: initialName ?? '');
+    final createdId = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nueva Marca'),
+        content: TextField(
+          controller: nameCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Nombre',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.branding_watermark_outlined),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          Consumer<CatalogProvider>(
+            builder: (_, p, __) => FilledButton(
+              onPressed: p.isLoading
+                  ? null
+                  : () async {
+                      if (nameCtrl.text.trim().isEmpty) return;
+                      final newId = await p.createBrand(nameCtrl.text.trim());
+                      if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                    },
+              child: const Text('Crear'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (createdId != null && mounted) setState(() => _brandId = createdId);
+  }
+
   Widget _buildBrandSelector(List<Brand> brands) {
+    final sortedBrands = sortByAlphabeticalName(brands, (b) => b.name);
+    final hasSelection = sortedBrands.any((b) => b.id == _brandId);
+
     return Row(
       children: [
         Expanded(
-          child: DropdownButtonFormField<int?>(
-            isExpanded: true,
-            // ignore: deprecated_member_use
-            value: brands.any((b) => b.id == _brandId) ? _brandId : null,
-            decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
-            items: [
-              const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
-              ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
+          child: SearchableSelectField<int?>(
+            value: hasSelection ? _brandId : null,
+            clearValue: null,
+            labelText: 'Marca',
+            dialogTitle: 'Seleccionar Marca',
+            searchHintText: 'Buscar marca...',
+            prefixIcon: Icons.branding_watermark_outlined,
+            options: [
+              const SearchableSelectOption<int?>(
+                value: null,
+                label: '— Sin marca —',
+                isResetOption: true,
+              ),
+              ...sortedBrands.map(
+                (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+              ),
             ],
             onChanged: (val) => setState(() => _brandId = val),
+            onCreateNew: (query) => _showCreateBrandQuickDialog(initialName: query),
           ),
         ),
         const SizedBox(width: 8),
@@ -2268,40 +2526,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           message: 'Crear marca',
           child: IconButton.filledTonal(
             icon: const Icon(Icons.add),
-            onPressed: () async {
-              final nameCtrl = TextEditingController();
-              final createdId = await showDialog<int?>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Nueva Marca'),
-                  content: TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.branding_watermark_outlined),
-                    ),
-                    autofocus: true,
-                  ),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                    Consumer<CatalogProvider>(
-                      builder: (_, p, __) => FilledButton(
-                        onPressed: p.isLoading
-                            ? null
-                            : () async {
-                                if (nameCtrl.text.trim().isEmpty) return;
-                                final newId = await p.createBrand(nameCtrl.text.trim());
-                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
-                              },
-                        child: const Text('Crear'),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-              if (createdId != null && mounted) setState(() => _brandId = createdId);
-            },
+            onPressed: () => _showCreateBrandQuickDialog(),
           ),
         ),
       ],
@@ -2315,23 +2540,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   ) {
     final isNarrow = MediaQuery.of(context).size.width < 450;
     final categoryWidget = _buildCategorySelector(categories);
-    final brandWidget = AnimatedOpacity(
-      duration: const Duration(milliseconds: 180),
-      opacity: _isService ? 0.45 : 1.0,
-      child: IgnorePointer(
-        ignoring: _isService,
-        child: _buildBrandSelector(brands),
-      ),
-    );
 
-    if (isNarrow) {
+    if (isNarrow || _isService) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           categoryWidget,
           if (!_isService) ...[
             const SizedBox(height: 12),
-            brandWidget,
+            _buildBrandSelector(brands),
           ],
         ],
       );
@@ -2342,7 +2559,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       children: [
         Expanded(child: categoryWidget),
         const SizedBox(width: 16),
-        Expanded(child: brandWidget),
+        Expanded(child: _buildBrandSelector(brands)),
       ],
     );
   }
@@ -2678,14 +2895,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final suppliers = supplierProv.suppliers;
     final isBusy = provider.isLoading || _isUploadingImage;
 
-    return PopScope(
-      canPop: !isBusy,
-      child: AlertDialog(
+    return RemoteScannerListener(
+      debugLabel: 'ProductFormDialog',
+      onBarcodeScanned: _handleFormBarcodeScan,
+      child: PopScope(
+        canPop: !isBusy,
+        child: AlertDialog(
       alignment: Alignment.center,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -2702,9 +2923,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               tooltip: 'Compartir producto',
               onPressed: () => ProductShareHelper.shareProduct(widget.product!),
             ),
+          IconButton(
+            onPressed: isBusy ? null : () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded, size: 20),
+            tooltip: 'Cerrar',
+          ),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
       content: ConstrainedBox(
         constraints: BoxConstraints(
           minWidth: isNarrow ? 260 : 640,
@@ -2909,244 +3136,87 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           ),
                         ],
                         const SizedBox(height: 12),
-                        // Categoría y Marca (Grilla estable en todas las pestañas)
+                        // Categoría y Marca (En Servicio/Honorario oculta Marca y expande Categoría)
                         _buildCategoryAndBrandSection(context, categories, brands),
                         const SizedBox(height: 12),
-                        if (canSeeSupplier)
+                        if (canSeeSupplier && !_isService)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 180),
-                              opacity: _isService ? 0.45 : 1.0,
-                              child: IgnorePointer(
-                                ignoring: _isService,
-                                child: Row(
+                            child: Builder(
+                              builder: (_) {
+                                final sortedSuppliers =
+                                    sortByAlphabeticalName(suppliers, (s) => s.name);
+                                final hasSelection =
+                                    sortedSuppliers.any((s) => s.id == _supplierId);
+                                return Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Expanded(
-                                      child: DropdownButtonFormField<int?>(
-                                        isExpanded: true,
-                                        // ignore: deprecated_member_use
-                                        value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Proveedor',
-                                          prefixIcon: Icon(Icons.local_shipping_outlined),
-                                          isDense: true,
-                                        ),
-                                        items: [
-                                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin proveedor —')),
-                                          ...suppliers.map((s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.name))),
+                                      child: SearchableSelectField<int?>(
+                                        value: hasSelection ? _supplierId : null,
+                                        clearValue: null,
+                                        isDense: true,
+                                        labelText: 'Proveedor',
+                                        dialogTitle: 'Seleccionar Proveedor',
+                                        searchHintText: 'Buscar proveedor o CUIT...',
+                                        prefixIcon: Icons.local_shipping_outlined,
+                                        options: [
+                                          const SearchableSelectOption<int?>(
+                                            value: null,
+                                            label: '— Sin proveedor —',
+                                            isResetOption: true,
+                                          ),
+                                          ...sortedSuppliers.map((s) {
+                                            final hasCuit =
+                                                s.cuit != null && s.cuit!.trim().isNotEmpty;
+                                            return SearchableSelectOption<int?>(
+                                              value: s.id,
+                                              label: s.name,
+                                              subtitle: hasCuit
+                                                  ? 'CUIT: ${s.cuit!.trim()}'
+                                                  : null,
+                                              searchKeywords: hasCuit
+                                                  ? [s.cuit!.trim()]
+                                                  : const [],
+                                            );
+                                          }),
                                         ],
-                                        onChanged: (val) => setState(() => _supplierId = val),
+                                        onChanged: (val) =>
+                                            setState(() => _supplierId = val),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.add_circle_outline),
-                                          color: Colors.green,
-                                          tooltip: 'Crear Nuevo Proveedor',
-                                          onPressed: () async {
-                                            final createdId = await showDialog<int>(
-                                              context: context,
-                                              builder: (ctx) => const SupplierFormDialog(),
-                                            );
-                                            if (createdId != null && mounted) {
-                                              setState(() => _supplierId = createdId);
-                                            }
-                                          },
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.refresh),
-                                          color: Colors.blue,
-                                          tooltip: 'Recargar Proveedores',
-                                          onPressed: () {
-                                            context.read<SupplierProvider>().fetchSuppliers();
-                                          },
-                                        ),
-                                      ],
+                                    Tooltip(
+                                      message: 'Crear Nuevo Proveedor',
+                                      child: IconButton.filledTonal(
+                                        icon: const Icon(Icons.add),
+                                        onPressed: () async {
+                                          final createdId = await showDialog<int>(
+                                            context: context,
+                                            builder: (ctx) => const SupplierFormDialog(),
+                                          );
+                                          if (createdId != null && mounted) {
+                                            setState(() => _supplierId = createdId);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Tooltip(
+                                      message: 'Recargar Proveedores',
+                                      child: IconButton.filledTonal(
+                                        icon: const Icon(Icons.refresh),
+                                        onPressed: () {
+                                          context.read<SupplierProvider>().fetchSuppliers();
+                                        },
+                                      ),
                                     ),
                                   ],
-                                ),
-                              ),
+                                );
+                              },
                             ),
                           ),
-                        if (isNarrow)
-                          Column(
-                            children: [
-                              if (!_isCombo && !_isService) ...[
-                                TextFormField(
-                                  controller: _costCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Precio Costo (Opc.)',
-                                    prefixText: '\$ ',
-                                    helperText: 'Opcional (\$0) o calculado desde Venta + %',
-                                    isDense: true,
-                                  ),
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  inputFormatters: [ArsThousandsInputFormatter()],
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return null;
-                                    final parsed = ArsThousandsInputFormatter.tryParse(v);
-                                    if (parsed == null || parsed < 0) return 'Ingrese un monto válido';
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 12),
-                                TextFormField(
-                                  controller: _marginCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: '% Margen',
-                                    suffixText: '%',
-                                    isDense: true,
-                                  ),
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              TextFormField(
-                                controller: _priceCtrl,
-                                decoration: InputDecoration(
-                                  labelText: _isService ? 'Importe / Honorario *' : 'Precio Venta *',
-                                  prefixText: '\$ ',
-                                  isDense: true,
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [ArsThousandsInputFormatter()],
-                                validator: (v) {
-                                  final price = ArsThousandsInputFormatter.tryParse(v);
-                                  if (price == null) return 'Ingrese un precio válido';
-                                  if (!_isCombo && !_isService) {
-                                    final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
-                                    if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              if (isResponsableInscripto) ...[
-                                const SizedBox(height: 12),
-                                DropdownButtonFormField<double>(
-                                  initialValue: _ivaRate,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'IVA AFIP',
-                                    prefixIcon: Icon(Icons.account_balance_outlined, size: 18),
-                                    isDense: true,
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(value: 21.0, child: Text('21%')),
-                                    DropdownMenuItem(value: 10.5, child: Text('10.5%')),
-                                    DropdownMenuItem(value: 27.0, child: Text('27%')),
-                                    DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
-                                  ],
-                                  onChanged: (v) {
-                                    if (v != null) setState(() => _ivaRate = v);
-                                  },
-                                ),
-                              ],
-                            ],
-                          )
-                        else
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Precio Costo y % Margen mantienen su columna fija (atenuados en Servicios y Combos para evitar saltos horizontales)
-                              Expanded(
-                                flex: 3,
-                                child: AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 180),
-                                  opacity: (_isCombo || _isService) ? 0.45 : 1.0,
-                                  child: TextFormField(
-                                    controller: _costCtrl,
-                                    enabled: !_isCombo && !_isService,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Precio Costo (Opc.)',
-                                      prefixText: '\$ ',
-                                      hintText: '0',
-                                      isDense: true,
-                                    ),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    inputFormatters: [ArsThousandsInputFormatter()],
-                                    validator: (v) {
-                                      if (_isCombo || _isService) return null;
-                                      if (v == null || v.trim().isEmpty) return null;
-                                      final parsed = ArsThousandsInputFormatter.tryParse(v);
-                                      if (parsed == null || parsed < 0) return 'Monto inválido';
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 180),
-                                  opacity: (_isCombo || _isService) ? 0.45 : 1.0,
-                                  child: TextFormField(
-                                    controller: _marginCtrl,
-                                    enabled: !_isCombo && !_isService,
-                                    decoration: const InputDecoration(
-                                      labelText: '% Margen',
-                                      suffixText: '%',
-                                      isDense: true,
-                                    ),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 3,
-                                child: TextFormField(
-                                  controller: _priceCtrl,
-                                  decoration: InputDecoration(
-                                    labelText: _isService ? 'Importe / Honorario *' : 'Precio Venta *',
-                                    prefixText: '\$ ',
-                                    isDense: true,
-                                  ),
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  inputFormatters: [ArsThousandsInputFormatter()],
-                                  validator: (v) {
-                                    final price = ArsThousandsInputFormatter.tryParse(v);
-                                    if (price == null) return 'Ingrese un precio válido';
-                                    if (!_isCombo && !_isService) {
-                                      final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
-                                      if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                              if (isResponsableInscripto) ...[
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  flex: 2,
-                                  child: DropdownButtonFormField<double>(
-                                    initialValue: _ivaRate,
-                                    isExpanded: true,
-                                    decoration: const InputDecoration(
-                                      labelText: 'IVA AFIP',
-                                      isDense: true,
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(value: 21.0, child: Text('21%')),
-                                      DropdownMenuItem(value: 10.5, child: Text('10.5%')),
-                                      DropdownMenuItem(value: 27.0, child: Text('27%')),
-                                      DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
-                                    ],
-                                    onChanged: (v) {
-                                      if (v != null) setState(() => _ivaRate = v);
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        const SizedBox(height: 12),
-                        // --- SECCIÓN INFERIOR CONTEXTUAL CON TRANSICIÓN SUAVE (Fade + Size) ---
+                        // --- SECCIÓN CONTEXTUAL POR TIPO DE ÍTEM ---
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 220),
                           switchInCurve: Curves.easeOutCubic,
@@ -3160,6 +3230,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   key: const ValueKey<String>('product_form_service_section'),
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
+                                    _buildPriceCostIvaSection(
+                                      isNarrow: isNarrow,
+                                      isResponsableInscripto: isResponsableInscripto,
+                                    ),
+                                    const SizedBox(height: 12),
                                     Container(
                                       padding: const EdgeInsets.all(14),
                                       decoration: BoxDecoration(
@@ -3242,45 +3317,58 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                     ),
                                   ],
                                 )
-                              : Column(
-                                  key: ValueKey<String>(_isCombo ? 'product_form_combo_section' : 'product_form_physical_section'),
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    _buildPriceTiersSection(),
-                                    if (!_isCombo)
-                                      Padding(
-                                        padding: const EdgeInsets.only(bottom: 12),
-                                        child: isNarrow
-                                            ? Column(
-                                                children: [
-                                                  TextFormField(
-                                                    controller: _stockCtrl,
-                                                    decoration: InputDecoration(
-                                                      labelText: 'Stock inicial',
-                                                      suffixText: _unitType,
-                                                      prefixIcon: const Icon(Icons.inventory_2_outlined),
-                                                      isDense: true,
-                                                    ),
-                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                  ),
-                                                  const SizedBox(height: 12),
-                                                  TextFormField(
-                                                    controller: _minStockCtrl,
-                                                    decoration: const InputDecoration(
-                                                      labelText: 'Stock Mínimo (Alerta)',
-                                                      prefixIcon: Icon(Icons.notification_important_outlined),
-                                                      helperText: 'Opcional: Dejar vacío para no alertar',
-                                                      isDense: true,
-                                                    ),
-                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                  ),
-                                                ],
-                                              )
-                                            : Row(
-                                                children: [
-                                                  Expanded(
-                                                    flex: 4,
-                                                    child: TextFormField(
+                              : _isCombo
+                                  ? Column(
+                                      key: const ValueKey<String>('product_form_combo_section'),
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildComboRecipeSection(isNarrow),
+                                        const SizedBox(height: 12),
+                                        _buildPriceCostIvaSection(
+                                          isNarrow: isNarrow,
+                                          isResponsableInscripto: isResponsableInscripto,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        _buildPriceTiersSection(),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8FAFC),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                          ),
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            child: SwitchListTile(
+                                              dense: true,
+                                              contentPadding: EdgeInsets.zero,
+                                              title: const Text(
+                                                'Activo en POS (Visible para venta rápida)',
+                                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                              ),
+                                              value: _active,
+                                              onChanged: (v) => setState(() => _active = v),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      key: const ValueKey<String>('product_form_physical_section'),
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildPriceCostIvaSection(
+                                          isNarrow: isNarrow,
+                                          isResponsableInscripto: isResponsableInscripto,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        _buildPriceTiersSection(),
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: isNarrow
+                                              ? Column(
+                                                  children: [
+                                                    TextFormField(
                                                       controller: _stockCtrl,
                                                       decoration: InputDecoration(
                                                         labelText: 'Stock inicial',
@@ -3290,11 +3378,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                       ),
                                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                                     ),
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    flex: 6,
-                                                    child: TextFormField(
+                                                    const SizedBox(height: 12),
+                                                    TextFormField(
                                                       controller: _minStockCtrl,
                                                       decoration: const InputDecoration(
                                                         labelText: 'Stock Mínimo (Alerta)',
@@ -3304,438 +3389,296 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                       ),
                                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                                     ),
+                                                  ],
+                                                )
+                                              : Row(
+                                                  children: [
+                                                    Expanded(
+                                                      flex: 4,
+                                                      child: TextFormField(
+                                                        controller: _stockCtrl,
+                                                        decoration: InputDecoration(
+                                                          labelText: 'Stock inicial',
+                                                          suffixText: _unitType,
+                                                          prefixIcon: const Icon(Icons.inventory_2_outlined),
+                                                          isDense: true,
+                                                        ),
+                                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      flex: 6,
+                                                      child: TextFormField(
+                                                        controller: _minStockCtrl,
+                                                        decoration: const InputDecoration(
+                                                          labelText: 'Stock Mínimo (Alerta)',
+                                                          prefixIcon: Icon(Icons.notification_important_outlined),
+                                                          helperText: 'Opcional: Dejar vacío para no alertar',
+                                                          isDense: true,
+                                                        ),
+                                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                        ),
+                                        if (isNarrow)
+                                          Column(
+                                            children: [
+                                              DropdownButtonFormField<String>(
+                                                key: ValueKey('unit_type_narrow_$_unitType'),
+                                                isExpanded: true,
+                                                initialValue: _unitType,
+                                                decoration: const InputDecoration(
+                                                  labelText: 'Unidad de Medida',
+                                                  prefixIcon: Icon(Icons.square_foot),
+                                                  isDense: true,
+                                                ),
+                                                items: const [
+                                                  DropdownMenuItem(value: 'un', child: Text('Unidades')),
+                                                  DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
+                                                  DropdownMenuItem(value: 'g', child: Text('Gramos')),
+                                                  DropdownMenuItem(value: 'lt', child: Text('Litros')),
+                                                ],
+                                                onChanged: (val) => setState(() {
+                                                  _unitType = val ?? 'un';
+                                                  _isSoldByWeight = _unitType != 'un';
+                                                }),
+                                              ),
+                                              SwitchListTile(
+                                                dense: true,
+                                                contentPadding: EdgeInsets.zero,
+                                                title: const Text('Venta p/peso (balanza)'),
+                                                value: _isSoldByWeight,
+                                                onChanged: (v) => setState(() {
+                                                  _isSoldByWeight = v;
+                                                  if (v && _unitType == 'un') {
+                                                    _unitType = 'kg';
+                                                  } else if (!v) {
+                                                    _unitType = 'un';
+                                                  }
+                                                }),
+                                              ),
+                                              SwitchListTile(
+                                                dense: true,
+                                                contentPadding: EdgeInsets.zero,
+                                                title: const Text('Activo (Visible en POS)'),
+                                                value: _active,
+                                                onChanged: (v) => setState(() => _active = v),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                flex: 4,
+                                                child: DropdownButtonFormField<String>(
+                                                  key: ValueKey('unit_type_wide_$_unitType'),
+                                                  isExpanded: true,
+                                                  initialValue: _unitType,
+                                                  decoration: const InputDecoration(
+                                                    labelText: 'Unidad de Medida',
+                                                    prefixIcon: Icon(Icons.square_foot),
+                                                    isDense: true,
+                                                  ),
+                                                  items: const [
+                                                    DropdownMenuItem(value: 'un', child: Text('Unidades')),
+                                                    DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
+                                                    DropdownMenuItem(value: 'g', child: Text('Gramos')),
+                                                    DropdownMenuItem(value: 'lt', child: Text('Litros')),
+                                                  ],
+                                                  onChanged: (val) => setState(() {
+                                                    _unitType = val ?? 'un';
+                                                    _isSoldByWeight = _unitType != 'un';
+                                                  }),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                flex: 4,
+                                                child: SwitchListTile(
+                                                  dense: true,
+                                                  contentPadding: EdgeInsets.zero,
+                                                  title: const Text('Venta p/peso', style: TextStyle(fontSize: 13)),
+                                                  value: _isSoldByWeight,
+                                                  onChanged: (v) => setState(() {
+                                                    _isSoldByWeight = v;
+                                                    if (v && _unitType == 'un') {
+                                                      _unitType = 'kg';
+                                                    } else if (!v) {
+                                                      _unitType = 'un';
+                                                    }
+                                                  }),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                flex: 4,
+                                                child: SwitchListTile(
+                                                  dense: true,
+                                                  contentPadding: EdgeInsets.zero,
+                                                  title: const Text('Activo en POS', style: TextStyle(fontSize: 13)),
+                                                  value: _active,
+                                                  onChanged: (v) => setState(() => _active = v),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        // ── Control de Vencimiento y Alertas ──
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange.shade50.withValues(alpha: 0.45),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.orange.shade200),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Wrap(
+                                                  alignment: WrapAlignment.spaceBetween,
+                                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                                  spacing: 8,
+                                                  runSpacing: 4,
+                                                  children: [
+                                                    Text(
+                                                      'Control de Vencimiento y Alertas (Opcional)',
+                                                      style: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 12.5,
+                                                        color: Colors.orange.shade900,
+                                                      ),
+                                                    ),
+                                                    TextButton.icon(
+                                                      style: TextButton.styleFrom(
+                                                        visualDensity: VisualDensity.compact,
+                                                        foregroundColor: Colors.orange.shade900,
+                                                      ),
+                                                      onPressed: () => setState(() => _showExpirationSection = !_showExpirationSection),
+                                                      icon: Icon(
+                                                        _showExpirationSection ? Icons.expand_less_rounded : Icons.add_rounded,
+                                                        size: 17,
+                                                      ),
+                                                      label: Text(
+                                                        _showExpirationSection ? 'Ocultar' : 'Configurar vencimiento',
+                                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                if (_showExpirationSection) ...[
+                                                  const SizedBox(height: 8),
+                                                  Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Expanded(
+                                                        flex: 4,
+                                                        child: InkWell(
+                                                          onTap: () async {
+                                                            final picked = await showCompactDatePicker(
+                                                              context: context,
+                                                              initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
+                                                              firstDate: DateTime(2020),
+                                                              lastDate: DateTime(2100),
+                                                              helpText: 'Fecha de Vencimiento del Lote',
+                                                            );
+                                                            if (!mounted) return;
+                                                            if (picked != null) {
+                                                              setState(() => _expirationDate = picked);
+                                                            }
+                                                          },
+                                                          child: InputDecorator(
+                                                            decoration: InputDecoration(
+                                                              labelText: 'Fecha de Vencimiento (Lote)',
+                                                              prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+                                                              border: const OutlineInputBorder(),
+                                                              isDense: true,
+                                                              suffixIcon: _expirationDate != null
+                                                                  ? IconButton(
+                                                                      tooltip: 'Quitar fecha de vencimiento',
+                                                                      icon: const Icon(Icons.clear, size: 16),
+                                                                      onPressed: () => setState(() => _expirationDate = null),
+                                                                    )
+                                                                  : null,
+                                                            ),
+                                                            child: Text(
+                                                              _expirationDate != null
+                                                                  ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
+                                                                  : 'Sin fecha fija',
+                                                              style: TextStyle(
+                                                                fontSize: 13,
+                                                                fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
+                                                                color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        flex: 3,
+                                                        child: TextFormField(
+                                                          controller: _expiryAlertDaysCtrl,
+                                                          decoration: const InputDecoration(
+                                                            labelText: 'Pre-Alerta (días antes)',
+                                                            suffixText: 'días',
+                                                            border: OutlineInputBorder(),
+                                                            isDense: true,
+                                                            helperText: 'Cascada: Pre -> 7d -> 3d -> Vto',
+                                                          ),
+                                                          keyboardType: TextInputType.number,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 10),
+                                                  TextFormField(
+                                                    controller: _expiryCtrl,
+                                                    decoration: const InputDecoration(
+                                                      labelText: 'Vida útil desde ingreso / envasado (opcional)',
+                                                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                                                      helperText: 'Ej: 90 → Calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
+                                                      suffixText: 'días',
+                                                      border: OutlineInputBorder(),
+                                                      isDense: true,
+                                                    ),
+                                                    keyboardType: TextInputType.number,
+                                                    onChanged: (v) {
+                                                      final n = int.tryParse(v.trim());
+                                                      if (n != null && n > 0 && n <= 3650) {
+                                                        setState(() {
+                                                          _expirationDate = DateTime.now().add(Duration(days: n));
+                                                        });
+                                                      }
+                                                    },
+                                                    validator: (v) {
+                                                      if (v == null || v.trim().isEmpty) return null;
+                                                      final n = int.tryParse(v.trim());
+                                                      if (n == null || n < 1 || n > 3650) {
+                                                        return 'Ingresá un número entre 1 y 3650';
+                                                      }
+                                                      return null;
+                                                    },
                                                   ),
                                                 ],
-                                              ),
-                                      ),
-                                    // Unidad de Medida + Balanza + Activo en POS
-                                    if (isNarrow)
-                                      Column(
-                                        children: [
-                                          DropdownButtonFormField<String>(
-                                            key: ValueKey('unit_type_narrow_$_unitType'),
-                                            isExpanded: true,
-                                            initialValue: _unitType,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Unidad de Medida',
-                                              prefixIcon: Icon(Icons.square_foot),
-                                              isDense: true,
-                                            ),
-                                            items: const [
-                                              DropdownMenuItem(value: 'un', child: Text('Unidades')),
-                                              DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
-                                              DropdownMenuItem(value: 'g', child: Text('Gramos')),
-                                              DropdownMenuItem(value: 'lt', child: Text('Litros')),
-                                            ],
-                                            onChanged: (val) => setState(() {
-                                              _unitType = val ?? 'un';
-                                              _isSoldByWeight = _unitType != 'un';
-                                            }),
-                                          ),
-                                          SwitchListTile(
-                                            dense: true,
-                                            contentPadding: EdgeInsets.zero,
-                                            title: const Text('Venta p/peso (balanza)'),
-                                            value: _isSoldByWeight,
-                                            onChanged: (v) => setState(() {
-                                              _isSoldByWeight = v;
-                                              if (v && _unitType == 'un') {
-                                                _unitType = 'kg';
-                                              } else if (!v) {
-                                                _unitType = 'un';
-                                              }
-                                            }),
-                                          ),
-                                          SwitchListTile(
-                                            dense: true,
-                                            contentPadding: EdgeInsets.zero,
-                                            title: const Text('Activo (Visible en POS)'),
-                                            value: _active,
-                                            onChanged: (v) => setState(() => _active = v),
-                                          ),
-                                        ],
-                                      )
-                                    else
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            flex: 4,
-                                            child: DropdownButtonFormField<String>(
-                                              key: ValueKey('unit_type_wide_$_unitType'),
-                                              isExpanded: true,
-                                              initialValue: _unitType,
-                                              decoration: const InputDecoration(
-                                                labelText: 'Unidad de Medida',
-                                                prefixIcon: Icon(Icons.square_foot),
-                                                isDense: true,
-                                              ),
-                                              items: const [
-                                                DropdownMenuItem(value: 'un', child: Text('Unidades')),
-                                                DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
-                                                DropdownMenuItem(value: 'g', child: Text('Gramos')),
-                                                DropdownMenuItem(value: 'lt', child: Text('Litros')),
                                               ],
-                                              onChanged: (val) => setState(() {
-                                                _unitType = val ?? 'un';
-                                                _isSoldByWeight = _unitType != 'un';
-                                              }),
                                             ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            flex: 4,
-                                            child: SwitchListTile(
-                                              dense: true,
-                                              contentPadding: EdgeInsets.zero,
-                                              title: const Text('Venta p/peso', style: TextStyle(fontSize: 13)),
-                                              value: _isSoldByWeight,
-                                              onChanged: (v) => setState(() {
-                                                _isSoldByWeight = v;
-                                                if (v && _unitType == 'un') {
-                                                  _unitType = 'kg';
-                                                } else if (!v) {
-                                                  _unitType = 'un';
-                                                }
-                                              }),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            flex: 4,
-                                            child: SwitchListTile(
-                                              dense: true,
-                                              contentPadding: EdgeInsets.zero,
-                                              title: const Text('Activo en POS', style: TextStyle(fontSize: 13)),
-                                              value: _active,
-                                              onChanged: (v) => setState(() => _active = v),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    if (_isCombo)
-                                      Container(
-                                        margin: const EdgeInsets.symmetric(vertical: 8),
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.amber.shade50,
-                                          border: Border.all(color: Colors.amber.shade200),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          alignment: WrapAlignment.spaceBetween,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            Text('Productos incluidos en el Combo', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
-                            TextButton.icon(
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('Añadir Producto'),
-                              onPressed: () async {
-                                await _showIngredientSearchDialog(context, widget.provider);
-                              },
-                            ),
-                          ],
-                        ),
-                        if (_comboIngredients.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text('Agregá los productos individuales y la cantidad que se descontará del stock al vender este combo.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                          ),
-                        ..._comboIngredients.map((ing) {
-                          final qty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
-                          final unitCost = (ing['cost_price'] as num?)?.toDouble() ?? 0.0;
-                          final unitSell = (ing['selling_price'] as num?)?.toDouble() ?? 0.0;
-                          final availStock = (ing['stock'] as num?)?.toDouble();
-                          final unitType = ing['unit_type']?.toString() ?? 'un';
-                          final exceedsStock = availStock != null && qty > availStock;
-
-                          return Container(
-                            key: ValueKey('combo_ing_row_${ing['id']}'),
-                            margin: const EdgeInsets.only(bottom: 8.0),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: exceedsStock ? Colors.red.shade50 : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: exceedsStock ? Colors.red.shade300 : Colors.amber.shade200,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            ing['name']?.toString() ?? '',
-                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Wrap(
-                                            spacing: 10,
-                                            runSpacing: 2,
-                                            children: [
-                                              if (availStock != null)
-                                                Text(
-                                                  'Stock: ${availStock.toQty()} $unitType',
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: exceedsStock ? Colors.red.shade700 : Colors.grey.shade700,
-                                                  ),
-                                                ),
-                                              Text(
-                                                'Costo u.: \$${unitCost.toCurrency()}',
-                                                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
-                                              ),
-                                              Text(
-                                                'Venta u.: \$${unitSell.toCurrency()}',
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.blue.shade800,
-                                                ),
-                                              ),
-                                              if (qty > 0)
-                                                Text(
-                                                  'Subtotal normal: \$${(unitSell * qty).toCurrency()}',
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.deepPurple.shade700,
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    SizedBox(
-                                      width: 95,
-                                      child: TextFormField(
-                                        key: ValueKey('combo_ing_qty_${ing['id']}'),
-                                        initialValue: qty.toQty(),
-                                        decoration: const InputDecoration(
-                                          labelText: 'Cant.',
-                                          isDense: true,
-                                          border: OutlineInputBorder(),
-                                          errorStyle: TextStyle(fontSize: 10),
-                                        ),
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        validator: (v) {
-                                          final parsed = double.tryParse((v ?? '').replaceAll(',', '.'));
-                                          if (parsed == null || parsed <= 0) return '> 0';
-                                          if (availStock != null && parsed > availStock) {
-                                            return 'Máx ${availStock.toQty()}';
-                                          }
-                                          return null;
-                                        },
-                                        onChanged: (v) {
-                                          setState(() {
-                                            ing['quantity'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0;
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                      tooltip: 'Quitar del combo',
-                                      onPressed: () => setState(() => _comboIngredients.remove(ing)),
-                                    ),
-                                  ],
-                                ),
-                                if (exceedsStock)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.warning_amber_rounded, size: 15, color: Colors.red.shade700),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            'La cantidad (${qty.toQty()}) supera tu stock disponible actual (${availStock.toQty()} $unitType).',
-                                            style: TextStyle(fontSize: 11.5, color: Colors.red.shade700, fontWeight: FontWeight.w600),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        }),
-                        if (_comboIngredients.isNotEmpty)
-                          _buildComboLiveSummaryCard(),
-                      ],
-                    ),
-                  ),
-                // ── Control de Vencimiento y Alertas (Compacto/Desplegable, oculto en Servicios y Combos) ──
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: (!_isService && !_isCombo)
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50.withValues(alpha: 0.45),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.orange.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Wrap(
-                                  alignment: WrapAlignment.spaceBetween,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: [
-                                    Text(
-                                      'Control de Vencimiento y Alertas (Opcional)',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12.5,
-                                        color: Colors.orange.shade900,
-                                      ),
-                                    ),
-                                    TextButton.icon(
-                                      style: TextButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
-                                        foregroundColor: Colors.orange.shade900,
-                                      ),
-                                      onPressed: () => setState(() => _showExpirationSection = !_showExpirationSection),
-                                      icon: Icon(
-                                        _showExpirationSection ? Icons.expand_less_rounded : Icons.add_rounded,
-                                        size: 17,
-                                      ),
-                                      label: Text(
-                                        _showExpirationSection ? 'Ocultar' : 'Configurar vencimiento',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (_showExpirationSection) ...[
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        flex: 4,
-                                        child: InkWell(
-                                          onTap: () async {
-                                            final picked = await showCompactDatePicker(
-                                              context: context,
-                                              initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
-                                              firstDate: DateTime(2020),
-                                              lastDate: DateTime(2100),
-                                              helpText: 'Fecha de Vencimiento del Lote',
-                                            );
-                                            if (!mounted) return;
-                                            if (picked != null) {
-                                              setState(() => _expirationDate = picked);
-                                            }
-                                          },
-                                          child: InputDecorator(
-                                            decoration: InputDecoration(
-                                              labelText: 'Fecha de Vencimiento (Lote)',
-                                              prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
-                                              border: const OutlineInputBorder(),
-                                              isDense: true,
-                                              suffixIcon: _expirationDate != null
-                                                  ? IconButton(
-                                                      tooltip: 'Quitar fecha de vencimiento',
-                                                      icon: const Icon(Icons.clear, size: 16),
-                                                      onPressed: () => setState(() => _expirationDate = null),
-                                                    )
-                                                  : null,
-                                            ),
-                                            child: Text(
-                                              _expirationDate != null
-                                                  ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
-                                                  : 'Sin fecha fija',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
-                                                color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        flex: 3,
-                                        child: TextFormField(
-                                          controller: _expiryAlertDaysCtrl,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Pre-Alerta (días antes)',
-                                            suffixText: 'días',
-                                            border: OutlineInputBorder(),
-                                            isDense: true,
-                                            helperText: 'Cascada: Pre -> 7d -> 3d -> Vto',
-                                          ),
-                                          keyboardType: TextInputType.number,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextFormField(
-                                    controller: _expiryCtrl,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Vida útil desde ingreso / envasado (opcional)',
-                                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
-                                      helperText: 'Ej: 90 → Calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
-                                      suffixText: 'días',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    onChanged: (v) {
-                                      final n = int.tryParse(v.trim());
-                                      if (n != null && n > 0 && n <= 3650) {
-                                        setState(() {
-                                          _expirationDate = DateTime.now().add(Duration(days: n));
-                                        });
-                                      }
-                                    },
-                                    validator: (v) {
-                                      if (v == null || v.trim().isEmpty) return null;
-                                      final n = int.tryParse(v.trim());
-                                      if (n == null || n < 1 || n > 3650) {
-                                        return 'Ingresá un número entre 1 y 3650';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                                  ],
-                                ),
                         ),
                       ],
                     ),
                     ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
               ],
             ),
           ),
@@ -3764,56 +3707,802 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         ),
       ],
       ),
+      ),
+    );
+  }
+
+  Widget _buildReadonlyMetricBox({
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? const Color(0xFF0F172A),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStalePriceCardWarning() {
+    final staleCardPrice = widget.product?.priceCard;
+    if (!_isEditing || staleCardPrice == null || staleCardPrice <= 0) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _priceCtrl,
+      builder: (context, _, __) {
+        final currentSelling = ArsThousandsInputFormatter.parse(_priceCtrl.text);
+        if (currentSelling <= staleCardPrice + 0.01) {
+          return const SizedBox.shrink();
+        }
+        return Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16, color: Colors.amber.shade900),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Precio Tarjeta fijo (\$${staleCardPrice.toCurrency()}) menor al Precio Venta (\$${currentSelling.toCurrency()})',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Si no se limpia, al elegir Lista Tarjeta en el POS se cobrará este importe fijo en lugar del recargo porcentual global.',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Colors.amber.shade900,
+                ),
+              ),
+              Material(
+                color: Colors.transparent,
+                child: CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  visualDensity: VisualDensity.compact,
+                  value: _clearStalePriceCard,
+                  onChanged: (val) =>
+                      setState(() => _clearStalePriceCard = val ?? false),
+                  title: Text(
+                    'Limpiar precio Tarjeta fijo al guardar (usar % global)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.amber.shade900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPriceCostIvaSection({
+    required bool isNarrow,
+    required bool isResponsableInscripto,
+  }) {
+    Widget withStalePriceCardWarning(Widget child) {
+      final warning = _buildStalePriceCardWarning();
+      if (warning is SizedBox) return child;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [child, warning],
+      );
+    }
+    Widget buildPriceField() => TextFormField(
+          controller: _priceCtrl,
+          decoration: InputDecoration(
+            labelText: _isService ? 'Importe / Honorario *' : 'Precio Venta *',
+            prefixText: '\$ ',
+            isDense: true,
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [ArsThousandsInputFormatter()],
+          validator: (v) {
+            final price = ArsThousandsInputFormatter.tryParse(v);
+            if (price == null) return 'Ingrese un precio válido';
+            if (!_isCombo && !_isService) {
+              final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
+              if (cost > 0 && price < cost) {
+                return 'El precio de venta debe ser mayor o igual al costo';
+              }
+            }
+            return null;
+          },
+        );
+
+    Widget buildIvaField() => DropdownButtonFormField<double>(
+          initialValue: _ivaRate,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'IVA AFIP',
+            prefixIcon: isNarrow
+                ? const Icon(Icons.account_balance_outlined, size: 18)
+                : null,
+            isDense: true,
+          ),
+          items: const [
+            DropdownMenuItem(value: 21.0, child: Text('21%')),
+            DropdownMenuItem(value: 10.5, child: Text('10.5%')),
+            DropdownMenuItem(value: 27.0, child: Text('27%')),
+            DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
+          ],
+          onChanged: (v) {
+            if (v != null) setState(() => _ivaRate = v);
+          },
+        );
+
+    if (_isService) {
+      if (isNarrow) {
+        return withStalePriceCardWarning(Column(
+          children: [
+            buildPriceField(),
+            if (isResponsableInscripto) ...[
+              const SizedBox(height: 12),
+              buildIvaField(),
+            ],
+          ],
+        ));
+      }
+      return withStalePriceCardWarning(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 6, child: buildPriceField()),
+          if (isResponsableInscripto) ...[
+            const SizedBox(width: 12),
+            Expanded(flex: 4, child: buildIvaField()),
+          ],
+        ],
+      ));
+    }
+
+    if (_isCombo) {
+      final recipeCost = _comboRecipeTotalCost;
+      final comboPrice = ArsThousandsInputFormatter.parse(_priceCtrl.text);
+      final hasComboMargin = recipeCost > 0 && comboPrice > 0;
+      final comboMarginPct = hasComboMargin
+          ? ((comboPrice - recipeCost) / recipeCost) * 100.0
+          : 0.0;
+      final marginText = hasComboMargin
+          ? '${comboMarginPct.toCleanMargin()}%'
+          : '—';
+      final marginColor = !hasComboMargin
+          ? const Color(0xFF64748B)
+          : (comboMarginPct >= 0
+              ? Colors.green.shade700
+              : Colors.red.shade700);
+
+      final costMetric = _buildReadonlyMetricBox(
+        label: 'Costo Receta (Calc.)',
+        value: _comboIngredients.isEmpty ? '—' : '\$${recipeCost.toCurrency()}',
+      );
+      final marginMetric = _buildReadonlyMetricBox(
+        label: '% Margen Receta',
+        value: marginText,
+        valueColor: marginColor,
+      );
+
+      if (isNarrow) {
+        return withStalePriceCardWarning(Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: costMetric),
+                const SizedBox(width: 8),
+                Expanded(child: marginMetric),
+              ],
+            ),
+            const SizedBox(height: 12),
+            buildPriceField(),
+            if (isResponsableInscripto) ...[
+              const SizedBox(height: 12),
+              buildIvaField(),
+            ],
+          ],
+        ));
+      }
+
+      return withStalePriceCardWarning(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 3, child: costMetric),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: marginMetric),
+          const SizedBox(width: 12),
+          Expanded(flex: 3, child: buildPriceField()),
+          if (isResponsableInscripto) ...[
+            const SizedBox(width: 12),
+            Expanded(flex: 2, child: buildIvaField()),
+          ],
+        ],
+      ));
+    }
+
+    // Producto Físico estándar
+    if (isNarrow) {
+      return withStalePriceCardWarning(Column(
+        children: [
+          TextFormField(
+            controller: _costCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Precio Costo (Opc.)',
+              prefixText: '\$ ',
+              helperText: 'Opcional (\$0) o calculado desde Venta + %',
+              isDense: true,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [ArsThousandsInputFormatter()],
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return null;
+              final parsed = ArsThousandsInputFormatter.tryParse(v);
+              if (parsed == null || parsed < 0) return 'Ingrese un monto válido';
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _marginCtrl,
+            decoration: const InputDecoration(
+              labelText: '% Margen',
+              suffixText: '%',
+              isDense: true,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          buildPriceField(),
+          if (isResponsableInscripto) ...[
+            const SizedBox(height: 12),
+            buildIvaField(),
+          ],
+        ],
+      ));
+    }
+
+    return withStalePriceCardWarning(Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 3,
+          child: TextFormField(
+            controller: _costCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Precio Costo (Opc.)',
+              prefixText: '\$ ',
+              hintText: '0',
+              isDense: true,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [ArsThousandsInputFormatter()],
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return null;
+              final parsed = ArsThousandsInputFormatter.tryParse(v);
+              if (parsed == null || parsed < 0) return 'Monto inválido';
+              return null;
+            },
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 2,
+          child: TextFormField(
+            controller: _marginCtrl,
+            decoration: const InputDecoration(
+              labelText: '% Margen',
+              suffixText: '%',
+              isDense: true,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(flex: 3, child: buildPriceField()),
+        if (isResponsableInscripto) ...[
+          const SizedBox(width: 12),
+          Expanded(flex: 2, child: buildIvaField()),
+        ],
+      ],
+    ));
+  }
+
+  Widget _buildComboRecipeSection(bool isNarrow) {
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade50.withValues(alpha: 0.45),
+        border: Border.all(color: Colors.deepPurple.shade200),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.layers_rounded,
+                        size: 17, color: Colors.deepPurple.shade700),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Productos incluidos en el Combo (${_comboIngredients.length})',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: Colors.deepPurple.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Colors.deepPurple.shade800,
+                  side: BorderSide(color: Colors.deepPurple.shade300),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.playlist_add_rounded, size: 17),
+                label: const Text(
+                  'Añadir Producto',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () async {
+                  await _showIngredientSearchDialog(context, widget.provider);
+                },
+              ),
+            ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('catalog_combo_inline_search'),
+            controller: _comboInlineSearchCtrl,
+            focusNode: _comboInlineSearchFocus,
+            textInputAction: TextInputAction.search,
+            onChanged: _onInlineComboSearchChanged,
+            onSubmitted: _onInlineComboSearchSubmitted,
+            decoration: InputDecoration(
+              hintText: 'Buscar o pistolear producto para incluir...',
+              hintStyle: const TextStyle(fontSize: 12.5),
+              prefixIcon: const Icon(Icons.qr_code_scanner, size: 19),
+              suffixIcon: _isSearchingInlineCombo
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : (_comboInlineSearchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          tooltip: 'Limpiar búsqueda',
+                          icon: const Icon(Icons.clear, size: 17),
+                          onPressed: () {
+                            setState(() {
+                              _comboInlineSearchCtrl.clear();
+                              _comboInlineSearchResults = [];
+                            });
+                          },
+                        )
+                      : null),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          if (_comboInlineSearchResults.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Material(
+                color: Colors.white,
+                elevation: 1,
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.deepPurple.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _comboInlineSearchResults.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, idx) {
+                      final p = _comboInlineSearchResults[idx];
+                      final alreadyIn =
+                          _comboIngredients.any((ing) => ing['id'] == p.id);
+                      return ListTile(
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(
+                          p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          'PLU: ${p.internalCode} · Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight, unitSuffix: p.unitType)} · \$${p.sellingPrice.toCurrency()}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        trailing: alreadyIn
+                            ? Icon(Icons.check_circle,
+                                color: Colors.green.shade600, size: 18)
+                            : Icon(Icons.add_circle_outline,
+                                color: Colors.deepPurple.shade600, size: 19),
+                        onTap: () => _addProductToComboRecipe(p),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (_comboIngredients.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Buscá o pistoleá arriba los productos incluidos y definí la cantidad que se descontará del stock al vender este combo.',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              ),
+            )
+          else ...[
+            const SizedBox(height: 8),
+            ..._comboIngredients.map((ing) {
+              final ingKey = (ing['id'] as num?)?.toInt() ?? ing.hashCode;
+              final qty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+              final unitCost = (ing['cost_price'] as num?)?.toDouble() ?? 0.0;
+              final unitSell =
+                  (ing['selling_price'] as num?)?.toDouble() ?? 0.0;
+              final availStock = (ing['stock'] as num?)?.toDouble();
+              final unitType = ing['unit_type']?.toString() ?? 'un';
+              final exceedsStock = availStock != null && qty > availStock;
+              final hasFractionalQty =
+                  (qty - qty.roundToDouble()).abs() >= 0.0005;
+              final showFractionBar =
+                  _expandedComboFractionIds.contains(ingKey);
+
+              final infoWidget = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ing['name']?.toString() ?? '',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 2,
+                    children: [
+                      if (availStock != null)
+                        Text(
+                          'Stock: ${availStock.toUnitStockDisplay(unitSuffix: unitType)}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: exceedsStock
+                                ? Colors.amber.shade800
+                                : Colors.grey.shade700,
+                          ),
+                        ),
+                      Text(
+                        'Costo u.: \$${unitCost.toCurrency()}',
+                        style: TextStyle(
+                            fontSize: 11.5, color: Colors.grey.shade700),
+                      ),
+                      Text(
+                        'Venta u.: \$${unitSell.toCurrency()}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                      if (qty > 0)
+                        Text(
+                          'Subtotal normal: \$${(unitSell * qty).toCurrency()}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple.shade700,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+
+              final controlsRow = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 82,
+                    child: TextFormField(
+                      key: ValueKey('combo_ing_qty_${ing['id']}'),
+                      controller: _getComboQtyCtrl(ingKey, qty),
+                      decoration: const InputDecoration(
+                        labelText: 'Cant.',
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        border: OutlineInputBorder(),
+                        errorStyle: TextStyle(fontSize: 10),
+                      ),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,/]')),
+                      ],
+                      validator: (v) {
+                        final parsed = parseQuantityOrFraction(v ?? '');
+                        if (parsed == null || parsed <= 0) return '> 0';
+                        return null;
+                      },
+                      onChanged: (v) {
+                        final parsed = parseQuantityOrFraction(v);
+                        setState(() {
+                          ing['quantity'] = parsed ?? 0.0;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: showFractionBar
+                        ? 'Ocultar fracciones'
+                        : 'Fraccionar porción (1/6, 1/8, 1/16, ÷ N...)',
+                    child: InkWell(
+                      key: Key('catalog_combo_fraction_toggle_$ingKey'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => setState(() {
+                        if (showFractionBar) {
+                          _expandedComboFractionIds.remove(ingKey);
+                        } else {
+                          _expandedComboFractionIds.add(ingKey);
+                        }
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: (showFractionBar || hasFractionalQty)
+                              ? Colors.deepPurple.shade600
+                              : Colors.deepPurple.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: (showFractionBar || hasFractionalQty)
+                                ? Colors.deepPurple.shade600
+                                : Colors.deepPurple.shade200,
+                          ),
+                        ),
+                        child: Text(
+                          '1/x',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: (showFractionBar || hasFractionalQty)
+                                ? Colors.white
+                                : Colors.deepPurple.shade700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Quitar del combo',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => setState(() {
+                      _comboQtyCtrls.remove(ingKey)?.dispose();
+                      _comboCustomPartsCtrls.remove(ingKey)?.dispose();
+                      _expandedComboFractionIds.remove(ingKey);
+                      _comboIngredients.remove(ing);
+                    }),
+                  ),
+                ],
+              );
+
+              return Container(
+                key: ValueKey('combo_ing_row_${ing['id']}'),
+                margin: const EdgeInsets.only(bottom: 8.0),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: exceedsStock ? Colors.red.shade50 : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: exceedsStock
+                        ? Colors.red.shade300
+                        : Colors.deepPurple.shade100,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isNarrow) ...[
+                      infoWidget,
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: controlsRow,
+                      ),
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(child: infoWidget),
+                          const SizedBox(width: 8),
+                          controlsRow,
+                        ],
+                      ),
+                    if (showFractionBar)
+                      _buildComboFractionCalculatorBar(ing, ingKey, qty),
+                    if (exceedsStock)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded,
+                                size: 15, color: Colors.red.shade700),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'La cantidad (${qty.toQty()}) supera tu stock disponible actual (${availStock.toQty()} $unitType).',
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.red.shade700,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+            _buildComboLiveSummaryCard(),
+          ],
+        ],
+      ),
     );
   }
 
   // --- SECCIÓN PRECIOS POR VOLUMEN ---
   Widget _buildPriceTiersSection() {
+    final isExpanded = _expandPriceTiers || _priceTiers.isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: isExpanded ? 8 : 4,
+      ),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50.withValues(alpha: 0.65),
+        color: Colors.blue.shade50.withValues(alpha: 0.55),
         border: Border.all(color: Colors.blue.shade200),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              Text(
-                'Precios Mayoristas / Por Volumen',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.blue.shade900),
-              ),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    text: 'Precios Mayoristas',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                      color: Colors.blue.shade900,
+                    ),
+                    children: [
+                      if (_priceTiers.isEmpty)
+                        TextSpan(
+                          text: ' · Sin escalas',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.blueGrey.shade600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               TextButton.icon(
                 style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                 onPressed: () {
                   setState(() {
+                    _expandPriceTiers = true;
                     _priceTiers.add({
                       // Sugerimos x10 para agilizar
                       'min_quantity': 10,
-                      'unit_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
+                      'unit_price':
+                          ArsThousandsInputFormatter.parse(_priceCtrl.text),
                     });
                   });
                 },
                 icon: const Icon(Icons.add, size: 17),
-                label: const Text('Añadir escala', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                label: const Text(
+                  'Añadir escala',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
               ),
             ],
-          ),
-          if (_priceTiers.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                'No hay escalas de precio configuradas. El producto usará su Precio Base de Venta en cualquier cantidad.',
-                style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade700),
-              ),
             ),
+          ),
           if (_priceTiers.isNotEmpty) ...[
             const SizedBox(height: 8),
             ..._priceTiers.asMap().entries.map((entry) {
@@ -3860,7 +4549,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.deepOrange),
                       tooltip: 'Eliminar escala',
-                      onPressed: () => setState(() => _priceTiers.removeAt(idx)),
+                      onPressed: () => setState(() {
+                        _priceTiers.removeAt(idx);
+                        if (_priceTiers.isEmpty) _expandPriceTiers = false;
+                      }),
                     ),
                   ],
                 ),
@@ -3872,6 +4564,220 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  String _formatComboQtyForInput(double q) => formatQuantityInput(q);
+
+  TextEditingController _getComboQtyCtrl(int ingId, double initialQty) {
+    return _comboQtyCtrls.putIfAbsent(
+      ingId,
+      () => TextEditingController(text: _formatComboQtyForInput(initialQty)),
+    );
+  }
+
+  TextEditingController _getComboCustomPartsCtrl(int ingId) {
+    return _comboCustomPartsCtrls.putIfAbsent(
+      ingId,
+      () => TextEditingController(),
+    );
+  }
+
+  void _applyComboFraction(Map<String, dynamic> ing, double fractionQty) {
+    final ingId = (ing['id'] as num?)?.toInt();
+    setState(() {
+      ing['quantity'] = fractionQty;
+      if (ingId != null) {
+        final ctrl = _comboQtyCtrls[ingId];
+        final formatted = _formatComboQtyForInput(fractionQty);
+        if (ctrl != null) {
+          ctrl.text = formatted;
+          ctrl.selection = TextSelection.collapsed(offset: formatted.length);
+        }
+      }
+    });
+  }
+
+  void _applyCustomComboParts(Map<String, dynamic> ing, int ingKey) {
+    final raw = _comboCustomPartsCtrls[ingKey]?.text.trim() ?? '';
+    final parts = int.tryParse(raw);
+    if (parts == null || parts < 2 || parts > 100) {
+      SnackBarService.warning(
+        context,
+        'Ingresá una cantidad de partes entre 2 y 100 (ej: 16).',
+      );
+      return;
+    }
+    _applyComboFraction(ing, 1.0 / parts);
+  }
+
+  Widget _buildComboFractionCalculatorBar(
+    Map<String, dynamic> ing,
+    int ingKey,
+    double currentQty,
+  ) {
+    const fractions = <({String label, double qty})>[
+      (label: '1/6', qty: 0.167),
+      (label: '1/8', qty: 0.125),
+      (label: '1/10', qty: 0.100),
+      (label: '1/12', qty: 0.083),
+      (label: '1', qty: 1.0),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Porción:',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          ...fractions.map((f) {
+            final selected = (currentQty - f.qty).abs() < 0.0006;
+            return InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _applyComboFraction(ing, f.qty),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.deepPurple.shade600
+                      : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: selected
+                        ? Colors.deepPurple.shade600
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                child: Text(
+                  f.label == '1'
+                      ? '1 entero'
+                      : '${f.label} (${f.qty.toStringAsFixed(3)})',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? Colors.white : Colors.grey.shade800,
+                  ),
+                ),
+              ),
+            );
+          }),
+          Text(
+            'o ÷',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          SizedBox(
+            width: 48,
+            height: 26,
+            child: TextField(
+              key: Key('catalog_combo_parts_$ingKey'),
+              controller: _getComboCustomPartsCtrl(ingKey),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(3),
+              ],
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              onSubmitted: (_) => _applyCustomComboParts(ing, ingKey),
+              decoration: InputDecoration(
+                hintText: '16',
+                hintStyle: TextStyle(fontSize: 10.5, color: Colors.grey.shade400),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
+          InkWell(
+            key: Key('catalog_combo_apply_parts_$ingKey'),
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => _applyCustomComboParts(ing, ingKey),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.deepPurple.shade300),
+              ),
+              child: Text(
+                '1/N',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.deepPurple.shade800,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _calcComboIngredientFit(double availStock, double qty) =>
+      calcUnitsFitStock(availStock, qty);
+
+  double _roundComboPromoPrice(double value) =>
+      (value * 100).roundToDouble() / 100.0;
+
+  Widget _buildComboPromoPriceButton({
+    required Key key,
+    required double targetPrice,
+    required String label,
+    required String appliedLabel,
+    required double currentPrice,
+  }) {
+    final isApplied =
+        currentPrice > 0 && (currentPrice - targetPrice).abs() < 0.01;
+    return OutlinedButton.icon(
+      key: key,
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        foregroundColor:
+            isApplied ? Colors.green.shade800 : Colors.deepPurple.shade800,
+        backgroundColor:
+            isApplied ? Colors.green.shade50 : Colors.deepPurple.shade50,
+        side: BorderSide(
+          color:
+              isApplied ? Colors.green.shade300 : Colors.deepPurple.shade300,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+      onPressed: () {
+        setState(() {
+          _priceCtrl.text = targetPrice.toArsInput();
+        });
+      },
+      icon: Icon(
+        isApplied ? Icons.check_circle_outline : Icons.local_offer_outlined,
+        size: 14,
+      ),
+      label: Text(
+        isApplied ? appliedLabel : label,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -3891,7 +4797,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         totalCost += unitCost * qty;
         totalIndividualSelling += unitSell * qty;
         if (availStock != null) {
-          final fit = availStock < 0 ? 0 : (availStock / qty).floor();
+          final fit = _calcComboIngredientFit(availStock, qty);
           if (possibleCombos == null || fit < possibleCombos) {
             possibleCombos = fit;
           }
@@ -3904,8 +4810,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final comboPrice = ArsThousandsInputFormatter.parse(_priceCtrl.text);
     final profit = comboPrice - totalCost;
     final savings = totalIndividualSelling - comboPrice;
-    final discountPct = totalIndividualSelling > 0 ? (savings / totalIndividualSelling) * 100 : 0.0;
+    final discountPct = totalIndividualSelling > 0
+        ? (savings / totalIndividualSelling) * 100
+        : 0.0;
     final armables = possibleCombos ?? 0;
+    final basePriceAlreadyApplied = totalIndividualSelling > 0 &&
+        comboPrice > 0 &&
+        (comboPrice - totalIndividualSelling).abs() < 0.01;
 
     return Container(
       margin: const EdgeInsets.only(top: 4),
@@ -3913,45 +4824,65 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber.shade400),
+        border: Border.all(color: Colors.deepPurple.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.calculate_outlined, size: 17, color: Colors.amber.shade900),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Resumen para calcular tu Precio de Combo',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.amber.shade900),
-                  ),
-                ],
-              ),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calculate_outlined,
+                        size: 17, color: Colors.deepPurple.shade700),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Resumen para calcular tu Precio de Combo',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                          color: Colors.deepPurple.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: armables > 0 ? Colors.green.shade50 : Colors.red.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: armables > 0 ? Colors.green.shade300 : Colors.red.shade300),
+                  border: Border.all(
+                    color: armables > 0
+                        ? Colors.green.shade300
+                        : Colors.red.shade300,
+                  ),
                 ),
                 child: Text(
                   'Combos armables hoy: $armables',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.bold,
-                    color: armables > 0 ? Colors.green.shade800 : Colors.red.shade800,
+                    color: armables > 0
+                        ? Colors.green.shade800
+                        : Colors.red.shade800,
                   ),
                 ),
               ),
             ],
+            ),
           ),
           const Divider(height: 14),
           Wrap(
-            spacing: 16,
+            spacing: 14,
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
@@ -3961,45 +4892,164 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               ),
               Text(
                 'Suma Venta por Separado: \$${totalIndividualSelling.toCurrency()}',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade800),
               ),
-              if (totalIndividualSelling > 0)
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      _priceCtrl.text = totalIndividualSelling.toArsInput();
-                    });
+              if (totalIndividualSelling > 0) ...[
+                basePriceAlreadyApplied
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                size: 14, color: Colors.green.shade800),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Precio \$${totalIndividualSelling.toCurrency()} aplicado',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : OutlinedButton.icon(
+                        key: const Key('catalog_apply_base_price_btn'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          foregroundColor: Colors.deepPurple.shade800,
+                          backgroundColor: Colors.deepPurple.shade50,
+                          side: BorderSide(color: Colors.deepPurple.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _priceCtrl.text =
+                                totalIndividualSelling.toArsInput();
+                          });
+                        },
+                        icon: const Icon(Icons.auto_fix_high_rounded, size: 14),
+                        label: Text(
+                          'Aplicar \$${totalIndividualSelling.toCurrency()} al precio',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                Builder(
+                  builder: (_) {
+                    final baseTarget =
+                        _roundComboPromoPrice(totalIndividualSelling);
+                    final promo10 =
+                        _roundComboPromoPrice(totalIndividualSelling * 0.90);
+                    final promo15 =
+                        _roundComboPromoPrice(totalIndividualSelling * 0.85);
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Recomendado combo:',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.deepPurple.shade800,
+                          ),
+                        ),
+                        if (promo10 > 0 && (promo10 - baseTarget).abs() >= 0.01)
+                          _buildComboPromoPriceButton(
+                            key: const Key('catalog_apply_promo10_btn'),
+                            targetPrice: promo10,
+                            label: '-10% (\$${promo10.toCurrency()})',
+                            appliedLabel:
+                                '-10% (\$${promo10.toCurrency()}) aplicado',
+                            currentPrice: comboPrice,
+                          ),
+                        if (promo15 > 0 && (promo15 - promo10).abs() >= 0.01)
+                          _buildComboPromoPriceButton(
+                            key: const Key('catalog_apply_promo15_btn'),
+                            targetPrice: promo15,
+                            label: '-15% (\$${promo15.toCurrency()})',
+                            appliedLabel:
+                                '-15% (\$${promo15.toCurrency()}) aplicado',
+                            currentPrice: comboPrice,
+                          ),
+                      ],
+                    );
                   },
-                  child: Text(
-                    'Usar \$${totalIndividualSelling.toCurrency()} como base',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Colors.deepPurple.shade700,
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
                 ),
+              ],
             ],
           ),
           if (comboPrice > 0) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Wrap(
-              spacing: 16,
-              runSpacing: 4,
+              spacing: 12,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   'Tu Ganancia por Combo: \$${profit.toCurrency()}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: profit >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+                    color: profit >= 0
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
                   ),
                 ),
-                if (savings > 0)
-                  Text(
-                    'Ahorro p/ el cliente: -\$${savings.toCurrency()} (${discountPct.toStringAsFixed(1)}% OFF)',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange.shade900),
+                if (totalIndividualSelling > 0 && savings > 0.01)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Text(
+                      'Ahorro p/ el cliente: -\$${savings.toCurrency()} (-${discountPct.toStringAsFixed(1)}%)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                  )
+                else if (totalIndividualSelling > 0 && savings < -0.01)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Text(
+                      '+\$${(-savings).toCurrency()} (+${(-discountPct).toStringAsFixed(1)}% vs sueltos)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -4068,6 +5118,16 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
     _debounce = Timer(const Duration(milliseconds: 400), () => _doSearch(query));
   }
 
+  List<Product> _filterEligibleComboProducts(List<dynamic> rawResults) {
+    return rawResults.where((p) {
+      if (p.isCombo) return false;
+      if (widget.excludeProductId != null && p.id == widget.excludeProductId) {
+        return false;
+      }
+      return true;
+    }).cast<Product>().toList();
+  }
+
   Future<void> _doSearch(String query) async {
     if (!mounted) return;
     setState(() => _loading = true);
@@ -4076,13 +5136,63 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
     setState(() {
       _firstLoad = false;
       _loading = false;
-      // Filtrar: excluir combos (anti-recursividad) y el producto que se está editando
-      _results = results.where((p) {
-        if (p.isCombo) return false;
-        if (widget.excludeProductId != null && p.id == widget.excludeProductId) return false;
-        return true;
-      }).cast<Product>().toList();
+      _results = _filterEligibleComboProducts(results);
     });
+  }
+
+  Future<void> _onSearchSubmittedOrScanned(String rawQuery) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty || !mounted) return;
+    _debounce?.cancel();
+    _searchCtrl.text = q;
+    _searchCtrl.selection = TextSelection.collapsed(offset: q.length);
+    setState(() => _loading = true);
+
+    final rawResults = await widget.provider.searchProductsForCombo(q);
+    if (!mounted) return;
+
+    final eligible = _filterEligibleComboProducts(rawResults);
+    final exact = RemoteScannerService.findExactProductMatch(
+      eligible,
+      q,
+      activeOnly: false,
+    );
+    final Product? chosen =
+        exact ?? (eligible.length == 1 ? eligible.first : null);
+
+    if (chosen != null) {
+      final alreadyAdded =
+          widget.comboIngredients.any((ing) => ing['id'] == chosen.id);
+      if (alreadyAdded) {
+        setState(() {
+          _firstLoad = false;
+          _loading = false;
+          _results = eligible;
+        });
+        SnackBarService.info(
+          context,
+          '"${chosen.name}" ya está agregado al combo.',
+        );
+        return;
+      }
+      _addIngredient(chosen);
+      _searchCtrl.clear();
+      SnackBarService.success(context, 'Agregado al combo: ${chosen.name}');
+      await _doSearch('');
+      return;
+    }
+
+    setState(() {
+      _firstLoad = false;
+      _loading = false;
+      _results = eligible;
+    });
+    if (eligible.isEmpty) {
+      SnackBarService.info(
+        context,
+        'No se encontraron productos elegibles para "$q".',
+      );
+    }
   }
 
   void _addIngredient(dynamic p) {
@@ -4105,38 +5215,42 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Buscar Producto para el Combo'),
-      content: SizedBox(
-        width: 440,
-        height: 320,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _searchCtrl,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Nombre, código de barras o PLU...',
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
-                suffixIcon: _loading
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : (_searchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              _doSearch('');
-                            },
-                          )
-                        : null),
+    return RemoteScannerListener(
+      debugLabel: 'ComboIngredientPickerDialog',
+      onBarcodeScanned: _onSearchSubmittedOrScanned,
+      child: AlertDialog(
+        title: const Text('Buscar Producto para el Combo'),
+        content: SizedBox(
+          width: 440,
+          height: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                onSubmitted: _onSearchSubmittedOrScanned,
+                decoration: InputDecoration(
+                  labelText: 'Nombre, código de barras o PLU...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _loading
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : (_searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _doSearch('');
+                              },
+                            )
+                          : null),
+                ),
+                onChanged: _onQueryChanged,
               ),
-              onChanged: _onQueryChanged,
-            ),
             const SizedBox(height: 10),
             if (_firstLoad)
               const Expanded(child: Center(child: CircularProgressIndicator()))
@@ -4176,6 +5290,7 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
           onPressed: () => Navigator.pop(context),
         ),
       ],
+      ),
     );
   }
 }
@@ -4575,32 +5690,58 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               ),
               const SizedBox(height: 16),
               if (widget.targetProductIds == null) ...[
-                DropdownButtonFormField<int?>(
-                  initialValue: _selectedCategoryId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Filtrar por Categoría',
-                    prefixIcon: Icon(Icons.folder_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
-                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
+                SearchableSelectField<int?>(
+                  value: _selectedCategoryId,
+                  clearValue: null,
+                  labelText: 'Filtrar por Categoría',
+                  dialogTitle: 'Filtrar por Categoría',
+                  searchHintText: 'Buscar categoría o rubro...',
+                  prefixIcon: Icons.folder_outlined,
+                  border: const OutlineInputBorder(),
+                  options: [
+                    const SearchableSelectOption<int?>(
+                      value: null,
+                      label: 'Todas las categorías',
+                      isResetOption: true,
+                    ),
+                    ...sortByAlphabeticalName(categories, (c) => c.name).map((c) {
+                      final rId = c.rubroId ?? c.rubro?.id;
+                      final rubroName = (rId != null
+                              ? widget.provider.rubros
+                                  .where((r) => r.id == rId)
+                                  .firstOrNull
+                                  ?.name
+                              : null) ??
+                          c.rubro?.name;
+                      final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
+                      return SearchableSelectOption<int?>(
+                        value: c.id,
+                        label: c.name,
+                        subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                        searchKeywords: hasRubro ? [rubroName] : const [],
+                      );
+                    }),
                   ],
                   onChanged: (val) => setState(() => _selectedCategoryId = val),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<int?>(
-                  initialValue: _selectedBrandId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Filtrar por Marca',
-                    prefixIcon: Icon(Icons.branding_watermark_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
-                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
+                SearchableSelectField<int?>(
+                  value: _selectedBrandId,
+                  clearValue: null,
+                  labelText: 'Filtrar por Marca',
+                  dialogTitle: 'Filtrar por Marca',
+                  searchHintText: 'Buscar marca...',
+                  prefixIcon: Icons.branding_watermark_outlined,
+                  border: const OutlineInputBorder(),
+                  options: [
+                    const SearchableSelectOption<int?>(
+                      value: null,
+                      label: 'Todas las marcas',
+                      isResetOption: true,
+                    ),
+                    ...sortByAlphabeticalName(brands, (b) => b.name).map(
+                      (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+                    ),
                   ],
                   onChanged: (val) => setState(() => _selectedBrandId = val),
                 ),
@@ -4608,26 +5749,31 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                   const SizedBox(height: 12),
                   Consumer<SupplierProvider>(
                     builder: (context, supplierProv, _) {
-                      final suppliers = supplierProv.suppliers;
-                      return DropdownButtonFormField<int?>(
-                        initialValue: _selectedSupplierId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Filtrar por Proveedor',
-                          prefixIcon: Icon(Icons.local_shipping_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem<int?>(
+                      final sortedSuppliers =
+                          sortByAlphabeticalName(supplierProv.suppliers, (s) => s.name);
+                      return SearchableSelectField<int?>(
+                        value: _selectedSupplierId,
+                        clearValue: null,
+                        labelText: 'Filtrar por Proveedor',
+                        dialogTitle: 'Filtrar por Proveedor',
+                        searchHintText: 'Buscar proveedor o CUIT...',
+                        prefixIcon: Icons.local_shipping_outlined,
+                        border: const OutlineInputBorder(),
+                        options: [
+                          const SearchableSelectOption<int?>(
                             value: null,
-                            child: Text('🚚 Todos los proveedores', overflow: TextOverflow.ellipsis),
+                            label: 'Todos los proveedores',
+                            isResetOption: true,
                           ),
-                          ...suppliers.map(
-                            (s) => DropdownMenuItem<int?>(
+                          ...sortedSuppliers.map((s) {
+                            final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
+                            return SearchableSelectOption<int?>(
                               value: s.id,
-                              child: Text('🏢 ${s.name}', overflow: TextOverflow.ellipsis),
-                            ),
-                          ),
+                              label: s.name,
+                              subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                              searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                            );
+                          }),
                         ],
                         onChanged: (val) => setState(() => _selectedSupplierId = val),
                       );

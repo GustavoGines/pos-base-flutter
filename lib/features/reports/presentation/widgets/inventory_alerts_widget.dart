@@ -558,6 +558,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         ];
 
         return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 10),
           shrinkWrap: true,
           itemCount: entries.length,
           itemBuilder: (context, index) => entries[index],

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -24,6 +25,10 @@ class PosRenameCartItemResult {
   final String? newBarcode;
   final bool barcodeChanged;
   final bool updateCatalogInDb;
+  final bool updateCatalogName;
+  final bool updateIvaInDb;
+  final double? newShelfStockBeforeSale;
+  final bool shelfStockChanged;
   final bool sellingPriceChanged;
   final bool costPriceChanged;
 
@@ -42,6 +47,10 @@ class PosRenameCartItemResult {
     this.newBarcode,
     this.barcodeChanged = false,
     this.updateCatalogInDb = false,
+    this.updateCatalogName = false,
+    this.updateIvaInDb = false,
+    this.newShelfStockBeforeSale,
+    this.shelfStockChanged = false,
     this.sellingPriceChanged = false,
     this.costPriceChanged = false,
   });
@@ -88,19 +97,26 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
   late final TextEditingController _marginController;
   late final TextEditingController _discountPctController;
   late final TextEditingController _barcodeController;
+  late final TextEditingController _shelfStockController;
+  late final TextEditingController _customPartsController;
 
   final _descFocus = FocusNode();
   final _qtyFocus = FocusNode();
   final _priceFocus = FocusNode();
   final _subtotalFocus = FocusNode();
   final _barcodeFocus = FocusNode();
+  final _customPartsFocus = FocusNode();
 
   bool _isUpdatingCalc = false;
   bool _costExplicitlyEdited = false;
   bool _priceExplicitlyEdited = false;
+  bool _restoredToCatalogPrices = false;
   bool _updateCatalogInDb = false;
+  bool _updateCatalogName = false;
+  bool _expandCatalogZone = false;
   bool _showBarcodeEditor = false;
   bool _barcodeCapturedByScanner = false;
+  bool _showPortionsBar = false;
   double? _manualSubtotalOverride;
   late double _ivaRate;
 
@@ -118,50 +134,37 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
   /// Calcula el precio unitario sugerido por lista/volumen/oferta para una cantidad dada.
   double _defaultCartPriceForQuantity(double qty) {
     final safeQty = qty > 0 ? qty : widget.item.quantity;
-    final baseVolumetric = widget.item.product.getBestPrice(safeQty);
-    double calculated;
-    switch (widget.item.activeTier) {
-      case PriceTier.wholesale:
-        if (widget.item.product.priceWholesale != null &&
-            widget.item.product.priceWholesale! > 0) {
-          calculated = widget.item.product.priceWholesale!;
-        } else {
-          calculated = baseVolumetric * widget.item.wholesaleFactor;
-        }
-        break;
-      case PriceTier.card:
-        if (widget.item.product.priceCard != null &&
-            widget.item.product.priceCard! > 0) {
-          calculated = widget.item.product.priceCard!;
-        } else {
-          calculated = baseVolumetric * widget.item.cardFactor;
-        }
-        break;
-      case PriceTier.custom:
-        calculated = baseVolumetric * widget.item.customFactor;
-        break;
-      case PriceTier.base:
-        if ((widget.item.customFactor - 1.0).abs() > 0.0001) {
-          calculated = baseVolumetric * widget.item.customFactor;
-        } else {
-          calculated = baseVolumetric;
-        }
-        break;
-    }
+    final hasExplicitOffer = (widget.item.promotionalLabel != null &&
+            widget.item.promotionalLabel!.trim().isNotEmpty) ||
+        (widget.item.promotionalPeriodType != null &&
+            widget.item.promotionalPeriodType!.trim().isNotEmpty) ||
+        (widget.item.activeTier == PriceTier.base &&
+            widget.item.promotionalPrice != null &&
+            widget.item.promotionalPrice! > 0 &&
+            widget.item.agreedUnitPrice == null);
 
-    final promo = widget.item.promotionalPrice;
-    if (promo != null && promo > 0 && promo < calculated) {
-      return (promo * 100).roundToDouble() / 100.0;
-    }
-    return (calculated * 100).roundToDouble() / 100.0;
+    return ProductPricingCalculator.calculate(
+      product: widget.item.product,
+      quantity: safeQty,
+      activeTier: widget.item.activeTier,
+      wholesaleFactor: widget.item.wholesaleFactor,
+      cardFactor: widget.item.cardFactor,
+      customFactor: widget.item.customFactor,
+      promotionalPrice: widget.item.promotionalPrice,
+      hasExplicitOffer: hasExplicitOffer,
+      agreedUnitPrice: null,
+      cardSurchargeOnOffersMode: widget.item.cardSurchargeOnOffersMode,
+    ).finalUnitPrice;
   }
 
   double get _currentQty {
-    final raw = _qtyController.text.trim().replaceAll(',', '.');
-    final parsed = double.tryParse(raw);
+    final parsed = parseQuantityOrFraction(_qtyController.text);
     if (parsed == null || parsed <= 0) return widget.item.quantity;
-    return _isSoldByWeight ? parsed : parsed.roundToDouble();
+    if (widget.item.product.isService) return parsed.roundToDouble();
+    return (parsed * 10000).roundToDouble() / 10000.0;
   }
+
+  String _formatQtyForInput(double val) => formatQuantityInput(val);
 
   double get _catalogDefaultCartPrice =>
       _defaultCartPriceForQuantity(_currentQty);
@@ -179,10 +182,14 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
 
     final initialQty = widget.item.quantity;
     _qtyController = TextEditingController(
-      text: _isSoldByWeight
-          ? initialQty.toQty()
-          : initialQty.toInt().toString(),
+      text: _formatQtyForInput(initialQty),
     );
+    _shelfStockController = TextEditingController(
+      text: _isTempOrUnregistered
+          ? ''
+          : _formatQtyForInput(widget.item.product.stock),
+    );
+    _customPartsController = TextEditingController();
 
     final initialSelling = widget.item.unitPrice;
     final initialCost = widget.item.effectiveCostPrice;
@@ -216,6 +223,12 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     _barcodeController = TextEditingController(text: _originalBarcode);
     final rawIva = widget.item.product.ivaRate;
     _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
+    _showPortionsBar = !_isSoldByWeight &&
+        !widget.item.product.isService &&
+        ((initialQty - initialQty.roundToDouble()).abs() >= 0.0005 ||
+            (widget.item.product.stock - widget.item.product.stock.roundToDouble())
+                    .abs() >=
+                0.0005);
 
     if (widget.item.manualUnitPrice != null) {
       _priceExplicitlyEdited = true;
@@ -235,8 +248,8 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         } else {
           _descFocus.requestFocus();
           _descController.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: _descController.text.length,
+            baseOffset: _descController.text.length,
+            extentOffset: 0,
           );
         }
       }
@@ -255,11 +268,14 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     _marginController.dispose();
     _discountPctController.dispose();
     _barcodeController.dispose();
+    _shelfStockController.dispose();
+    _customPartsController.dispose();
     _descFocus.dispose();
     _qtyFocus.dispose();
     _priceFocus.dispose();
     _subtotalFocus.dispose();
     _barcodeFocus.dispose();
+    _customPartsFocus.dispose();
     super.dispose();
   }
 
@@ -286,8 +302,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
   /// - Recalcula el Total de Línea (`Subtotal`).
   void _onQuantityChanged(String val) {
     if (_isUpdatingCalc) return;
-    final raw = val.trim().replaceAll(',', '.');
-    final parsed = double.tryParse(raw);
+    final parsed = parseQuantityOrFraction(val);
     if (parsed == null || parsed <= 0) {
       setState(() {});
       return;
@@ -295,7 +310,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
 
     _isUpdatingCalc = true;
     _manualSubtotalOverride = null;
-    final qty = _isSoldByWeight ? parsed : parsed.roundToDouble();
+    final qty = widget.item.product.isService
+        ? parsed.roundToDouble()
+        : (parsed * 10000).roundToDouble() / 10000.0;
 
     double unitPrice = _parseArs(_priceController.text);
     if (!_priceExplicitlyEdited && !_isTempOrUnregistered) {
@@ -322,9 +339,53 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
 
   void _stepUnitQuantity(int delta) {
     if (_isSoldByWeight) return;
-    final next = (_currentQty.round() + delta).clamp(1, 99999);
-    _qtyController.text = next.toString();
+    if (widget.item.product.isService ||
+        (_currentQty - _currentQty.roundToDouble()).abs() < 0.001) {
+      final next = (_currentQty.round() + delta).clamp(1, 99999);
+      _qtyController.text = next.toString();
+    } else {
+      final candidate = _currentQty + delta;
+      final next = candidate < 0.001
+          ? 1.0
+          : (candidate > 99999 ? 99999.0 : candidate);
+      _qtyController.text = _formatQtyForInput(next);
+    }
     _onQuantityChanged(_qtyController.text);
+  }
+
+  void _applyQuickPortion(String label, double fractionQty) {
+    final cleanedBase = _descController.text
+        .replaceFirst(RegExp(r'^Porción\s*\([^)]+\)\s*-\s*'), '')
+        .trim();
+    final targetName =
+        cleanedBase.isNotEmpty ? cleanedBase : widget.item.product.name;
+    if (label == '1' && (fractionQty - 1.0).abs() < 0.0005) {
+      _descController.text = targetName;
+    } else {
+      _descController.text = 'Porción ($label) - $targetName';
+    }
+    _qtyController.text = _formatQtyForInput(fractionQty);
+    _onQuantityChanged(_qtyController.text);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _subtotalFocus.requestFocus();
+      _subtotalController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _subtotalController.text.length,
+      );
+    });
+  }
+
+  void _applyCustomParts() {
+    final parts = int.tryParse(_customPartsController.text.trim());
+    if (parts == null || parts < 2 || parts > 100) {
+      SnackBarService.warning(
+        context,
+        'Ingresá una cantidad válida de partes (entre 2 y 100, ej: 16).',
+      );
+      return;
+    }
+    _applyQuickPortion('1/$parts', 1.0 / parts);
   }
 
   Future<void> _readWeightFromScale(String comPort) async {
@@ -585,7 +646,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
     _priceExplicitlyEdited = false;
     _costExplicitlyEdited = false;
+    _restoredToCatalogPrices = true;
     _updateCatalogInDb = false;
+    _updateCatalogName = false;
     _isUpdatingCalc = false;
     setState(() {});
   }
@@ -622,6 +685,44 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         : 21.0;
     return (_ivaRate - origIva).abs() >= 0.01;
   }
+
+  double? get _parsedShelfStockBeforeSale {
+    final raw = _shelfStockController.text.trim().replaceAll(',', '.');
+    if (raw.isEmpty) return null;
+    return double.tryParse(raw);
+  }
+
+  bool get _hasShelfStockChanged {
+    if (_isTempOrUnregistered ||
+        widget.item.product.isService ||
+        widget.item.product.isCombo) {
+      return false;
+    }
+    final parsed = _parsedShelfStockBeforeSale;
+    if (parsed == null) return false;
+    return (parsed - widget.item.product.stock).abs() >= 0.0005;
+  }
+
+  bool get _hasCatalogNameUpdate {
+    if (_isTempOrUnregistered || !_updateCatalogName) return false;
+    final clean = _descController.text.trim();
+    return clean.isNotEmpty && clean != widget.item.product.name.trim();
+  }
+
+  int get _pendingDbChangeCount {
+    if (_isTempOrUnregistered) return 0;
+    int count = 0;
+    if (_hasCatalogNameUpdate) count++;
+    if (_hasShelfStockChanged) count++;
+    if (_hasIvaRateChanged) count++;
+    if (_updateCatalogInDb && (_hasSellingPriceChanged || _hasCostPriceChanged)) {
+      count++;
+    }
+    if (_hasBarcodeChanged) count++;
+    return count;
+  }
+
+  bool get _hasAnyDbChange => _pendingDbChangeCount > 0;
 
   double get _effectiveLineSubtotal {
     final price = _parseArs(_priceController.text);
@@ -664,6 +765,10 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       if (HardwareKeyboard.instance.isShiftPressed) return false;
+      if (_customPartsFocus.hasFocus) {
+        _applyCustomParts();
+        return true;
+      }
       if (_barcodeFocus.hasFocus) {
         _barcodeFocus.unfocus();
         setState(() {
@@ -696,19 +801,34 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     final ivaChanged = _hasIvaRateChanged;
     final barcodeChanged = _hasBarcodeChanged;
     final cleanBarcode = _barcodeController.text.trim();
+    final nameChangedInDb = _hasCatalogNameUpdate;
+    final shelfChanged = _hasShelfStockChanged;
+    final shelfStockVal = shelfChanged ? _parsedShelfStockBeforeSale : null;
 
     final shouldUpdatePriceCostInDb = !_isTempOrUnregistered &&
         _updateCatalogInDb &&
-        (sellingChanged || costChanged || ivaChanged);
+        (sellingChanged || costChanged);
+    final updateIvaInDb = !_isTempOrUnregistered && ivaChanged;
+
+    final preserveUneditedAgreedPrice = widget.item.hasAgreedPrice &&
+        !_priceExplicitlyEdited &&
+        !_restoredToCatalogPrices &&
+        _manualSubtotalOverride == null &&
+        !shouldUpdatePriceCostInDb &&
+        parsedPrice != null &&
+        (parsedPrice - widget.item.agreedUnitPrice!).abs() < 0.005;
 
     Navigator.of(context).pop(
       PosRenameCartItemResult(
         customDescription: cleanDesc,
         customDetails: cleanDetails.isNotEmpty ? cleanDetails : null,
-        newUnitPrice: (parsedPrice != null && parsedPrice > 0)
+        newUnitPrice: (!preserveUneditedAgreedPrice &&
+                parsedPrice != null &&
+                parsedPrice > 0)
             ? parsedPrice
             : null,
         clearManualUnitPrice: !_isTempOrUnregistered &&
+            !preserveUneditedAgreedPrice &&
             !sellingChanged &&
             !shouldUpdatePriceCostInDb,
         newCostPrice: costChanged ? (parsedCost ?? 0.0) : null,
@@ -724,6 +844,10 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         newBarcode: barcodeChanged ? cleanBarcode : null,
         barcodeChanged: barcodeChanged,
         updateCatalogInDb: shouldUpdatePriceCostInDb,
+        updateCatalogName: nameChangedInDb,
+        updateIvaInDb: updateIvaInDb,
+        newShelfStockBeforeSale: shelfStockVal,
+        shelfStockChanged: shelfChanged,
         sellingPriceChanged: sellingChanged,
         costPriceChanged: costChanged,
       ),
@@ -752,6 +876,29 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     return 'Se guardará el nuevo Costo (\$${parsedCost.toArsInput()}) en la Base de Datos (el Precio de Venta se mantiene en \$${_catalogBaseSellingPrice.toArsInput()}).';
   }
 
+  void _handleRemoteBarcodeScan(String barcode) {
+    final clean = barcode.trim();
+    if (clean.isEmpty || !mounted) return;
+    if (_isTempOrUnregistered || widget.item.product.isCombo) {
+      SnackBarService.warning(
+        context,
+        'Este ítem no admite asignar código de barras desde aquí.',
+      );
+      return;
+    }
+    setState(() {
+      _expandCatalogZone = true;
+      _showBarcodeEditor = true;
+      _barcodeController.text = clean;
+      _barcodeCapturedByScanner = _barcodeController.text.trim().isNotEmpty;
+    });
+    _barcodeFocus.unfocus();
+    SnackBarService.success(
+      context,
+      '🔫 Código $clean capturado. Presioná Enter o "Aplicar" para guardarlo en BD.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isResponsableInscripto =
@@ -768,79 +915,97 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         (refSub > 0 && savings > 0) ? ((savings / refSub) * 100.0) : 0.0;
     final currentDiscInput = _parseDouble(_discountPctController.text);
 
-    return Focus(
-      autofocus: false,
-      child: Dialog(
+    return RemoteScannerListener(
+      debugLabel: 'PosRenameCartItemDialog',
+      onBarcodeScanned: _handleRemoteBarcodeScan,
+      child: Focus(
+        autofocus: false,
+        child: Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.indigo.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.edit_note_rounded,
-                          color: Colors.indigo.shade700,
-                          size: 24,
-                        ),
+          constraints: BoxConstraints(
+            maxWidth: 660,
+            maxHeight: MediaQuery.of(context).size.height * 0.92,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top Fijo (Sticky): Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _isTempOrUnregistered
-                                  ? 'Editar Ítem Rápido en Carrito'
-                                  : 'Editar Línea en Carrito (Ctrl+E)',
-                              style: const TextStyle(
-                                fontSize: 15.5,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF0F172A),
-                              ),
+                      child: Icon(
+                        Icons.edit_note_rounded,
+                        color: Colors.indigo.shade700,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isTempOrUnregistered
+                                ? 'Editar Ítem Rápido en Carrito'
+                                : 'Editar Línea en Carrito (Ctrl+E)',
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _isTempOrUnregistered
-                                  ? 'Ítem Rápido de Mostrador'
-                                  : 'Catálogo original: $originalName',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF64748B),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _isTempOrUnregistered
+                                ? 'Ítem Rápido de Mostrador'
+                                : 'Catálogo original: $originalName',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
                             ),
-                          ],
-                        ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close, size: 20),
-                        tooltip: 'Cerrar (Esc)',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: 'Cerrar (Esc)',
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+              // Centro Scrolleable
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
 
                   // Campo de descripción personalizada
                   TextFormField(
                     controller: _descController,
                     focusNode: _descFocus,
                     textInputAction: TextInputAction.next,
+                    onChanged: (_) => setState(() {}),
                     onFieldSubmitted: (_) => _submit(),
                     decoration: InputDecoration(
                       labelText:
@@ -899,17 +1064,20 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                               child: TextFormField(
                                 controller: _qtyController,
                                 focusNode: _qtyFocus,
-                                keyboardType: _isSoldByWeight
-                                    ? const TextInputType.numberWithOptions(
-                                        decimal: true)
-                                    : TextInputType.number,
-                                inputFormatters: _isSoldByWeight
+                                keyboardType: widget.item.product.isService
+                                    ? TextInputType.number
+                                    : const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: widget.item.product.isService
                                     ? [
-                                        FilteringTextInputFormatter.allow(
-                                            RegExp(r'[0-9.,]')),
+                                        FilteringTextInputFormatter.digitsOnly,
                                       ]
                                     : [
-                                        FilteringTextInputFormatter.digitsOnly,
+                                        FilteringTextInputFormatter.allow(
+                                          _isSoldByWeight
+                                              ? RegExp(r'[0-9.,]')
+                                              : RegExp(r'[0-9.,/]'),
+                                        ),
                                       ],
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
@@ -929,10 +1097,11 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                   isDense: true,
                                 ),
                                 validator: (val) {
-                                  final raw =
-                                      (val ?? '').trim().replaceAll(',', '.');
-                                  final parsed = double.tryParse(raw);
-                                  final minQ = _isSoldByWeight ? 0.001 : 1.0;
+                                  final parsed =
+                                      parseQuantityOrFraction(val ?? '');
+                                  final minQ = widget.item.product.isService
+                                      ? 1.0
+                                      : 0.001;
                                   final maxQ =
                                       _isSoldByWeight ? 1000.0 : 100000.0;
                                   if (parsed == null ||
@@ -1031,8 +1200,202 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           ),
                         ),
                       ),
+                      if (!_isSoldByWeight && !widget.item.product.isService) ...[
+                        const SizedBox(width: 8),
+                        Tooltip(
+                          message: _showPortionsBar
+                              ? 'Ocultar fracciones rápidas'
+                              : 'Mostrar fracciones rápidas (1/8, 1/6, 1/4, 1/2)',
+                          child: SizedBox(
+                            height: 42,
+                            child: OutlinedButton(
+                              onPressed: () => setState(
+                                () => _showPortionsBar = !_showPortionsBar,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                backgroundColor: _showPortionsBar
+                                    ? const Color(0xFFEDE9FE)
+                                    : null,
+                                foregroundColor: _showPortionsBar
+                                    ? const Color(0xFF5B21B6)
+                                    : const Color(0xFF475569),
+                                side: BorderSide(
+                                  color: _showPortionsBar
+                                      ? const Color(0xFF7C3AED)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                              ),
+                              child: const Text(
+                                '1/x',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
+                  if (!_isSoldByWeight &&
+                      !widget.item.product.isService &&
+                      _showPortionsBar) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Text(
+                          'Porción rápida:',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                        for (final chip in const <({String label, double qty})>[
+                          (label: '1/8', qty: 0.125),
+                          (label: '2/8', qty: 0.250),
+                          (label: '1/6', qty: 0.167),
+                          (label: '1/4', qty: 0.250),
+                          (label: '1/2', qty: 0.500),
+                          (label: '1', qty: 1.0),
+                        ])
+                          InkWell(
+                            borderRadius: BorderRadius.circular(7),
+                            onTap: () =>
+                                _applyQuickPortion(chip.label, chip.qty),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: ((_currentQty - chip.qty).abs() <
+                                            0.0006 &&
+                                        (_descController.text.contains(
+                                                '(${chip.label})') ||
+                                            (chip.label != '2/8' &&
+                                                chip.label != '1') ||
+                                            (chip.label == '1' &&
+                                                !_descController.text
+                                                    .contains('Porción ('))))
+                                    ? const Color(0xFFEDE9FE)
+                                    : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(7),
+                                border: Border.all(
+                                  color: ((_currentQty - chip.qty).abs() <
+                                              0.0006 &&
+                                          (_descController.text.contains(
+                                                  '(${chip.label})') ||
+                                              (chip.label != '2/8' &&
+                                                  chip.label != '1') ||
+                                              (chip.label == '1' &&
+                                                  !_descController.text
+                                                      .contains('Porción ('))))
+                                      ? const Color(0xFF7C3AED)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              child: Text(
+                                chip.label == '1'
+                                    ? '1 entero'
+                                    : '${chip.label} (${chip.qty.toStringAsFixed(3).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '')})',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: ((_currentQty - chip.qty).abs() <
+                                              0.0006 &&
+                                          (_descController.text.contains(
+                                                  '(${chip.label})') ||
+                                              (chip.label != '2/8' &&
+                                                  chip.label != '1') ||
+                                              (chip.label == '1' &&
+                                                  !_descController.text
+                                                      .contains('Porción ('))))
+                                      ? const Color(0xFF5B21B6)
+                                      : const Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                          ),
+                        const Text(
+                          'o ÷',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 54,
+                          height: 28,
+                          child: TextField(
+                            key: const Key('rename_custom_parts_input'),
+                            controller: _customPartsController,
+                            focusNode: _customPartsFocus,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(3),
+                            ],
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            onSubmitted: (_) => _applyCustomParts(),
+                            decoration: InputDecoration(
+                              hintText: '16',
+                              hintStyle: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF94A3B8),
+                              ),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          key: const Key('rename_apply_custom_parts_btn'),
+                          borderRadius: BorderRadius.circular(7),
+                          onTap: _applyCustomParts,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEDE9FE),
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                color: const Color(0xFF7C3AED),
+                              ),
+                            ),
+                            child: const Text(
+                              'Aplicar (1/N)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF5B21B6),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
 
                   // ── Sección de Precio de Venta, Subtotal Pactado, Descuento Rápido, Costo y % Margen ──
@@ -1320,7 +1683,8 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                   ),
                                 ),
                               ),
-                              if (isResponsableInscripto) ...[
+                              if (isResponsableInscripto &&
+                                  _isTempOrUnregistered) ...[
                                 const SizedBox(width: 8),
                                 SizedBox(
                                   width: 110,
@@ -1398,306 +1762,810 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           ),
                         ],
 
-                        // Switch: Solo esta venta vs Actualizar en Catálogo (Base de Datos)
-                        if (!_isTempOrUnregistered) ...[
-                          const SizedBox(height: 10),
+                        // Fin Zona 1 (Precios / Descuentos / Total de línea)
+                      ],
+                    ),
+                  ),
+
+                  // ── Zona 2 (Colapsable): Corregir en Catálogo (BD) ──
+                  if (!_isTempOrUnregistered) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: _hasAnyDbChange
+                            ? const Color(0xFFEFF6FF)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _hasAnyDbChange
+                              ? const Color(0xFF3B82F6)
+                              : const Color(0xFFE2E8F0),
+                          width: _hasAnyDbChange ? 1.3 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                           InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              setState(() {
-                                _updateCatalogInDb = !_updateCatalogInDb;
-                              });
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
+                            borderRadius: BorderRadius.circular(11),
+                            onTap: () => setState(
+                                () => _expandCatalogZone = !_expandCatalogZone),
+                            child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: _updateCatalogInDb
-                                    ? const Color(0xFFEFF6FF)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _updateCatalogInDb
-                                      ? const Color(0xFF3B82F6)
-                                      : const Color(0xFFCBD5E1),
-                                  width: _updateCatalogInDb ? 1.4 : 1.0,
-                                ),
-                              ),
+                                  horizontal: 12, vertical: 10),
                               child: Row(
                                 children: [
-                                  SizedBox(
-                                    height: 22,
-                                    width: 22,
-                                    child: Checkbox(
-                                      value: _updateCatalogInDb,
-                                      activeColor: const Color(0xFF2563EB),
-                                      onChanged: (val) {
-                                        setState(() {
-                                          _updateCatalogInDb = val ?? false;
-                                        });
-                                      },
-                                    ),
+                                  Icon(
+                                    Icons.settings_suggest_rounded,
+                                    size: 18,
+                                    color: _hasAnyDbChange
+                                        ? const Color(0xFF1D4ED8)
+                                        : const Color(0xFF475569),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '💾 Actualizar precio/costo permanentemente en el Catálogo (BD)',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: _updateCatalogInDb
-                                                ? const Color(0xFF1D4ED8)
-                                                : const Color(0xFF334155),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _updateCatalogInDb
-                                              ? _buildDbImpactSummary()
-                                              : 'Desmarcado: cualquier cambio de precio, descuento o costo aplica SOLO a esta venta.',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: _updateCatalogInDb
-                                                ? const Color(0xFF1E40AF)
-                                                : const Color(0xFF64748B),
-                                          ),
-                                        ),
-                                      ],
+                                    child: Text(
+                                      'Corregir en catálogo (BD)',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _hasAnyDbChange
+                                            ? const Color(0xFF1E3A8A)
+                                            : const Color(0xFF334155),
+                                      ),
                                     ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _hasAnyDbChange
+                                          ? const Color(0xFFDBEAFE)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: _hasAnyDbChange
+                                            ? const Color(0xFF93C5FD)
+                                            : const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _hasAnyDbChange
+                                          ? '$_pendingDbChangeCount cambio${_pendingDbChangeCount == 1 ? '' : 's'} en BD'
+                                          : 'Stock · Nombre · Precio · IVA · EAN',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _hasAnyDbChange
+                                            ? const Color(0xFF1D4ED8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    _expandCatalogZone
+                                        ? Icons.keyboard_arrow_up_rounded
+                                        : Icons.keyboard_arrow_down_rounded,
+                                    size: 20,
+                                    color: const Color(0xFF64748B),
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
+                          if (_expandCatalogZone) ...[
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // 1. Stock físico en góndola + Alícuota IVA AFIP (en fila si ambos aplican)
+                                  if ((!widget.item.product.isService &&
+                                          !widget.item.product.isCombo) ||
+                                      isResponsableInscripto) ...[
+                                    Builder(
+                                      builder: (_) {
+                                        final showStock =
+                                            !widget.item.product.isService &&
+                                                !widget.item.product.isCombo;
 
-                  // ── Punto 2A: Asignar o Corregir Código de Barras en el acto (🔫 Pistolear) ──
-                  if (!_isTempOrUnregistered && !widget.item.product.isCombo) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _hasBarcodeChanged
-                            ? const Color(0xFFF0FDF4)
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: _hasBarcodeChanged
-                              ? const Color(0xFF22C55E)
-                              : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.qr_code_scanner_rounded,
-                                size: 17,
-                                color: _hasBarcodeChanged
-                                    ? const Color(0xFF15803D)
-                                    : const Color(0xFF475569),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _hasBarcodeChanged
-                                      ? 'Nuevo código EAN listo para guardar en BD: ${_barcodeController.text.trim()}'
-                                      : (_originalBarcode.isNotEmpty
-                                          ? 'Código de barras actual: $_originalBarcode'
-                                          : 'Sin código de barras asignado'),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: _hasBarcodeChanged
-                                        ? FontWeight.w700
-                                      : FontWeight.w600,
-                                    color: _hasBarcodeChanged
-                                        ? const Color(0xFF166534)
-                                        : const Color(0xFF334155),
-                                  ),
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _showBarcodeEditor = !_showBarcodeEditor;
-                                    _barcodeCapturedByScanner = false;
-                                  });
-                                  if (_showBarcodeEditor) {
-                                    WidgetsBinding.instance
-                                        .addPostFrameCallback((_) {
-                                      if (mounted) {
-                                        _barcodeFocus.requestFocus();
-                                        _barcodeController.selection =
-                                            TextSelection(
-                                          baseOffset: 0,
-                                          extentOffset:
-                                              _barcodeController.text.length,
-                                        );
-                                      }
-                                    });
-                                  }
-                                },
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                icon: Icon(
-                                  _showBarcodeEditor
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.barcode_reader,
-                                  size: 16,
-                                ),
-                                label: Text(
-                                  _showBarcodeEditor
-                                      ? 'Ocultar'
-                                      : 'Pistolear código nuevo',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_showBarcodeEditor) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _barcodeController,
-                                    focusNode: _barcodeFocus,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.deny(
-                                          RegExp(r'\s')),
-                                    ],
-                                    onChanged: (_) {
-                                      setState(() {
-                                        _barcodeCapturedByScanner = false;
-                                      });
-                                    },
-                                    onFieldSubmitted: (_) {
-                                      _barcodeFocus.unfocus();
-                                      setState(() {
-                                        _barcodeCapturedByScanner =
-                                            _barcodeController.text
-                                                .trim()
-                                                .isNotEmpty;
-                                      });
-                                    },
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          'Escanear o escribir Código de Barras (se guarda en BD)',
-                                      hintText: 'Pistoleá el envase ahora...',
-                                      prefixIcon: const Icon(
-                                          Icons.qr_code_2_rounded,
-                                          size: 19),
-                                      suffixIcon: _hasBarcodeChanged
-                                          ? IconButton(
-                                              onPressed: () {
-                                                setState(() {
-                                                  _barcodeController.text =
-                                                      _originalBarcode;
-                                                  _barcodeCapturedByScanner =
-                                                      false;
-                                                });
+                                        Widget buildStockField() =>
+                                            TextFormField(
+                                              controller:
+                                                  _shelfStockController,
+                                              keyboardType: const TextInputType
+                                                  .numberWithOptions(
+                                                  decimal: true),
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter
+                                                    .allow(RegExp(r'[0-9.,]')),
+                                              ],
+                                              onChanged: (_) =>
+                                                  setState(() {}),
+                                              onFieldSubmitted: (_) =>
+                                                  _submit(),
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: _hasShelfStockChanged
+                                                    ? const Color(0xFF1D4ED8)
+                                                    : const Color(0xFF0F172A),
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText: isResponsableInscripto
+                                                    ? 'Stock físico en góndola'
+                                                    : 'Stock físico en góndola (antes de esta venta)',
+                                                helperText: (widget.item.product
+                                                                .minStock ??
+                                                            0) >
+                                                        0
+                                                    ? 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')} · Mín. alerta: ${widget.item.product.minStock!.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')}'
+                                                    : 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')}',
+                                                suffixText:
+                                                    _isSoldByWeight ? 'KG' : 'UN',
+                                                prefixIcon: const Icon(
+                                                    Icons.inventory_2_outlined,
+                                                    size: 18),
+                                                suffixIcon: _hasShelfStockChanged
+                                                    ? IconButton(
+                                                        tooltip:
+                                                            'Restaurar stock del catálogo',
+                                                        icon: const Icon(
+                                                            Icons.restore_rounded,
+                                                            size: 18),
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            _shelfStockController
+                                                                    .text =
+                                                                _formatQtyForInput(
+                                                                    widget
+                                                                        .item
+                                                                        .product
+                                                                        .stock);
+                                                          });
+                                                        },
+                                                      )
+                                                    : null,
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                isDense: true,
+                                              ),
+                                              validator: (v) {
+                                                final raw = (v ?? '').trim();
+                                                if (raw.isEmpty) return null;
+                                                final parsed = double.tryParse(
+                                                    raw.replaceAll(',', '.'));
+                                                if (parsed == null ||
+                                                    parsed < 0 ||
+                                                    parsed >= 1000000) {
+                                                  return 'Ingresá un stock válido (>= 0)';
+                                                }
+                                                return null;
                                               },
-                                              tooltip:
-                                                  'Restaurar código original',
-                                              icon: const Icon(
-                                                  Icons.restore_rounded,
-                                                  size: 18),
-                                            )
-                                          : null,
-                                      filled: true,
-                                      fillColor: Colors.white,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
+                                            );
+
+                                        Widget buildIvaDropdown() =>
+                                            DropdownButtonFormField<double>(
+                                              initialValue: _ivaRate,
+                                              isExpanded: true,
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: _hasIvaRateChanged
+                                                    ? const Color(0xFF1D4ED8)
+                                                    : const Color(0xFF1E293B),
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'Alícuota IVA en Catálogo (BD)',
+                                                labelStyle: const TextStyle(
+                                                    fontSize: 11.5),
+                                                helperText: _hasIvaRateChanged &&
+                                                        showStock
+                                                    ? 'Se actualizará en BD'
+                                                    : null,
+                                                helperStyle: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF1D4ED8),
+                                                ),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 8),
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                isDense: true,
+                                              ),
+                                              items: const [
+                                                DropdownMenuItem(
+                                                    value: 21.0,
+                                                    child: Text('IVA 21%')),
+                                                DropdownMenuItem(
+                                                    value: 10.5,
+                                                    child: Text('IVA 10.5%')),
+                                                DropdownMenuItem(
+                                                    value: 27.0,
+                                                    child: Text('IVA 27%')),
+                                                DropdownMenuItem(
+                                                    value: 0.0,
+                                                    child: Text('0% Exento')),
+                                              ],
+                                              onChanged: (v) {
+                                                if (v != null) {
+                                                  setState(() => _ivaRate = v);
+                                                }
+                                              },
+                                            );
+
+                                        if (showStock && isResponsableInscripto) {
+                                          return Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                  flex: 6,
+                                                  child: buildStockField()),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                  flex: 4,
+                                                  child: buildIvaDropdown()),
+                                            ],
+                                          );
+                                        }
+                                        if (showStock) {
+                                          return buildStockField();
+                                        }
+                                        return Row(
+                                          children: [
+                                            Expanded(child: buildIvaDropdown()),
+                                            if (_hasIvaRateChanged) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 6),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      const Color(0xFFDBEAFE),
+                                                  borderRadius:
+                                                      BorderRadius.circular(7),
+                                                ),
+                                                child: const Text(
+                                                  'Se actualizará en BD',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Color(0xFF1D4ED8),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    if (!widget.item.product.isService &&
+                                        !widget.item.product.isCombo &&
+                                        _hasShelfStockChanged &&
+                                        _parsedShelfStockBeforeSale !=
+                                            null) ...[
+                                      const SizedBox(height: 6),
+                                      Builder(
+                                        builder: (_) {
+                                          final target =
+                                              _parsedShelfStockBeforeSale!;
+                                          final delta = target -
+                                              widget.item.product.stock;
+                                          final afterSale =
+                                              target - _currentQty;
+                                          final sign = delta > 0 ? '+' : '';
+                                          final suffix =
+                                              _isSoldByWeight ? 'kg' : 'u';
+                                          return Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFECFDF5),
+                                              borderRadius:
+                                                  BorderRadius.circular(7),
+                                              border: Border.all(
+                                                  color:
+                                                      const Color(0xFFA7F3D0)),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.inventory_rounded,
+                                                  size: 15,
+                                                  color: Color(0xFF065F46),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    '${delta > 0 ? 'Ajuste de inventario' : 'Descuento de inventario'}: $sign${delta.toQty()} $suffix · Al cobrar esta línea quedarán: ${afterSale.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: suffix)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: Color(0xFF065F46),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
                                       ),
-                                      isDense: true,
+                                    ],
+                                    const SizedBox(height: 10),
+                                  ],
+
+                                  // 2. Opciones de actualización en Catálogo (Nombre y Precio/Costo) agrupadas
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: (_updateCatalogName ||
+                                                _updateCatalogInDb)
+                                            ? const Color(0xFF60A5FA)
+                                            : const Color(0xFFCBD5E1),
+                                      ),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Column(
+                                      children: [
+                                        InkWell(
+                                          onTap: () => setState(() =>
+                                              _updateCatalogName =
+                                                  !_updateCatalogName),
+                                          child: Container(
+                                            color: _updateCatalogName
+                                                ? const Color(0xFFEFF6FF)
+                                                : Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 8),
+                                            child: Row(
+                                              children: [
+                                                SizedBox(
+                                                  height: 22,
+                                                  width: 22,
+                                                  child: Checkbox(
+                                                    value: _updateCatalogName,
+                                                    activeColor:
+                                                        const Color(0xFF2563EB),
+                                                    onChanged: (val) =>
+                                                        setState(() =>
+                                                            _updateCatalogName =
+                                                                val ?? false),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Icon(
+                                                  Icons
+                                                      .drive_file_rename_outline_rounded,
+                                                  size: 16,
+                                                  color: _updateCatalogName
+                                                      ? const Color(0xFF1D4ED8)
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      const Text(
+                                                        'Guardar la descripción editada como nombre oficial en Catálogo',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              Color(0xFF334155),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 1),
+                                                      Text(
+                                                        _hasCatalogNameUpdate
+                                                            ? 'BD: "${widget.item.product.name}" → "${_descController.text.trim()}"'
+                                                            : 'Actual en BD: "${widget.item.product.name}"',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: _hasCatalogNameUpdate
+                                                              ? const Color(
+                                                                  0xFF1D4ED8)
+                                                              : const Color(
+                                                                  0xFF64748B),
+                                                        ),
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const Divider(
+                                            height: 1,
+                                            color: Color(0xFFE2E8F0)),
+                                        InkWell(
+                                          onTap: () => setState(() =>
+                                              _updateCatalogInDb =
+                                                  !_updateCatalogInDb),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 180),
+                                            color: _updateCatalogInDb
+                                                ? const Color(0xFFDBEAFE)
+                                                : Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 8),
+                                            child: Row(
+                                              children: [
+                                                SizedBox(
+                                                  height: 22,
+                                                  width: 22,
+                                                  child: Checkbox(
+                                                    value: _updateCatalogInDb,
+                                                    activeColor:
+                                                        const Color(0xFF2563EB),
+                                                    onChanged: (val) =>
+                                                        setState(() =>
+                                                            _updateCatalogInDb =
+                                                                val ?? false),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Icon(
+                                                  Icons.save_outlined,
+                                                  size: 16,
+                                                  color: _updateCatalogInDb
+                                                      ? const Color(0xFF1D4ED8)
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        'Actualizar precio/costo permanentemente en el Catálogo (BD)',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: _updateCatalogInDb
+                                                              ? const Color(
+                                                                  0xFF1D4ED8)
+                                                              : const Color(
+                                                                  0xFF334155),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 1),
+                                                      Text(
+                                                        _updateCatalogInDb
+                                                            ? _buildDbImpactSummary()
+                                                            : 'Desmarcado: cualquier cambio de precio, descuento o costo aplica SOLO a esta venta.',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: _updateCatalogInDb
+                                                              ? const Color(
+                                                                  0xFF1E40AF)
+                                                              : const Color(
+                                                                  0xFF64748B),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            if (_barcodeCapturedByScanner && _hasBarcodeChanged)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 5),
-                                child: Text(
-                                  '✅ Código capturado por el lector. Presioná Enter o "Aplicar" para guardarlo en la Base de Datos.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF15803D),
-                                  ),
-                                ),
+
+                                  // 5. Código de barras (Pistolear EAN)
+                                  if (!widget.item.product.isCombo) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: _hasBarcodeChanged
+                                            ? const Color(0xFFF0FDF4)
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: _hasBarcodeChanged
+                                              ? const Color(0xFF22C55E)
+                                              : const Color(0xFFCBD5E1),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.qr_code_scanner_rounded,
+                                                size: 17,
+                                                color: _hasBarcodeChanged
+                                                    ? const Color(0xFF15803D)
+                                                    : const Color(0xFF475569),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  _hasBarcodeChanged
+                                                      ? 'Nuevo código EAN listo para guardar en BD: ${_barcodeController.text.trim()}'
+                                                      : (_originalBarcode
+                                                              .isNotEmpty
+                                                          ? 'Código de barras actual: $_originalBarcode'
+                                                          : 'Sin código de barras asignado'),
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        _hasBarcodeChanged
+                                                            ? FontWeight.w700
+                                                            : FontWeight.w600,
+                                                    color: _hasBarcodeChanged
+                                                        ? const Color(
+                                                            0xFF166534)
+                                                        : const Color(
+                                                            0xFF334155),
+                                                  ),
+                                                ),
+                                              ),
+                                              TextButton.icon(
+                                                onPressed: () {
+                                                  setState(() {
+                                                    _showBarcodeEditor =
+                                                        !_showBarcodeEditor;
+                                                    _barcodeCapturedByScanner =
+                                                        false;
+                                                  });
+                                                  if (_showBarcodeEditor) {
+                                                    WidgetsBinding.instance
+                                                        .addPostFrameCallback(
+                                                            (_) {
+                                                      if (mounted) {
+                                                        _barcodeFocus
+                                                            .requestFocus();
+                                                        _barcodeController
+                                                                .selection =
+                                                            TextSelection(
+                                                          baseOffset: 0,
+                                                          extentOffset:
+                                                              _barcodeController
+                                                                  .text.length,
+                                                        );
+                                                      }
+                                                    });
+                                                  }
+                                                },
+                                                style: TextButton.styleFrom(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4),
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                                icon: Icon(
+                                                  _showBarcodeEditor
+                                                      ? Icons
+                                                          .keyboard_arrow_up_rounded
+                                                      : Icons.barcode_reader,
+                                                  size: 16,
+                                                ),
+                                                label: Text(
+                                                  _showBarcodeEditor
+                                                      ? 'Ocultar'
+                                                      : 'Pistolear código nuevo',
+                                                  style: const TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (_showBarcodeEditor) ...[
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: TextFormField(
+                                                    controller:
+                                                        _barcodeController,
+                                                    focusNode: _barcodeFocus,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter
+                                                          .deny(RegExp(r'\s')),
+                                                    ],
+                                                    onChanged: (_) {
+                                                      setState(() {
+                                                        _barcodeCapturedByScanner =
+                                                            false;
+                                                      });
+                                                    },
+                                                    onFieldSubmitted: (_) {
+                                                      _barcodeFocus.unfocus();
+                                                      setState(() {
+                                                        _barcodeCapturedByScanner =
+                                                            _barcodeController
+                                                                .text
+                                                                .trim()
+                                                                .isNotEmpty;
+                                                      });
+                                                    },
+                                                    decoration: InputDecoration(
+                                                      labelText:
+                                                          'Escanear o escribir Código de Barras (se guarda en BD)',
+                                                      hintText:
+                                                          'Pistoleá el envase ahora...',
+                                                      prefixIcon: const Icon(
+                                                          Icons
+                                                              .qr_code_2_rounded,
+                                                          size: 19),
+                                                      suffixIcon:
+                                                          _hasBarcodeChanged
+                                                              ? IconButton(
+                                                                  onPressed:
+                                                                      () {
+                                                                    setState(
+                                                                        () {
+                                                                      _barcodeController
+                                                                              .text =
+                                                                          _originalBarcode;
+                                                                      _barcodeCapturedByScanner =
+                                                                          false;
+                                                                    });
+                                                                  },
+                                                                  tooltip:
+                                                                      'Restaurar código original',
+                                                                  icon: const Icon(
+                                                                      Icons
+                                                                          .restore_rounded,
+                                                                      size: 18),
+                                                                )
+                                                              : null,
+                                                      filled: true,
+                                                      fillColor: Colors.white,
+                                                      border:
+                                                          OutlineInputBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                      ),
+                                                      isDense: true,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (_barcodeCapturedByScanner &&
+                                                _hasBarcodeChanged)
+                                              const Padding(
+                                                padding:
+                                                    EdgeInsets.only(top: 5),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.check_circle_rounded,
+                                                      size: 14,
+                                                      color: Color(0xFF15803D),
+                                                    ),
+                                                    SizedBox(width: 5),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Código capturado por el lector. Presioná Enter o "Aplicar" para guardarlo en la Base de Datos.',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color:
+                                                              Color(0xFF15803D),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
+                            ),
                           ],
                         ],
                       ),
                     ),
                   ],
-
-                  const SizedBox(height: 14),
-
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancelar (Esc)'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _submit,
-                        icon: Icon(
-                          (_updateCatalogInDb || _hasBarcodeChanged)
-                              ? Icons.save_rounded
-                              : Icons.check_rounded,
-                          size: 18,
-                        ),
-                        label: Text(
-                          (_updateCatalogInDb || _hasBarcodeChanged)
-                              ? 'Aplicar y Guardar en BD (Enter)'
-                              : 'Aplicar en Comprobante (Enter)',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              (_updateCatalogInDb || _hasBarcodeChanged)
-                                  ? const Color(0xFF2563EB)
-                                  : const Color(0xFF4F46E5),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
           ),
         ),
-      ),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        // Footer Fijo (Sticky)
+        Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar (Esc)'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _submit,
+                icon: Icon(
+                  _hasAnyDbChange
+                      ? Icons.save_rounded
+                      : Icons.check_rounded,
+                  size: 18,
+                ),
+                label: Text(
+                  _hasAnyDbChange
+                      ? 'Aplicar y Guardar en BD (Enter)'
+                      : 'Aplicar en Comprobante (Enter)',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _hasAnyDbChange
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF4F46E5),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    ),
+    ),
+    ),
     );
   }
 }

@@ -19,6 +19,7 @@ import 'package:frontend_desktop/features/settings/domain/entities/business_sett
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
+import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
@@ -511,8 +512,8 @@ void main() {
       // Dialog opens
       expect(find.text('Asignar Marca en Lote'), findsOneWidget);
 
-      // Open dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      // Open selector
+      await tester.tap(find.byType(SearchableSelectField<int?>));
       await tester.pumpAndSettle();
 
       // Verify — Quitar Marca — is the first option

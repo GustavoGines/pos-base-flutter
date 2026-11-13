@@ -53,5 +53,39 @@ void main() {
       });
     });
 
+    group('Fracciones universales y helpers (1/N)', () {
+      test('parseQuantityOrFraction soporta fracciones, comas, decimales y rechaza inválidos', () {
+        expect(parseQuantityOrFraction('1/16'), closeTo(0.0625, 1e-6));
+        expect(parseQuantityOrFraction('3 / 16'), closeTo(0.1875, 1e-6));
+        expect(parseQuantityOrFraction('0,0625'), closeTo(0.0625, 1e-6));
+        expect(parseQuantityOrFraction('1/0'), isNull);
+        expect(parseQuantityOrFraction('0'), isNull);
+        expect(parseQuantityOrFraction('0', allowZero: true), 0.0);
+        expect(parseQuantityOrFraction('abc'), isNull);
+      });
+
+      test('calcUnitsFitStock calcula 16 combos exactos con stock=1 y qty=0.063 (1/16 redondeado)', () {
+        expect(calcUnitsFitStock(1.0, 0.063), 16);
+        expect(calcUnitsFitStock(1.0, 1 / 16), 16);
+        expect(calcUnitsFitStock(0.937, 0.063), 15);
+        expect(calcUnitsFitStock(1.0, 0.167), 6);
+        expect(calcUnitsFitStock(1.0, 0.050), 20);
+        expect(calcUnitsFitStock(2.0, 0.042), 48); // 2 * 1/24
+      });
+
+      test('toUnitStockDisplay reconoce dieciseisavos (1/16, 15/16)', () {
+        expect(0.0625.toUnitStockDisplay(), '1/16 u');
+        expect(0.9375.toUnitStockDisplay(), '15/16 u');
+        expect(0.937.toUnitStockDisplay(), '15/16 u');
+      });
+
+      test('formatQuantityInput conserva 0.0625 y redondea 1/6 a 0.167', () {
+        expect(formatQuantityInput(1.0), '1');
+        expect(formatQuantityInput(0.0625), '0.0625');
+        expect(formatQuantityInput(0.167), '0.167');
+        expect(roundQtyForStorage(0.0625), 0.063);
+      });
+    });
+
   });
 }

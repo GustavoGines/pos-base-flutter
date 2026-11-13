@@ -1,6 +1,12 @@
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import '../services/product_pricing_calculator.dart';
 
-enum PriceTier { base, wholesale, card, custom }
+export '../services/product_pricing_calculator.dart'
+    show
+        PriceTier,
+        CardSurchargeOnOffersMode,
+        CalculatedProductPrice,
+        ProductPricingCalculator;
 
 class CartItem {
   Product product;
@@ -13,6 +19,8 @@ class CartItem {
   double? promotionalPrice; // Ofertas / Promociones temporales
   String? promotionalLabel;
   String? promotionalPeriodType; // 'daily', 'weekly', 'monthly', 'custom'
+  double? agreedUnitPrice; // Precio congelado pactado (ej. Orden en espera / Presupuesto recuperado)
+  CardSurchargeOnOffersMode cardSurchargeOnOffersMode;
   bool isTemporary; // Ítem/Combo temporal creado en POS (sin descuento de stock)
   bool saveToCatalog; // Si es true, el backend creará el producto en el catálogo con needs_catalog_review=true
   String? customDescription; // Sobrescritura temporal del nombre para Factura/Ticket
@@ -33,6 +41,8 @@ class CartItem {
     this.promotionalPrice,
     this.promotionalLabel,
     this.promotionalPeriodType,
+    this.agreedUnitPrice,
+    this.cardSurchargeOnOffersMode = CardSurchargeOnOffersMode.surchargeOnOffer,
     this.isTemporary = false,
     this.saveToCatalog = false,
     this.customDescription,
@@ -46,10 +56,18 @@ class CartItem {
   /// Costo unitario efectivo en esta venta (respeta override manual si existe)
   double get effectiveCostPrice => manualCostPrice ?? product.costPrice;
 
+  /// Indica si el precio de venta fue ajustado manualmente solo para esta venta
+  bool get hasManualSellingPriceOverride =>
+      (manualUnitPrice != null && manualUnitPrice! > 0) ||
+      (manualSubtotal != null && manualSubtotal! > 0);
+
+  /// Indica si el costo fue ajustado manualmente solo para esta venta
+  bool get hasManualCostOverride =>
+      manualCostPrice != null && manualCostPrice! >= 0;
+
   /// Indica si tiene un precio de venta o costo ajustado manualmente solo para esta venta
   bool get hasManualPriceOverride =>
-      (manualUnitPrice != null && manualUnitPrice! > 0) ||
-      (manualCostPrice != null && manualCostPrice! >= 0);
+      hasManualSellingPriceOverride || hasManualCostOverride;
 
   /// Nombre efectivo a mostrar en el carrito, ticket térmico, PDF A4 y factura electrónica AFIP
   String get effectiveDisplayName {
@@ -84,6 +102,16 @@ class CartItem {
       if (isTemporary || isUnregisteredProduct || saveToCatalog || hasManualIvaOverride)
         'iva_rate': product.ivaRate,
       'is_combo': product.isCombo,
+      if (product.isCombo &&
+          product.comboIngredients != null &&
+          product.comboIngredients!.isNotEmpty)
+        'combo_ingredients': product.comboIngredients!
+            .where((ing) => ing['id'] != null)
+            .map((ing) => {
+                  'id': (ing['id'] as num).toInt(),
+                  'quantity': ((ing['quantity'] as num?)?.toDouble() ?? 1.0),
+                })
+            .toList(),
       'is_service': product.isService,
       'is_sold_by_weight': product.isSoldByWeight,
       'unit_type': product.unitType,
@@ -93,56 +121,44 @@ class CartItem {
     };
   }
 
+  bool get _hasExplicitOfferMetadata =>
+      (promotionalLabel != null && promotionalLabel!.trim().isNotEmpty) ||
+      (promotionalPeriodType != null && promotionalPeriodType!.trim().isNotEmpty);
+
+  /// Snapshot unificado del cálculo de precios para esta línea (sin override manual).
+  CalculatedProductPrice get calculatedPrice =>
+      ProductPricingCalculator.calculate(
+        product: product,
+        quantity: quantity,
+        activeTier: activeTier,
+        wholesaleFactor: wholesaleFactor,
+        cardFactor: cardFactor,
+        customFactor: customFactor,
+        promotionalPrice: promotionalPrice,
+        hasExplicitOffer: _hasExplicitOfferMetadata ||
+            (activeTier == PriceTier.base &&
+                promotionalPrice != null &&
+                promotionalPrice! > 0 &&
+                agreedUnitPrice == null),
+        agreedUnitPrice: agreedUnitPrice,
+        cardSurchargeOnOffersMode: cardSurchargeOnOffersMode,
+      );
+
   /// Precio unitario calculado automáticamente por lista/oferta (sin override manual)
-  double get defaultCalculatedUnitPrice {
-    final baseVolumetric = product.getBestPrice(quantity);
-    double calculated;
-    switch (activeTier) {
-      case PriceTier.wholesale:
-        if (product.priceWholesale != null && product.priceWholesale! > 0) {
-          calculated = product.priceWholesale!;
-        } else {
-          calculated = baseVolumetric * wholesaleFactor;
-        }
-        break;
-      case PriceTier.card:
-        if (product.priceCard != null && product.priceCard! > 0) {
-          calculated = product.priceCard!;
-        } else {
-          calculated = baseVolumetric * cardFactor;
-        }
-        break;
-      case PriceTier.custom:
-        calculated = baseVolumetric * customFactor;
-        break;
-      case PriceTier.base:
-        if ((customFactor - 1.0).abs() > 0.0001) {
-          calculated = baseVolumetric * customFactor;
-        } else {
-          calculated = baseVolumetric;
-        }
-        break;
-    }
+  double get defaultCalculatedUnitPrice => calculatedPrice.finalUnitPrice;
 
-    // Si hay una oferta promocional y es menor al precio calculado, aplicarla
-    if (promotionalPrice != null && promotionalPrice! > 0 && promotionalPrice! < calculated) {
-      return (promotionalPrice! * 100).roundToDouble() / 100.0;
-    }
-    return (calculated * 100).roundToDouble() / 100.0;
-  }
-
-  /// Motor de precio híbrido: prioriza override manual de mostrador → precio de oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
+  /// Motor de precio híbrido: prioriza override manual de mostrador → precio pactado / oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
   double get unitPrice {
     if (manualUnitPrice != null && manualUnitPrice! > 0) {
-      return (manualUnitPrice! * 100).roundToDouble() / 100.0;
+      return ProductPricingCalculator.roundMoney(manualUnitPrice!);
     }
     return defaultCalculatedUnitPrice;
   }
 
   double get subtotal {
-    final calculated = ((unitPrice * quantity) * 100).roundToDouble() / 100.0;
+    final calculated = ProductPricingCalculator.roundMoney(unitPrice * quantity);
     if (manualSubtotal != null && manualSubtotal! > 0) {
-      final roundedManual = (manualSubtotal! * 100).roundToDouble() / 100.0;
+      final roundedManual = ProductPricingCalculator.roundMoney(manualSubtotal!);
       final maxRoundingTolerance = (0.02 * quantity.abs()) > 0.05 ? (0.02 * quantity.abs()) : 0.05;
       if ((roundedManual - calculated).abs() <= maxRoundingTolerance + 0.001) {
         return roundedManual;
@@ -155,8 +171,8 @@ class CartItem {
   /// se toma como el nuevo precio regular de ese ticket para no mostrar recargo ni tachado invertido).
   double get effectiveRegularUnitPrice =>
       (manualUnitPrice != null && manualUnitPrice! > product.sellingPrice)
-          ? manualUnitPrice!
-          : product.sellingPrice;
+          ? ProductPricingCalculator.roundMoney(manualUnitPrice!)
+          : ProductPricingCalculator.roundMoney(product.sellingPrice);
 
   /// Subtotal de lista regular (sin descuentos ni listas especiales)
   double get regularSubtotal => effectiveRegularUnitPrice * quantity;
@@ -174,14 +190,32 @@ class CartItem {
   bool get hasSurcharge => subtotal > regularSubtotal + 0.001;
 
   /// Indica si este ítem tiene una oferta promocional activa aplicada.
-  /// En lista base (Minorista), cualquier promotionalPrice válido es oferta.
-  /// En listas especiales (mayorista/card/custom), requiere promotionalLabel o promotionalPeriodType
-  /// para distinguir una oferta real de un precio congelado de lista.
   bool get hasActiveOffer =>
-      promotionalPrice != null &&
-      promotionalPrice! > 0 &&
-      (activeTier == PriceTier.base || promotionalLabel != null || promotionalPeriodType != null) &&
-      (unitPrice - promotionalPrice!).abs() < 0.01;
+      !hasManualSellingPriceOverride && calculatedPrice.hasActiveOffer;
+
+  /// Indica si sobre la oferta promocional activa se aplicó recargo de Tarjeta / Lista +%.
+  bool get hasSurchargeOnOffer =>
+      !hasManualSellingPriceOverride && calculatedPrice.hasSurchargeOnOffer;
+
+  /// Indica si la oferta vigente ignoró el recargo de la lista activa por configuración del comercio.
+  bool get isOfferSurchargeExempt =>
+      !hasManualSellingPriceOverride && calculatedPrice.isOfferSurchargeExempt;
+
+  /// Indica si se aplica un precio pactado congelado (orden recuperada o presupuesto).
+  bool get hasAgreedPrice =>
+      !hasManualSellingPriceOverride && calculatedPrice.hasAgreedPrice;
+
+  /// Indica si se aplica una bonificación pura de Lista Especial (Mayorista / Custom -%).
+  bool get hasTierDiscount =>
+      !hasManualSellingPriceOverride && calculatedPrice.hasTierDiscount;
+
+  /// Indica si se aplica un recargo puro de Lista Especial (Tarjeta / Custom +%).
+  bool get hasTierSurcharge =>
+      !hasManualSellingPriceOverride && calculatedPrice.hasTierSurcharge;
+
+  /// Indica si aplica un tramo por escala/volumen del catálogo.
+  bool get hasVolumeScale =>
+      !hasManualSellingPriceOverride && calculatedPrice.hasVolumeScale;
 
   /// Retorna el texto para el badge de oferta según su periodicidad o etiqueta
   String get offerBadgeLabel {
@@ -201,8 +235,9 @@ class CartItem {
           }
           return 'Oferta: $clean';
         }
-        // Si no hay promotionalLabel ni promotionalPeriodType pero hay promotionalPrice,
-        // es un precio de lista especial (mayorista/card/custom) o una oferta recuperada en base
+        if (agreedUnitPrice != null && agreedUnitPrice! > 0) {
+          return 'Precio Pactado';
+        }
         if (promotionalPrice != null && promotionalPrice! > 0) {
           switch (activeTier) {
             case PriceTier.wholesale:

@@ -55,6 +55,134 @@ extension CurrencyFormatter on num {
     }
     return toStringAsFixed(2).replaceAll('.', ',');
   }
+
+  /// Formatea el stock de manera amigable sin redondear fracciones al entero superior.
+  /// - Peso: usa decimales reales seguidos de `kg` (ej: "1,875 kg" o "1.875 kg").
+  /// - Unidad entera / porciones: detecta fracciones culinarias comunes (1/8, 1/6, etc.)
+  ///   sobresaliendo como "1 un. + 7/8" o "7/8 un.", o fallback con `toQty()`.
+  String toUnitStockDisplay({
+    bool isSoldByWeight = false,
+    String unitSuffix = 'u',
+  }) {
+    if (isSoldByWeight) {
+      return '${toQty()} kg';
+    }
+
+    if (this < 0) {
+      final rounded = roundToDouble();
+      if ((this - rounded).abs() < 0.001) {
+        return '${rounded.toInt()} $unitSuffix';
+      }
+      return '${toQty()} $unitSuffix';
+    }
+
+    final intPart = floor();
+    final double frac = (this - intPart).toDouble();
+
+    if (frac < 0.004) {
+      return '$intPart $unitSuffix';
+    }
+    if (frac > 0.996) {
+      return '${intPart + 1} $unitSuffix';
+    }
+
+    final fractionLabel = _matchCulinaryFraction(frac);
+    if (fractionLabel != null) {
+      if (intPart == 0) {
+        return '$fractionLabel $unitSuffix';
+      }
+      return '$intPart $unitSuffix + $fractionLabel';
+    }
+
+    return '${toQty()} $unitSuffix';
+  }
+}
+
+String? _matchCulinaryFraction(double frac) {
+  const denominators = [2, 3, 4, 5, 6, 8, 10, 12, 16];
+  for (final den in denominators) {
+    final num = (frac * den).round();
+    if (num < 1 || num >= den) continue;
+    final target = num / den;
+    if ((frac - target).abs() <= 0.006) {
+      return '$num/$den';
+    }
+  }
+  return null;
+}
+
+/// Parsea una cantidad ingresada por teclado ya sea en formato decimal (`"0.0625"`, `"1,5"`)
+/// o en formato fracción (`"1/16"`, `"3/16"`, `"2/8"`).
+/// Devuelve `null` si el texto es inválido o está fuera de rango.
+double? parseQuantityOrFraction(String input, {bool allowZero = false}) {
+  final raw = input.trim().replaceAll(',', '.');
+  if (raw.isEmpty) return null;
+
+  if (raw.contains('/')) {
+    final parts = raw.split('/');
+    if (parts.length != 2) return null;
+    final numerator = double.tryParse(parts[0].trim());
+    final denominator = double.tryParse(parts[1].trim());
+    if (numerator == null ||
+        denominator == null ||
+        !numerator.isFinite ||
+        !denominator.isFinite ||
+        denominator <= 0) {
+      return null;
+    }
+    if (allowZero ? numerator < 0 : numerator <= 0) return null;
+    return numerator / denominator;
+  }
+
+  final value = double.tryParse(raw);
+  if (value == null || !value.isFinite) return null;
+  if (allowZero ? value < 0 : value <= 0) return null;
+  return value;
+}
+
+/// Redondea una cantidad a 3 decimales para compatibilidad estricta con `decimal(10,3)` en SQL (v1.8.5).
+double roundQtyForStorage(double qty) => ((qty * 1000).round()) / 1000.0;
+
+/// Formatea una cantidad para campos editables (`TextField`) preservando hasta 4 decimales
+/// cuando representa una fracción exacta como `1/16 = 0.0625`, y 3 decimales para el resto.
+String formatQuantityInput(double qty) {
+  if ((qty - qty.roundToDouble()).abs() < 0.00005) {
+    return qty.round().toString();
+  }
+  final rounded3 = (qty * 1000).round() / 1000.0;
+  final scaled4 = qty * 10000;
+  final isExactFourDecimals = (scaled4 - scaled4.roundToDouble()).abs() < 0.01 &&
+      (rounded3 - qty).abs() >= 0.0002;
+  final decimals = isExactFourDecimals ? 4 : 3;
+  return qty
+      .toStringAsFixed(decimals)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
+/// Calcula cuántas unidades/combos armables caben dentro de [availStock] consumiendo [qty] por unidad,
+/// compensando redondeos de fracciones unitarias `1/N` (`N` de 2 a 32, ej. `1/16 ≈ 0.063` → `16`).
+int calcUnitsFitStock(double availStock, double qty) {
+  if (availStock <= 0 || qty <= 0) return 0;
+
+  int? bestDen;
+  double bestDiff = double.infinity;
+  for (int den = 2; den <= 32; den++) {
+    final target = 1.0 / den;
+    final diff = (qty - target).abs();
+    if (diff <= 0.0006 && diff < bestDiff) {
+      bestDiff = diff;
+      bestDen = den;
+    }
+  }
+
+  if (bestDen != null) {
+    final intWhole = availStock.floor();
+    final rem = availStock - intWhole;
+    return intWhole * bestDen + (rem * bestDen + 0.14).floor();
+  }
+
+  return ((availStock + 0.0005) / qty).floor();
 }
 
 /// Formateador de entrada para montos en Pesos Argentinos (ARS):

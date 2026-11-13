@@ -20,6 +20,7 @@ import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
 import 'features/reports/presentation/providers/reports_provider.dart';
 import 'core/providers/local_terminal_provider.dart';
+import 'core/services/remote_scanner_service.dart';
 import 'features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'features/mobile/presentation/screens/mobile_menu_screen.dart';
@@ -732,6 +733,16 @@ class _AppBootstrapState extends State<AppBootstrap> {
         providers: [
           ChangeNotifierProvider(
               create: (_) => LocalTerminalProvider(), lazy: false),
+          ChangeNotifierProxyProvider<LocalTerminalProvider,
+              RemoteScannerService>(
+            create: (_) => RemoteScannerService(),
+            update: (_, localTerminal, scanner) {
+              final service = scanner ?? RemoteScannerService();
+              service.updateTerminalId(localTerminal.terminalId);
+              return service;
+            },
+            lazy: true,
+          ),
           ChangeNotifierProvider.value(
             value: authProvider,
           ),

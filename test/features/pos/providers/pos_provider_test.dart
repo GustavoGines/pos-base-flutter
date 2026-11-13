@@ -166,7 +166,7 @@ void main() {
       expect(item.offerBadgeLabel, 'Oferta Diaria');
     });
 
-    test('PosProvider recallOrderToCart preserves original selling price and promotional price', () {
+    test('PosProvider recallOrderToCart preserves original selling price and agreed price without false offer', () {
       final pendingSaleData = {
         'id': 99,
         'shipping_cost': '0',
@@ -175,7 +175,7 @@ void main() {
             'product_id': 1,
             'product_name': 'Producto Test',
             'quantity': '2.0',
-            'unit_price': '800.0', // precio con descuento
+            'unit_price': '800.0', // precio con descuento pactado
             'product': {
               'id': 1,
               'name': 'Producto Test',
@@ -194,9 +194,10 @@ void main() {
       expect(provider.cart.length, 1);
       final item = provider.cart.first;
       expect(item.product.sellingPrice, 1000.0);
-      expect(item.promotionalPrice, 800.0);
+      expect(item.agreedUnitPrice, 800.0);
+      expect(item.hasAgreedPrice, isTrue);
       expect(item.unitPrice, 800.0);
-      expect(item.hasActiveOffer, isTrue);
+      expect(item.hasActiveOffer, isFalse);
       expect(item.discountSavings, 400.0); // (1000 - 800) * 2
     });
 
