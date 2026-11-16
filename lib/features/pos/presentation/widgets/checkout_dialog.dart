@@ -699,12 +699,149 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool get _isCartAlreadySurcharged {
     // En Modo Básico (toggle off) los surcharges de métodos de pago SIEMPRE aplican.
     final settings = context.read<SettingsProvider>().settings;
-    if (settings == null || !settings.enableAdvancedPriceTiers) return false;
+    if (settings == null || !settings.hasMultiPriceEnabled) return false;
     // En Modo Avanzado: suprimimos el recargo del método si el carrito ya tiene
     // el factor de tarjeta o un custom con recargo positivo (para evitar doble cobro).
     final pos = context.read<PosProvider>();
     return pos.activeTier == PriceTier.card ||
         (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
+  }
+
+  bool _isCreditOrSurchargedCardMethod(PaymentMethod? method) {
+    if (method == null || method.isCash) return false;
+    final code = method.code.toLowerCase().trim();
+    if (method.surchargeValue > 0.001) return true;
+    return code.contains('credit') ||
+        code.contains('credito') ||
+        code == 'tarjeta';
+  }
+
+  bool get _shouldShowCardTierHybridBanner {
+    if (widget.saleId != null || !_isCartAlreadySurcharged) return false;
+    return _lines.any(
+      (l) => l.method != null && !_isCreditOrSurchargedCardMethod(l.method),
+    );
+  }
+
+  void _convertCartToRetailAndSurchargeCardOnly() {
+    if (widget.saleId != null || _lines.any((l) => l.mpPaid)) return;
+    final pos = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
+
+    pos.setPriceTier(PriceTier.base);
+
+    for (final line in _lines) {
+      line.updateMethod(
+        line.method,
+        defaultCardSurcharge: settings?.globalCardPercentage,
+        disableSurcharge: false,
+      );
+    }
+
+    final double newTargetTotal = _baseTotal + _shippingCostToApply;
+    if (_lines.length == 1) {
+      final newText = newTargetTotal.toArsInput();
+      if (_lines[0].controller.text != newText) {
+        _lines[0].controller.removeListener(_onAmountChanged);
+        _lines[0].controller.text = newText;
+        _lines[0].controller.addListener(_onAmountChanged);
+      }
+    } else if (_lines.isNotEmpty) {
+      double remaining = newTargetTotal;
+      for (int i = 0; i < _lines.length - 1; i++) {
+        final current = _lines[i].amount;
+        final clamped = current.clamp(0.0, remaining);
+        if ((clamped - current).abs() > 0.009) {
+          _lines[i].controller.removeListener(_onAmountChanged);
+          _lines[i].controller.text =
+              clamped > 0.009 ? clamped.toArsInput() : '0';
+          _lines[i].controller.addListener(_onAmountChanged);
+        }
+        remaining = (remaining - clamped).clamp(0.0, double.infinity);
+      }
+      final last = _lines.last;
+      last.controller.removeListener(_onAmountChanged);
+      last.controller.text = remaining > 0.009 ? remaining.toArsInput() : '0';
+      last.controller.addListener(_onAmountChanged);
+    }
+
+    setState(() {});
+    _syncCashField(autoFocus: false, forceExact: true);
+    _saveDraftToProvider();
+  }
+
+  Widget _buildCardTierHybridBanner(PosProvider pos) {
+    final tierTitle = pos.activeTier == PriceTier.card
+        ? 'Lista Tarjeta'
+        : 'Lista ${pos.customTierLabel ?? 'Especial'}';
+    final hasPaidMp = _lines.any((l) => l.mpPaid);
+    return Container(
+      key: const ValueKey('hybrid_card_tier_banner'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amber.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.warning_amber_rounded,
+                  color: Colors.amber.shade900, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Atención: Todo el carrito tiene recargo de $tierTitle.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Estás cobrando con un medio sin recargo de tarjeta (Efectivo / Transferencia / Mixto).',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.brown.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('convert_cart_to_retail_btn'),
+              onPressed:
+                  hasPaidMp ? null : _convertCartToRetailAndSurchargeCardOnly,
+              icon: const Icon(Icons.swap_horiz_rounded, size: 17),
+              label: const Text(
+                'Pasar carrito a Minorista y recargar solo el pago con Tarjeta',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.amber.shade900,
+                backgroundColor: Colors.white,
+                side: BorderSide(color: Colors.amber.shade700),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   CheckoutDraftState? _getCheckoutDraft(PosProvider? posProvider) {
@@ -1955,7 +2092,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               c.defaultPriceTier != null &&
               c.defaultPriceTier!.isNotEmpty) {
             final appSettings = context.read<SettingsProvider>();
-            if (appSettings.settings?.features.multiplePrices == true) {
+            if (appSettings.settings?.hasMultiPriceEnabled == true) {
               PriceTier tier;
               switch (c.defaultPriceTier) {
                 case 'wholesale':
@@ -1988,12 +2125,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               } else {
                 context.read<PosProvider>().setPriceTier(
                       tier,
-                      wholesaleFactor: settings != null
-                          ? 1 + (settings.globalWholesalePercentage / 100)
-                          : null,
-                      cardFactor: settings != null
-                          ? 1 + (settings.globalCardPercentage / 100)
-                          : null,
+                      wholesaleFactor: settings?.wholesalePriceFactor,
+                      cardFactor: settings?.cardPriceFactor,
                     );
               }
             }
@@ -3978,7 +4111,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   ),
                                 ),
 
-                              const SizedBox(height: 24),
+                              SizedBox(
+                                  height:
+                                      _shouldShowCardTierHybridBanner ? 14 : 24),
+
+                              if (_shouldShowCardTierHybridBanner)
+                                _buildCardTierHybridBanner(provider),
 
                               // ──── Líneas de Pago
                               Column(

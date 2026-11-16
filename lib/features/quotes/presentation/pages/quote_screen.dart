@@ -48,10 +48,10 @@ class _QuoteScreenState extends State<QuoteScreen> {
       final settings = context.read<SettingsProvider>().settings;
       if (settings != null) {
         final ws = settings.globalWholesalePercentage != 0
-            ? 1.0 + (settings.globalWholesalePercentage / 100)
+            ? settings.wholesalePriceFactor
             : 1.0;
         final card = settings.globalCardPercentage != 0
-            ? 1.0 + (settings.globalCardPercentage / 100)
+            ? settings.cardPriceFactor
             : 1.0;
         context.read<QuoteProvider>().setGlobalFactors(wholesale: ws, card: card);
       }
@@ -275,12 +275,19 @@ class _QuoteScreenState extends State<QuoteScreen> {
   /// Para precios de preview en la grilla — lee el motor CartItem
   double _resolvePreviewPrice(Product p) {
     final qProvider = context.read<QuoteProvider>();
+    final ignoreFixed =
+        context.read<SettingsProvider>().settings?.ignoreProductFixedPrices ??
+            true;
     switch (qProvider.activeTier) {
       case PriceTier.wholesale:
-        if (p.priceWholesale != null && p.priceWholesale! > 0) return p.priceWholesale!;
+        if (!ignoreFixed && p.priceWholesale != null && p.priceWholesale! > 0) {
+          return p.priceWholesale!;
+        }
         return p.sellingPrice * qProvider.wholesaleFactor;
       case PriceTier.card:
-        if (p.priceCard != null && p.priceCard! > 0) return p.priceCard!;
+        if (!ignoreFixed && p.priceCard != null && p.priceCard! > 0) {
+          return p.priceCard!;
+        }
         return p.sellingPrice * qProvider.cardFactor;
       case PriceTier.custom:
         return p.sellingPrice * qProvider.customFactor;
@@ -293,7 +300,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
     return Consumer<QuoteProvider>(
       builder: (_, qProvider, __) {
         final settings = context.watch<SettingsProvider>();
-        final hasMultiPrice = settings.features.multiplePrices;
+        final hasMultiPrice = settings.settings?.hasMultiPriceEnabled == true;
         final tierColor = qProvider.activePriceListColor;
         final customTiers = settings.settings?.customPriceTiers ?? [];
 

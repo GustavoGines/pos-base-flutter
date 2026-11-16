@@ -69,6 +69,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _cardPercentageCtrl = TextEditingController();
   final _wholesalePercentageCtrl = TextEditingController();
   String _cardSurchargeOnOffersMode = 'surcharge_on_offer';
+  String _discountTierOnOffersMode = 'best_price_wins';
+  bool _ignoreProductFixedPrices = true;
   bool _advancedPriceTiersEnabled = false; // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   bool _isIibbPerceptionAgent = false;
   final _defaultIibbRateCtrl = TextEditingController();
@@ -221,6 +223,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _wholesalePercentageCtrl.text =
             settings.globalWholesalePercentage.toString();
         _cardSurchargeOnOffersMode = settings.cardSurchargeOnOffersMode;
+        _discountTierOnOffersMode = settings.discountTierOnOffersMode;
+        _ignoreProductFixedPrices = settings.ignoreProductFixedPrices;
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
         _isIibbPerceptionAgent = settings.isIibbPerceptionAgent;
         _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
@@ -1886,19 +1890,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Actualizar el provider en memoria con la nueva URL antes del request HTTP
     provider.updateBaseUrl(newUrl);
 
+    final rawCardPct = double.tryParse(
+          _cardPercentageCtrl.text
+              .trim()
+              .replaceAll('%', '')
+              .replaceAll('+', '')
+              .replaceAll(',', '.'),
+        ) ??
+        15.0;
+    final rawWholesalePct = double.tryParse(
+          _wholesalePercentageCtrl.text
+              .trim()
+              .replaceAll('%', '')
+              .replaceAll('+', '')
+              .replaceAll(',', '.'),
+        ) ??
+        -15.0;
+    final normalizedCardPct = rawCardPct.abs();
+    final normalizedWholesalePct =
+        rawWholesalePct == 0.0 ? 0.0 : -rawWholesalePct.abs();
+    _cardPercentageCtrl.text = normalizedCardPct.toString();
+    _wholesalePercentageCtrl.text = normalizedWholesalePct.toString();
+
     final data = {
       'company_name': _companyNameCtrl.text.trim(),
       'address': _addressCtrl.text.trim(),
       'phone': _phoneCtrl.text.trim(),
       'tax_id': _taxIdCtrl.text.trim(),
       'receipt_footer_message': _footerCtrl.text.trim(),
-      'card_percentage': double.tryParse(
-              _cardPercentageCtrl.text.trim().replaceAll(',', '.')) ??
-          15.0,
-      'wholesale_percentage': double.tryParse(
-              _wholesalePercentageCtrl.text.trim().replaceAll(',', '.')) ??
-          -15.0,
+      'card_percentage': normalizedCardPct,
+      'wholesale_percentage': normalizedWholesalePct,
       'card_surcharge_on_offers_mode': _cardSurchargeOnOffersMode,
+      'discount_tier_on_offers_mode': _discountTierOnOffersMode,
+      'ignore_product_fixed_prices': _ignoreProductFixedPrices ? '1' : '0',
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
       'is_iibb_perception_agent':
@@ -5634,6 +5658,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             fontSize: 12,
                             color: Colors.grey.shade600,
                             height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: const [
+                            'best_price_wins',
+                            'wholesale_overrides_offer',
+                          ].contains(_discountTierOnOffersMode)
+                              ? _discountTierOnOffersMode
+                              : 'best_price_wins',
+                          decoration: InputDecoration(
+                            labelText:
+                                'Regla de Lista Mayorista / Descuento (-%) sobre Productos en Oferta',
+                            prefixIcon: const Icon(Icons.storefront_outlined,
+                                size: 20, color: Color(0xFF00897B)),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade300),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'best_price_wins',
+                              child: Text(
+                                'Mejor precio gana (sin acumular descuentos — recomendado)',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'wholesale_overrides_offer',
+                              child: Text(
+                                'Lista Mayorista / Descuento (-%) anula ofertas de mostrador',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _discountTierOnOffersMode = val);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _discountTierOnOffersMode ==
+                                  'wholesale_overrides_offer'
+                              ? 'Al activar Mayorista o una lista con descuento (-%), se ignoran las ofertas de mostrador y se aplica estrictamente el precio de la lista elegida.'
+                              : 'Si el producto tiene una Oferta activa más barata que la lista Mayorista/Descuento, se respeta el menor precio (sin sumar descuento sobre descuento) y se muestra con etiqueta de Oferta.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Divider(height: 1),
+                        const SizedBox(height: 6),
+                        Material(
+                          color: Colors.transparent,
+                          child: SwitchListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            activeThumbColor: const Color(0xFF3F51B5),
+                            title: const Text(
+                              'Usar siempre % globales (ignorar precios fijos heredados por producto)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              _ignoreProductFixedPrices
+                                  ? 'Activo (recomendado): los cambios en Descuento Mayorista (%) y Recargo por Tarjeta (%) impactan inmediatamente en todos los productos del catálogo.'
+                                  : 'Desactivado: si un producto conserva un precio Mayorista o Tarjeta fijo en la base de datos, ese importe fijo tendrá prioridad sobre el % global.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.grey.shade600,
+                                height: 1.3,
+                              ),
+                            ),
+                            value: _ignoreProductFixedPrices,
+                            onChanged: (val) =>
+                                setState(() => _ignoreProductFixedPrices = val),
                           ),
                         ),
                       ],

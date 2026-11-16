@@ -154,6 +154,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
       hasExplicitOffer: hasExplicitOffer,
       agreedUnitPrice: null,
       cardSurchargeOnOffersMode: widget.item.cardSurchargeOnOffersMode,
+      discountTierOnOffersMode: widget.item.discountTierOnOffersMode,
     ).finalUnitPrice;
   }
 

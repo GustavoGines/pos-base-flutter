@@ -39,6 +39,35 @@ enum CardSurchargeOnOffersMode {
   }
 }
 
+/// Estrategia de interacción cuando se aplica una lista con descuento (Mayorista o lista -X%)
+/// sobre un producto que tiene una Oferta promocional activa.
+enum DiscountTierOnOffersMode {
+  /// Compara sin acumular descuentos: si la Oferta es menor al precio Mayorista, cobra la Oferta.
+  bestPriceWins,
+
+  /// Las listas con descuento (Mayorista / Especial) ignoran las ofertas minoristas de mostrador.
+  wholesaleOverridesOffer;
+
+  String get apiValue {
+    switch (this) {
+      case DiscountTierOnOffersMode.bestPriceWins:
+        return 'best_price_wins';
+      case DiscountTierOnOffersMode.wholesaleOverridesOffer:
+        return 'wholesale_overrides_offer';
+    }
+  }
+
+  static DiscountTierOnOffersMode fromApiString(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case 'wholesale_overrides_offer':
+        return DiscountTierOnOffersMode.wholesaleOverridesOffer;
+      case 'best_price_wins':
+      default:
+        return DiscountTierOnOffersMode.bestPriceWins;
+    }
+  }
+}
+
 /// Resultado unificado del motor de precios para un producto (Carrito, Acceso Rápido,
 /// Consultor de Precios y Diálogo de Edición/Renombrado).
 class CalculatedProductPrice {
@@ -50,6 +79,7 @@ class CalculatedProductPrice {
   final bool hasActiveOffer;
   final bool hasSurchargeOnOffer;
   final bool isOfferSurchargeExempt;
+  final bool offerBeatDiscountTier;
   final bool hasTierDiscount;
   final bool hasTierSurcharge;
   final bool hasVolumeScale;
@@ -65,11 +95,27 @@ class CalculatedProductPrice {
     required this.hasActiveOffer,
     required this.hasSurchargeOnOffer,
     required this.isOfferSurchargeExempt,
+    required this.offerBeatDiscountTier,
     required this.hasTierDiscount,
     required this.hasTierSurcharge,
     required this.hasVolumeScale,
     required this.hasAgreedPrice,
     required this.appliedSurchargeFactor,
+  });
+}
+
+/// Previsualización calculada de una lista de precios para modales de consulta rápida.
+class ProductPriceTierPreview {
+  final String label;
+  final double price;
+  final bool isFixedOverride;
+  final bool isCustomTier;
+
+  const ProductPriceTierPreview({
+    required this.label,
+    required this.price,
+    this.isFixedOverride = false,
+    this.isCustomTier = false,
   });
 }
 
@@ -86,6 +132,106 @@ class ProductPricingCalculator {
     return (value * 100.0).roundToDouble() / 100.0;
   }
 
+  /// Construye la lista ordenada de precios por lista para [product].
+  /// Cuando [multiPriceEnabled] es `false`, retorna una lista vacía (ocultando
+  /// también overrides estáticos heredados en BD como `price_wholesale` / `price_card`).
+  static List<ProductPriceTierPreview> buildMultiPricePreviews({
+    required Product product,
+    required bool multiPriceEnabled,
+    double wholesaleFactor = 0.85,
+    double cardFactor = 1.15,
+    List<Map<String, dynamic>> customTiers = const [],
+    double? promotionalPrice,
+    bool hasExplicitOffer = false,
+    CardSurchargeOnOffersMode cardSurchargeOnOffersMode =
+        CardSurchargeOnOffersMode.surchargeOnOffer,
+    DiscountTierOnOffersMode discountTierOnOffersMode =
+        DiscountTierOnOffersMode.bestPriceWins,
+    bool ignoreFixedPrices = false,
+  }) {
+    if (!multiPriceEnabled) return const [];
+
+    final previews = <ProductPriceTierPreview>[];
+
+    final wholesaleRes = calculate(
+      product: product,
+      activeTier: PriceTier.wholesale,
+      wholesaleFactor: wholesaleFactor,
+      cardFactor: cardFactor,
+      promotionalPrice: promotionalPrice,
+      hasExplicitOffer: hasExplicitOffer,
+      cardSurchargeOnOffersMode: cardSurchargeOnOffersMode,
+      discountTierOnOffersMode: discountTierOnOffersMode,
+      ignoreFixedPrices: ignoreFixedPrices,
+    );
+    final hasFixedWholesale = !ignoreFixedPrices &&
+        product.priceWholesale != null &&
+        product.priceWholesale! > 0;
+    previews.add(
+      ProductPriceTierPreview(
+        label: 'Mayorista',
+        price: wholesaleRes.tierCalculatedUnitPrice,
+        isFixedOverride: hasFixedWholesale &&
+            (wholesaleRes.tierCalculatedUnitPrice -
+                        roundMoney(product.priceWholesale!))
+                    .abs() <
+                0.01,
+      ),
+    );
+
+    final cardRes = calculate(
+      product: product,
+      activeTier: PriceTier.card,
+      wholesaleFactor: wholesaleFactor,
+      cardFactor: cardFactor,
+      promotionalPrice: promotionalPrice,
+      hasExplicitOffer: hasExplicitOffer,
+      cardSurchargeOnOffersMode: cardSurchargeOnOffersMode,
+      discountTierOnOffersMode: discountTierOnOffersMode,
+      ignoreFixedPrices: ignoreFixedPrices,
+    );
+    final hasFixedCard =
+        !ignoreFixedPrices && product.priceCard != null && product.priceCard! > 0;
+    previews.add(
+      ProductPriceTierPreview(
+        label: 'Tarjeta',
+        price: cardRes.finalUnitPrice,
+        isFixedOverride: hasFixedCard &&
+            (cardRes.finalUnitPrice - roundMoney(product.priceCard!)).abs() <
+                0.01,
+      ),
+    );
+
+    for (final tier in customTiers) {
+      final rawName = (tier['name'] ?? '').toString().trim();
+      if (rawName.isEmpty) continue;
+      final mod = double.tryParse(tier['modifier']?.toString() ?? '0') ?? 0.0;
+      final factor = 1.0 + (mod / 100.0);
+      final customRes = calculate(
+        product: product,
+        activeTier: PriceTier.custom,
+        wholesaleFactor: wholesaleFactor,
+        cardFactor: cardFactor,
+        customFactor: factor,
+        promotionalPrice: promotionalPrice,
+        hasExplicitOffer: hasExplicitOffer,
+        cardSurchargeOnOffersMode: cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: discountTierOnOffersMode,
+      );
+      previews.add(
+        ProductPriceTierPreview(
+          label: rawName,
+          price: mod >= 0
+              ? customRes.finalUnitPrice
+              : customRes.tierCalculatedUnitPrice,
+          isCustomTier: true,
+        ),
+      );
+    }
+
+    return previews;
+  }
+
   /// Calcula el precio efectivo para [product] según lista activa, cantidad,
   /// oferta vigente, precio pactado de orden recuperada y regla de recargo sobre ofertas.
   static CalculatedProductPrice calculate({
@@ -100,6 +246,9 @@ class ProductPricingCalculator {
     double? agreedUnitPrice,
     CardSurchargeOnOffersMode cardSurchargeOnOffersMode =
         CardSurchargeOnOffersMode.surchargeOnOffer,
+    DiscountTierOnOffersMode discountTierOnOffersMode =
+        DiscountTierOnOffersMode.bestPriceWins,
+    bool ignoreFixedPrices = false,
   }) {
     final regularUnit = roundMoney(product.sellingPrice);
     final rawVolumetric = product.getBestPrice(quantity);
@@ -110,14 +259,18 @@ class ProductPricingCalculator {
     late final double rawTierPrice;
     switch (activeTier) {
       case PriceTier.wholesale:
-        if (product.priceWholesale != null && product.priceWholesale! > 0) {
+        if (!ignoreFixedPrices &&
+            product.priceWholesale != null &&
+            product.priceWholesale! > 0) {
           rawTierPrice = product.priceWholesale!;
         } else {
           rawTierPrice = baseVolumetric * wholesaleFactor;
         }
         break;
       case PriceTier.card:
-        if (product.priceCard != null && product.priceCard! > 0) {
+        if (!ignoreFixedPrices &&
+            product.priceCard != null &&
+            product.priceCard! > 0) {
           rawTierPrice = product.priceCard!;
         } else {
           rawTierPrice = baseVolumetric * cardFactor;
@@ -153,12 +306,15 @@ class ProductPricingCalculator {
 
     // 2. Verificar si una oferta promocional real aplica en este contexto
     final bool hasOfferCandidate = validPromo != null && hasExplicitOffer;
+    final bool isDiscountTier = activeTier == PriceTier.wholesale ||
+        (activeTier == PriceTier.custom && customFactor < 0.9999);
 
     double finalUnit = tierPrice;
     double preSurchargeUnit = tierPrice;
     bool hasActiveOffer = false;
     bool hasSurchargeOnOffer = false;
     bool isOfferSurchargeExempt = false;
+    bool offerBeatDiscountTier = false;
     bool hasAgreedPrice = false;
     double? appliedSurchargeFactor;
 
@@ -203,12 +359,20 @@ class ProductPricingCalculator {
               break;
           }
         }
+      } else if (isDiscountTier &&
+          discountTierOnOffersMode ==
+              DiscountTierOnOffersMode.wholesaleOverridesOffer) {
+        // Lista Mayorista / Descuento especial ignora ofertas minoristas de mostrador
+        finalUnit = tierPrice;
+        preSurchargeUnit = tierPrice;
+        hasActiveOffer = false;
       } else {
-        // Lista Minorista / Mayorista / Custom con descuento: gana el precio más bajo (sin apilar)
+        // Lista Minorista / Mayorista (Mejor precio gana, sin acumular descuentos)
         if (validPromo < tierPrice - 0.001) {
           finalUnit = validPromo;
           preSurchargeUnit = validPromo;
           hasActiveOffer = true;
+          offerBeatDiscountTier = isDiscountTier;
         }
       }
     }
@@ -240,6 +404,7 @@ class ProductPricingCalculator {
       hasActiveOffer: hasActiveOffer,
       hasSurchargeOnOffer: hasSurchargeOnOffer,
       isOfferSurchargeExempt: isOfferSurchargeExempt,
+      offerBeatDiscountTier: offerBeatDiscountTier,
       hasTierDiscount: hasTierDiscount,
       hasTierSurcharge: hasTierSurcharge,
       hasVolumeScale:

@@ -25,6 +25,8 @@ class BusinessSettingsModel extends BusinessSettings {
     super.globalCardPercentage,
     super.customPriceTiers,
     super.cardSurchargeOnOffersMode,
+    super.discountTierOnOffersMode,
+    super.ignoreProductFixedPrices,
     super.businessType,
     super.features,
     super.enableAdvancedPriceTiers,
@@ -156,6 +158,13 @@ class BusinessSettingsModel extends BusinessSettings {
       customPriceTiers: _parseCustomTiers(json['custom_price_tiers']),
       cardSurchargeOnOffersMode: _parseCardSurchargeOnOffersMode(
           json['card_surcharge_on_offers_mode']),
+      discountTierOnOffersMode: _parseDiscountTierOnOffersMode(
+          json['discount_tier_on_offers_mode']),
+      ignoreProductFixedPrices: json['ignore_product_fixed_prices'] == null
+          ? true
+          : (json['ignore_product_fixed_prices'] == '1' ||
+              json['ignore_product_fixed_prices'] == true ||
+              json['ignore_product_fixed_prices'] == 1),
       businessType: json['license_business_type'] ?? 'retail',
       features: featureFlags,
       enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
@@ -190,6 +199,14 @@ class BusinessSettingsModel extends BusinessSettings {
       return s;
     }
     return 'surcharge_on_offer';
+  }
+
+  static String _parseDiscountTierOnOffersMode(dynamic raw) {
+    final s = raw?.toString().trim().toLowerCase() ?? '';
+    if (s == 'wholesale_overrides_offer') {
+      return s;
+    }
+    return 'best_price_wins';
   }
 
   /// Parsea el campo custom_price_tiers de forma segura (acepta JSON string o lista directa)
@@ -231,6 +248,8 @@ class BusinessSettingsModel extends BusinessSettings {
       'card_percentage': globalCardPercentage,
       'wholesale_percentage': globalWholesalePercentage,
       'card_surcharge_on_offers_mode': cardSurchargeOnOffersMode,
+      'discount_tier_on_offers_mode': discountTierOnOffersMode,
+      'ignore_product_fixed_prices': ignoreProductFixedPrices ? '1' : '0',
       // Listas de precios personalizadas
       'custom_price_tiers': customPriceTiers,
       // Feature Toggle Multi-Tenant

@@ -641,6 +641,18 @@ class AfipFiscalPdfService {
       totalSavings = calcSavings;
     }
 
+    double tierSurcharge =
+        double.tryParse((sale['tier_surcharge_amount'] ?? 0).toString()) ?? 0.0;
+    if (tierSurcharge <= 0.01 && items.isNotEmpty) {
+      for (final item in items) {
+        if (item is Map) {
+          tierSurcharge +=
+              double.tryParse((item['surcharge_amount'] ?? 0).toString()) ??
+                  0.0;
+        }
+      }
+    }
+
     // ── 7. Pie Fiscal (CAE y QR) ──────────────────────────────────────────────
     final cae = electronicInvoice['cae']?.toString() ?? '---';
     final caeExpiration = formatDate(electronicInvoice['cae_expiration'] ??
@@ -750,6 +762,7 @@ class AfipFiscalPdfService {
       subtotal: realSubtotal,
       shippingCost: shippingCost,
       totalSavings: totalSavings,
+      tierSurcharge: tierSurcharge,
       discountsOrSurcharges: discountsOrSurcharges,
       totalAmount: totalAmount,
       ivaBreakdown: electronicInvoice['iva_breakdown'] as List<dynamic>?,
@@ -1931,6 +1944,7 @@ class AfipFiscalPdfService {
     required double subtotal,
     double shippingCost = 0.0,
     double totalSavings = 0.0,
+    double tierSurcharge = 0.0,
     required double discountsOrSurcharges,
     required double totalAmount,
     List<dynamic>? ivaBreakdown,
@@ -2098,7 +2112,7 @@ class AfipFiscalPdfService {
                 children: [
                   if (hasSavings) ...[
                     pw.Text(
-                      'Subtotal Lista: ${formatCurrency(subtotal + totalSavings)}',
+                      'Subtotal Lista: ${formatCurrency(subtotal + totalSavings - tierSurcharge)}',
                       style: const pw.TextStyle(fontSize: 8),
                     ),
                     pw.Text(
@@ -2106,6 +2120,11 @@ class AfipFiscalPdfService {
                       style: pw.TextStyle(
                           fontSize: 8, fontWeight: pw.FontWeight.bold),
                     ),
+                    if (tierSurcharge > 0.01)
+                      pw.Text(
+                        'Recargo Lista: +${formatCurrency(tierSurcharge)}',
+                        style: const pw.TextStyle(fontSize: 8),
+                      ),
                   ],
                   pw.Text('Subtotal: ${formatCurrency(subtotal)}',
                       style: const pw.TextStyle(fontSize: 8)),

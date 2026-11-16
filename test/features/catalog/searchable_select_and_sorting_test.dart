@@ -527,8 +527,8 @@ void main() {
       await tester.tap(find.text('Stanley'));
       await tester.pumpAndSettle();
 
-      // Cambiar a Combo / Receta -> Categoría, Marca y Proveedor permanecen visibles
-      await tester.tap(find.text('Combo / Receta'));
+      // Cambiar a Combo / Fracción -> Categoría, Marca y Proveedor permanecen visibles
+      await tester.tap(find.text('Combo / Fracción'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(SearchableSelectField<int?>, 'Categoría'), findsOneWidget);
       expect(find.widgetWithText(SearchableSelectField<int?>, 'Marca'), findsOneWidget);

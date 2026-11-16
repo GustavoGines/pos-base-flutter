@@ -6,11 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/image_url_resolver.dart';
 import '../../../core/utils/snack_bar_service.dart';
+import '../../settings/presentation/providers/settings_provider.dart';
 import '../domain/entities/product.dart';
 
 /// Helper para formatear y compartir productos.
@@ -111,15 +113,20 @@ class ProductShareHelper {
 
   /// Formatea la información del producto para compartir como texto plano o caption.
   /// Usa texto plano sin emojis para máxima compatibilidad con WhatsApp Desktop/Windows.
-        static String formatProductShareText(Product product) {
+  static String formatProductShareText(
+    Product product, {
+    bool includeMultiPrices = true,
+  }) {
     final buffer = StringBuffer();
     buffer.writeln('*${product.name}*');
     buffer.writeln('- Precio: \$${product.sellingPrice.toCurrency()}');
-    if (product.priceWholesale != null && product.priceWholesale! > 0) {
-      buffer.writeln('- Mayorista: \$${product.priceWholesale!.toCurrency()}');
-    }
-    if (product.priceCard != null && product.priceCard! > 0) {
-      buffer.writeln('- Tarjeta: \$${product.priceCard!.toCurrency()}');
+    if (includeMultiPrices) {
+      if (product.priceWholesale != null && product.priceWholesale! > 0) {
+        buffer.writeln('- Mayorista: \$${product.priceWholesale!.toCurrency()}');
+      }
+      if (product.priceCard != null && product.priceCard! > 0) {
+        buffer.writeln('- Tarjeta: \$${product.priceCard!.toCurrency()}');
+      }
     }
 
     if (product.category != null && product.category!.name.trim().isNotEmpty) {
@@ -159,7 +166,28 @@ class ProductShareHelper {
     Future<void> Function(String text)? copyToClipboardFn,
     void Function(String message, {bool isError})? onShowNotice,
   }) async {
-    final text = formatProductShareText(product);
+    bool includeMultiPrices = true;
+    final resolvedCtx = context ?? AppConfig.navigatorKey.currentContext;
+    if (resolvedCtx != null) {
+      try {
+        final settings = () {
+          try {
+            return Provider.of<SettingsProvider>(resolvedCtx, listen: false)
+                .settings;
+          } on ProviderNotFoundException catch (_) {
+            return Provider.of<SettingsProvider?>(resolvedCtx, listen: false)
+                ?.settings;
+          }
+        }();
+        if (settings != null) {
+          includeMultiPrices = settings.hasMultiPriceEnabled;
+        }
+      } catch (_) {}
+    }
+    final text = formatProductShareText(
+      product,
+      includeMultiPrices: includeMultiPrices,
+    );
     final rawUrl = product.imageUrl?.trim();
     final imageUrl = (rawUrl != null && rawUrl.isNotEmpty) ? (resolveImageUrl(rawUrl) ?? rawUrl) : null;
 

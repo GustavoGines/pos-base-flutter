@@ -312,8 +312,8 @@ void main() {
           isEmpty,
         );
 
-        // Cambiar a Combo / Promoción y agregar ingrediente -> chips 1/x colapsados por defecto
-        await tester.tap(find.text('Combo / Promoción'));
+        // Cambiar a Combo / Fracción y agregar ingrediente -> chips 1/x colapsados por defecto
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
 
         final comboSearch = find.widgetWithText(
@@ -453,7 +453,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
 
         final comboSearch = find.widgetWithText(
@@ -472,14 +472,14 @@ void main() {
         await tester.tap(find.byKey(const Key('quick_combo_apply_parts_90')));
         await tester.pumpAndSettle();
 
-        // 1/16 -> 0.0625, y 0.0625 * $2.000 = $125 en "Suma lista: $125 · Combo: ..."
+        // 1/16 -> 0.0625, y 0.0625 * $2.000 = $125 en "Valor proporcional: $125 · Fracción: $0"
         expect(find.widgetWithText(TextField, '0.0625'), findsOneWidget);
-        expect(find.textContaining('Suma lista: \$125'), findsOneWidget);
+        expect(find.textContaining('Valor proporcional: \$125'), findsOneWidget);
 
-        // Escritura directa de fracción 1/8 -> Suma lista: $250
+        // Escritura directa de fracción 1/8 -> Valor proporcional: $250
         await tester.enterText(find.widgetWithText(TextField, '0.0625'), '1/8');
         await tester.pumpAndSettle();
-        expect(find.textContaining('Suma lista: \$250'), findsOneWidget);
+        expect(find.textContaining('Valor proporcional: \$250'), findsOneWidget);
 
         expect(tester.takeException(), isNull);
       },
@@ -520,7 +520,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
 
         // 1. Agregar primer ingrediente -> NO autorrellena precio, detalle ni costo editable
@@ -542,15 +542,27 @@ void main() {
         expect(find.text('% Margen Combo'), findsOneWidget);
         expect(find.text('Ingresá precio'), findsOneWidget);
 
-        // 2. Fraccionar a 1/8 ($250 lista, $150 costo) -> recomendaciones se recalculan
+        // 2. Fraccionar a 1/8 ($250 valor proporcional, $150 costo) -> detecta modo Fracción (+%)
         await tester.tap(find.text('1/x'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('1/8'));
         await tester.pumpAndSettle();
         expect(find.text('\$150'), findsOneWidget);
         expect(find.text('Usar \$250'), findsOneWidget);
-        expect(find.text('-10% (\$225)'), findsOneWidget);
-        expect(find.text('-15% (\$212,50)'), findsOneWidget);
+        expect(find.text('+30% (\$325)'), findsOneWidget);
+        expect(find.text('+50% (\$375)'), findsOneWidget);
+        expect(find.text('+100% (x2) (\$500)'), findsOneWidget);
+
+        final plus50QuickBtn =
+            find.byKey(const Key('quick_combo_apply_plus50_btn'));
+        await tester.ensureVisible(plus50QuickBtn);
+        await tester.tap(plus50QuickBtn);
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining(
+              'Rendimiento por unidad entera (8 porc.): \$3.000 (+50% vs \$2.000 entera)'),
+          findsOneWidget,
+        );
 
         // 3. Agregar 2º ingrediente (Café Doble $1.000 lista, $600 costo) -> suma $1.250, costo $750
         await tester.enterText(comboSearch, 'Café');
@@ -560,6 +572,12 @@ void main() {
 
         expect(find.text('\$750'), findsOneWidget);
         expect(find.text('Usar \$1.250'), findsOneWidget);
+        expect(find.text('+30% (\$1.625)'), findsOneWidget);
+
+        // Cambiar con toggle manual a Combo (-%) -> sugiere -10% ($1.125) y -15% ($1.062,50)
+        await tester.ensureVisible(find.text('Combo (-%)'));
+        await tester.tap(find.text('Combo (-%)'));
+        await tester.pumpAndSettle();
         expect(find.text('-10% (\$1.125)'), findsOneWidget);
         expect(find.text('-15% (\$1.062,50)'), findsOneWidget);
 
@@ -618,7 +636,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
 
         final comboSearch = find.widgetWithText(
@@ -703,7 +721,7 @@ void main() {
         expect(readSwitch().value, isTrue);
 
         // 3. Combo / Promoción pasa automáticamente a OFF (solo venta)
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
         expect(find.text('Guardar en el Catálogo'), findsOneWidget);
         expect(readSwitch().value, isFalse);
@@ -744,13 +762,13 @@ void main() {
         await tester.tap(find.text('Producto Rápido'));
         await tester.pumpAndSettle();
         expect(readSwitch().value, isTrue);
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
         expect(readSwitch().value, isTrue);
 
         // Llenar nombre + precio y confirmar -> persiste 0.063 compatible con decimal(10,3)
         await tester.enterText(
-          find.widgetWithText(TextFormField, 'Nombre del Combo / Promoción *'),
+          find.widgetWithText(TextFormField, 'Nombre del Combo / Fracción *'),
           '1 Porción Balcarce',
         );
         await tester.enterText(
@@ -821,7 +839,7 @@ void main() {
 
         await tester.tap(find.text('Abrir Temporal'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Combo / Promoción'));
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pumpAndSettle();
 
         await tester.enterText(
@@ -842,7 +860,7 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.enterText(
-          find.widgetWithText(TextFormField, 'Nombre del Combo / Promoción *'),
+          find.widgetWithText(TextFormField, 'Nombre del Combo / Fracción *'),
           'Porción Selva Temporal',
         );
         await tester.enterText(

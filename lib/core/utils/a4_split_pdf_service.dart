@@ -396,6 +396,18 @@ class A4SplitPdfService {
     final double totalSavings =
         explicitSavings > 0.01 ? explicitSavings : calculatedSavings;
     final hasSavings = totalSavings > 0.01;
+    final double explicitTierSurcharge =
+        double.tryParse(sale['tier_surcharge_amount']?.toString() ?? '0') ??
+            0.0;
+    final double calcItemsTierSurcharge = items.fold<double>(
+      0.0,
+      (sum, it) =>
+          sum +
+          (double.tryParse(it['surcharge_amount']?.toString() ?? '0') ?? 0.0),
+    );
+    final double tierSurcharge = explicitTierSurcharge > 0.01
+        ? explicitTierSurcharge
+        : calcItemsTierSurcharge;
 
     // Pagos
     final payments = sale['payments'] as List<dynamic>? ?? [];
@@ -1075,7 +1087,8 @@ class A4SplitPdfService {
                       formatCurrency(total -
                           shippingCost -
                           iibbPerceptionAmount +
-                          totalSavings),
+                          totalSavings -
+                          tierSurcharge),
                       isCompact: isCompact,
                     ),
                     _summaryRow(
@@ -1083,6 +1096,12 @@ class A4SplitPdfService {
                       '- ${formatCurrency(totalSavings)}',
                       isCompact: isCompact,
                     ),
+                    if (tierSurcharge > 0.01)
+                      _summaryRow(
+                        'Recargo Lista:',
+                        '+ ${formatCurrency(tierSurcharge)}',
+                        isCompact: isCompact,
+                      ),
                   ],
                   if (hasSavings ||
                       shippingCost > 0 ||

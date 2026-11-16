@@ -916,10 +916,12 @@ class ReceiptPrinterService {
     final showIvaAliquot = invoice != null && (letterForItems == 'A' || letterForItems == 'B');
 
     double totalSavings = discountAmount;
+    double totalTierSurcharge = 0.0;
     for (final item in items) {
       if (discountAmount <= 0.01) {
         totalSavings += item.discountSavings;
       }
+      totalTierSurcharge += item.surchargeAmount;
       final isWeight = item.product.isSoldByWeight;
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
@@ -1015,11 +1017,15 @@ class ReceiptPrinterService {
         bytes += _labelValue(
             generator,
             'SUBTOTAL LISTA:',
-            '\$${_formatPrice(total + totalSavings - shippingCost - effectivePerceptionAmount)}');
+            '\$${_formatPrice(total + totalSavings - totalTierSurcharge - shippingCost - effectivePerceptionAmount)}');
         final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
             ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
             : 'AHORRO / DESCUENTO:';
         bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(totalSavings)}');
+        if (totalTierSurcharge > 0.01) {
+          bytes += _labelValue(
+              generator, 'RECARGO LISTA:', '+\$${_formatPrice(totalTierSurcharge)}');
+        }
       } else if (!isFacturaA) {
         bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - effectivePerceptionAmount)}');
       }
@@ -1475,11 +1481,13 @@ class ReceiptPrinterService {
     final splitLetterForItems = invoice?['voucher_letter']?.toString().toUpperCase() ?? 'B';
     final splitShowIvaAliquot = invoice != null && (splitLetterForItems == 'A' || splitLetterForItems == 'B');
     double splitTotalSavings = discountAmount;
+    double splitTotalTierSurcharge = 0.0;
 
     for (final item in items) {
       if (discountAmount <= 0.01) {
         splitTotalSavings += item.discountSavings;
       }
+      splitTotalTierSurcharge += item.surchargeAmount;
       final isWeight = item.product.isSoldByWeight;
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
@@ -1545,11 +1553,14 @@ class ReceiptPrinterService {
         (voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8);
     if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception || hasSplitSavings || isFacturaA) {
       if (hasSplitSavings) {
-        bytes += _labelValue(generator, 'SUBTOTAL LISTA:', '\$${_formatPrice(total + splitTotalSavings - shippingCost - effectivePerceptionAmount)}');
+        bytes += _labelValue(generator, 'SUBTOTAL LISTA:', '\$${_formatPrice(total + splitTotalSavings - splitTotalTierSurcharge - shippingCost - effectivePerceptionAmount)}');
         final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
             ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
             : 'AHORRO / DESCUENTO:';
         bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(splitTotalSavings)}');
+        if (splitTotalTierSurcharge > 0.01) {
+          bytes += _labelValue(generator, 'RECARGO LISTA:', '+\$${_formatPrice(splitTotalTierSurcharge)}');
+        }
       } else if (!isFacturaA) {
         bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - effectivePerceptionAmount)}');
       }

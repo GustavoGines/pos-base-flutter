@@ -88,6 +88,15 @@ class BusinessSettings extends Equatable {
   /// Estrategia ante lista con recargo (Tarjeta / Custom +%) sobre productos con oferta activa:
   /// 'surcharge_on_offer' | 'card_overrides_offer' | 'offer_no_surcharge'
   final String cardSurchargeOnOffersMode;
+
+  /// Estrategia ante lista con descuento (Mayorista / Custom -%) sobre productos con oferta activa:
+  /// 'best_price_wins' | 'wholesale_overrides_offer'
+  final String discountTierOnOffersMode;
+
+  /// Si es true (por defecto), los factores porcentuales globales (Mayorista / Tarjeta)
+  /// se aplican siempre en todo el catálogo ignorando precios fijos heredados en BD
+  /// (`price_wholesale` / `price_card`).
+  final bool ignoreProductFixedPrices;
   // [feature-flag] Tipo de negocio recibido desde la Licencia remota — solo para uso estético/visual de la UI
   final String businessType;  // 'retail' | 'hardware_store'
   // [feature-flags] Objeto estructurado de características habilitadas
@@ -144,6 +153,19 @@ class BusinessSettings extends Equatable {
       taxCondition != null &&
       taxCondition!.trim().toLowerCase().contains('inscripto');
 
+  /// Indica si el módulo de Múltiples Listas de Precios está habilitado en el
+  /// plan y activado por el usuario en Configuración -> Precios Globales.
+  bool get hasMultiPriceEnabled =>
+      features.multiplePrices && enableAdvancedPriceTiers;
+
+  /// Factor multiplicador global para Lista Mayorista (ej: -15% o 15% -> 0.85).
+  /// Tolera valores positivos o negativos para evitar recargos accidentales si se omite el signo '-'.
+  double get wholesalePriceFactor =>
+      1.0 - (globalWholesalePercentage.abs() / 100.0);
+
+  /// Factor multiplicador global para Lista Tarjeta (ej: +15% -> 1.15).
+  double get cardPriceFactor => 1.0 + (globalCardPercentage.abs() / 100.0);
+
   final String? logoPath;
   final String? logoUrl;
 
@@ -180,6 +202,8 @@ class BusinessSettings extends Equatable {
     double? globalCardPercentage,
     List<Map<String, dynamic>>? customPriceTiers,
     String? cardSurchargeOnOffersMode,
+    String? discountTierOnOffersMode,
+    bool? ignoreProductFixedPrices,
     String? businessType,
     FeatureFlags? features,
     bool? enableAdvancedPriceTiers,
@@ -216,6 +240,8 @@ class BusinessSettings extends Equatable {
       globalCardPercentage: globalCardPercentage ?? this.globalCardPercentage,
       customPriceTiers: customPriceTiers ?? this.customPriceTiers,
       cardSurchargeOnOffersMode: cardSurchargeOnOffersMode ?? this.cardSurchargeOnOffersMode,
+      discountTierOnOffersMode: discountTierOnOffersMode ?? this.discountTierOnOffersMode,
+      ignoreProductFixedPrices: ignoreProductFixedPrices ?? this.ignoreProductFixedPrices,
       businessType: businessType ?? this.businessType,
       features: features ?? this.features,
       enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
@@ -254,6 +280,8 @@ class BusinessSettings extends Equatable {
     this.globalCardPercentage = 15.0,
     this.customPriceTiers = const [],
     this.cardSurchargeOnOffersMode = 'surcharge_on_offer',
+    this.discountTierOnOffersMode = 'best_price_wins',
+    this.ignoreProductFixedPrices = true,
     this.businessType = 'retail',
     this.features = const FeatureFlags(),
     this.enableAdvancedPriceTiers = false,
@@ -292,6 +320,8 @@ class BusinessSettings extends Equatable {
         globalCardPercentage,
         customPriceTiers,
         cardSurchargeOnOffersMode,
+        discountTierOnOffersMode,
+        ignoreProductFixedPrices,
         businessType,
         features,
         enableAdvancedPriceTiers,

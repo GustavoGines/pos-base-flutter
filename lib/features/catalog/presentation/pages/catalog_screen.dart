@@ -30,6 +30,7 @@ import '../../../suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../utils/combo_fraction_pricing.dart';
 import '../../utils/product_share_helper.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import '../../../quotes/presentation/pages/quote_screen.dart';
@@ -1644,6 +1645,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   final Map<int, TextEditingController> _comboQtyCtrls = {};
   final Map<int, TextEditingController> _comboCustomPartsCtrls = {};
   final Set<int> _expandedComboFractionIds = <int>{};
+  bool? _manualPortionPricingMode;
   final TextEditingController _comboInlineSearchCtrl = TextEditingController();
   final FocusNode _comboInlineSearchFocus = FocusNode();
   List<Product> _comboInlineSearchResults = [];
@@ -1667,6 +1669,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   bool _isUploadingImage = false;
   bool _deleteExistingImage = false;
   bool _clearStalePriceCard = false;
+  bool _clearStalePriceWholesale = false;
 
   bool get _isEditing => widget.product != null;
 
@@ -2141,7 +2144,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     if (_isCombo && _comboIngredients.isEmpty) {
       SnackBarService.error(
         context,
-        'Debes añadir al menos un producto incluido en el Combo / Receta antes de guardar.',
+        'Debes añadir al menos un producto incluido en el Combo / Fracción antes de guardar.',
       );
       return;
     }
@@ -2191,6 +2194,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'active': _active,
       'needs_catalog_review': false,
       if (_clearStalePriceCard) 'price_card': null,
+      if (_clearStalePriceWholesale) 'price_wholesale': null,
       'category_id': _categoryId,
       'brand_id': _isService ? null : _brandId,
       'supplier_id': _isService ? null : _supplierId,
@@ -2380,57 +2384,109 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       await provider.loadRubros();
     }
 
-    final sortedRubros = sortByAlphabeticalName(provider.rubros, (r) => r.name);
-    int? selectedRubroId = sortedRubros.isNotEmpty ? sortedRubros.first.id : null;
+    if (!mounted) return;
+
+    final initialRubros = sortByAlphabeticalName(provider.rubros, (r) => r.name);
+    int? selectedRubroId =
+        initialRubros.isNotEmpty ? initialRubros.first.id : null;
 
     final createdId = await showDialog<int?>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
+          Future<void> openCreateRubro({String? suggestedName}) async {
+            final newRubroId = await RubrosManagerDialog.showQuickCreateDialog(
+              ctx,
+              initialName: suggestedName,
+            );
+            if (newRubroId != null && ctx.mounted) {
+              setDialogState(() {
+                selectedRubroId = newRubroId;
+              });
+            }
+          }
+
           return AlertDialog(
             title: const Text('Nueva Categoría'),
             content: SizedBox(
               width: 360,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre *',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.label_outline),
-                    ),
-                    autofocus: true,
-                  ),
-                  if (isPremium && sortedRubros.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    SearchableSelectField<int?>(
-                      value: selectedRubroId,
-                      showClearButton: false,
-                      labelText: 'Rubro Padre',
-                      dialogTitle: 'Seleccionar Rubro Padre',
-                      searchHintText: 'Buscar rubro...',
-                      prefixIcon: Icons.category_outlined,
-                      border: const OutlineInputBorder(),
-                      options: sortedRubros
-                          .map((r) => SearchableSelectOption<int?>(
-                                value: r.id,
-                                label: r.name,
-                              ))
-                          .toList(),
-                      onChanged: (val) {
-                        setDialogState(() {
-                          selectedRubroId = val;
-                        });
-                      },
-                    ),
-                  ],
-                ],
+              child: Consumer<CatalogProvider>(
+                builder: (_, p, __) {
+                  final sortedRubros =
+                      sortByAlphabeticalName(p.rubros, (r) => r.name);
+                  if (isPremium &&
+                      sortedRubros.isNotEmpty &&
+                      !sortedRubros.any((r) => r.id == selectedRubroId)) {
+                    selectedRubroId = sortedRubros.first.id;
+                  }
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre *',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.label_outline),
+                        ),
+                        autofocus: true,
+                      ),
+                      if (isPremium) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: SearchableSelectField<int?>(
+                                value: selectedRubroId,
+                                showClearButton: false,
+                                labelText: 'Rubro Padre',
+                                hintText: sortedRubros.isEmpty
+                                    ? 'Sin rubros creados aún'
+                                    : null,
+                                dialogTitle: 'Seleccionar Rubro Padre',
+                                searchHintText: 'Buscar rubro...',
+                                emptySearchText: 'No hay rubros registrados',
+                                prefixIcon: Icons.category_outlined,
+                                border: const OutlineInputBorder(),
+                                options: sortedRubros
+                                    .map((r) => SearchableSelectOption<int?>(
+                                          value: r.id,
+                                          label: r.name,
+                                        ))
+                                    .toList(),
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    selectedRubroId = val;
+                                  });
+                                },
+                                onCreateNew: (query) =>
+                                    openCreateRubro(suggestedName: query),
+                                createLabelBuilder: (query) =>
+                                    query.trim().isEmpty
+                                        ? 'Crear nuevo rubro'
+                                        : 'Crear rubro "${query.trim()}"',
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline),
+                              tooltip: 'Crear nuevo rubro',
+                              onPressed: () => openCreateRubro(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar')),
               Consumer<CatalogProvider>(
                 builder: (_, p, __) => FilledButton(
                   onPressed: p.isLoading
@@ -2441,7 +2497,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             nameCtrl.text.trim(),
                             rubroId: isPremium ? selectedRubroId : null,
                           );
-                          if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                          if (newId != null && ctx.mounted) {
+                            Navigator.pop(ctx, newId);
+                          }
                         },
                   child: const Text('Crear'),
                 ),
@@ -2921,7 +2979,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               key: const Key('product_share_button'),
               icon: const Icon(Icons.share_outlined),
               tooltip: 'Compartir producto',
-              onPressed: () => ProductShareHelper.shareProduct(widget.product!),
+              onPressed: () => ProductShareHelper.shareProduct(
+                widget.product!,
+                context: context,
+              ),
             ),
           IconButton(
             onPressed: isBusy ? null : () => Navigator.of(context).pop(),
@@ -2997,7 +3058,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           value: 'combo',
                           icon: Icon(Icons.layers_outlined, size: 16),
                           label: Text(
-                            'Combo / Receta',
+                            'Combo / Fracción',
                             style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -3542,16 +3603,34 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                 Wrap(
                                                   alignment: WrapAlignment.spaceBetween,
                                                   crossAxisAlignment: WrapCrossAlignment.center,
-                                                  spacing: 8,
+                                                  spacing: 6,
                                                   runSpacing: 4,
                                                   children: [
-                                                    Text(
-                                                      'Control de Vencimiento y Alertas (Opcional)',
-                                                      style: TextStyle(
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 12.5,
-                                                        color: Colors.orange.shade900,
-                                                      ),
+                                                    Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            'Control de Vencimiento y Alertas (Opcional)',
+                                                            style: TextStyle(
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 12.5,
+                                                              color: Colors.orange.shade900,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        Tooltip(
+                                                          message:
+                                                              'Cascada de Pre-Alerta: Pre -> 7d -> 3d -> Vto.\n'
+                                                              'Vida útil: ej. 90 calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
+                                                          child: Icon(
+                                                            Icons.info_outline_rounded,
+                                                            size: 15,
+                                                            color: Colors.orange.shade800,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                     TextButton.icon(
                                                       style: TextButton.styleFrom(
@@ -3572,96 +3651,118 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                 ),
                                                 if (_showExpirationSection) ...[
                                                   const SizedBox(height: 8),
-                                                  Row(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Expanded(
-                                                        flex: 4,
-                                                        child: InkWell(
-                                                          onTap: () async {
-                                                            final picked = await showCompactDatePicker(
-                                                              context: context,
-                                                              initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
-                                                              firstDate: DateTime(2020),
-                                                              lastDate: DateTime(2100),
-                                                              helpText: 'Fecha de Vencimiento del Lote',
-                                                            );
-                                                            if (!mounted) return;
-                                                            if (picked != null) {
-                                                              setState(() => _expirationDate = picked);
-                                                            }
-                                                          },
-                                                          child: InputDecorator(
-                                                            decoration: InputDecoration(
-                                                              labelText: 'Fecha de Vencimiento (Lote)',
-                                                              prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
-                                                              border: const OutlineInputBorder(),
-                                                              isDense: true,
-                                                              suffixIcon: _expirationDate != null
-                                                                  ? IconButton(
-                                                                      tooltip: 'Quitar fecha de vencimiento',
-                                                                      icon: const Icon(Icons.clear, size: 16),
-                                                                      onPressed: () => setState(() => _expirationDate = null),
-                                                                    )
-                                                                  : null,
-                                                            ),
-                                                            child: Text(
-                                                              _expirationDate != null
-                                                                  ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
-                                                                  : 'Sin fecha fija',
-                                                              style: TextStyle(
-                                                                fontSize: 13,
-                                                                fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
-                                                                color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 10),
-                                                      Expanded(
-                                                        flex: 3,
-                                                        child: TextFormField(
-                                                          controller: _expiryAlertDaysCtrl,
-                                                          decoration: const InputDecoration(
-                                                            labelText: 'Pre-Alerta (días antes)',
-                                                            suffixText: 'días',
-                                                            border: OutlineInputBorder(),
+                                                  LayoutBuilder(
+                                                    builder: (context, expConstraints) {
+                                                      final Widget dateField = InkWell(
+                                                        onTap: () async {
+                                                          final picked = await showCompactDatePicker(
+                                                            context: context,
+                                                            initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
+                                                            firstDate: DateTime(2020),
+                                                            lastDate: DateTime(2100),
+                                                            helpText: 'Fecha de Vencimiento del Lote',
+                                                          );
+                                                          if (!mounted) return;
+                                                          if (picked != null) {
+                                                            setState(() => _expirationDate = picked);
+                                                          }
+                                                        },
+                                                        child: InputDecorator(
+                                                          decoration: InputDecoration(
+                                                            labelText: 'Fecha de Vencimiento (Lote)',
+                                                            prefixIcon: const Icon(Icons.calendar_today_outlined, size: 17),
+                                                            border: const OutlineInputBorder(),
                                                             isDense: true,
-                                                            helperText: 'Cascada: Pre -> 7d -> 3d -> Vto',
+                                                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                            suffixIcon: _expirationDate != null
+                                                                ? IconButton(
+                                                                    tooltip: 'Quitar fecha de vencimiento',
+                                                                    icon: const Icon(Icons.clear, size: 16),
+                                                                    onPressed: () => setState(() => _expirationDate = null),
+                                                                  )
+                                                                : null,
                                                           ),
-                                                          keyboardType: TextInputType.number,
+                                                          child: Text(
+                                                            _expirationDate != null
+                                                                ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
+                                                                : 'Sin fecha fija',
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 12.5,
+                                                              fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
+                                                              color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
+                                                            ),
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 10),
-                                                  TextFormField(
-                                                    controller: _expiryCtrl,
-                                                    decoration: const InputDecoration(
-                                                      labelText: 'Vida útil desde ingreso / envasado (opcional)',
-                                                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
-                                                      helperText: 'Ej: 90 → Calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
-                                                      suffixText: 'días',
-                                                      border: OutlineInputBorder(),
-                                                      isDense: true,
-                                                    ),
-                                                    keyboardType: TextInputType.number,
-                                                    onChanged: (v) {
-                                                      final n = int.tryParse(v.trim());
-                                                      if (n != null && n > 0 && n <= 3650) {
-                                                        setState(() {
-                                                          _expirationDate = DateTime.now().add(Duration(days: n));
-                                                        });
+                                                      );
+
+                                                      final Widget preAlertField = TextFormField(
+                                                        controller: _expiryAlertDaysCtrl,
+                                                        decoration: const InputDecoration(
+                                                          labelText: 'Pre-Alerta',
+                                                          suffixText: 'días',
+                                                          border: OutlineInputBorder(),
+                                                          isDense: true,
+                                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                        ),
+                                                        keyboardType: TextInputType.number,
+                                                      );
+
+                                                      final Widget shelfLifeField = TextFormField(
+                                                        controller: _expiryCtrl,
+                                                        decoration: const InputDecoration(
+                                                          labelText: 'Vida útil / envasado',
+                                                          prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 17),
+                                                          suffixText: 'días',
+                                                          border: OutlineInputBorder(),
+                                                          isDense: true,
+                                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                        ),
+                                                        keyboardType: TextInputType.number,
+                                                        onChanged: (v) {
+                                                          final n = int.tryParse(v.trim());
+                                                          if (n != null && n > 0 && n <= 3650) {
+                                                            setState(() {
+                                                              _expirationDate = DateTime.now().add(Duration(days: n));
+                                                            });
+                                                          }
+                                                        },
+                                                        validator: (v) {
+                                                          if (v == null || v.trim().isEmpty) return null;
+                                                          final n = int.tryParse(v.trim());
+                                                          if (n == null || n < 1 || n > 3650) {
+                                                            return 'Ingresá un número entre 1 y 3650';
+                                                          }
+                                                          return null;
+                                                        },
+                                                      );
+
+                                                      if (expConstraints.maxWidth >= 480) {
+                                                        return Row(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Expanded(flex: 5, child: dateField),
+                                                            const SizedBox(width: 8),
+                                                            Expanded(flex: 3, child: preAlertField),
+                                                            const SizedBox(width: 8),
+                                                            Expanded(flex: 3, child: shelfLifeField),
+                                                          ],
+                                                        );
                                                       }
-                                                    },
-                                                    validator: (v) {
-                                                      if (v == null || v.trim().isEmpty) return null;
-                                                      final n = int.tryParse(v.trim());
-                                                      if (n == null || n < 1 || n > 3650) {
-                                                        return 'Ingresá un número entre 1 y 3650';
-                                                      }
-                                                      return null;
+                                                      return Column(
+                                                        children: [
+                                                          dateField,
+                                                          const SizedBox(height: 8),
+                                                          Row(
+                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                                            children: [
+                                                              Expanded(child: preAlertField),
+                                                              const SizedBox(width: 8),
+                                                              Expanded(child: shelfLifeField),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      );
                                                     },
                                                   ),
                                                 ],
@@ -3755,14 +3856,20 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Widget _buildStalePriceCardWarning() {
     final staleCardPrice = widget.product?.priceCard;
-    if (!_isEditing || staleCardPrice == null || staleCardPrice <= 0) {
+    final staleWholesalePrice = widget.product?.priceWholesale;
+    final hasCard = _isEditing && staleCardPrice != null && staleCardPrice > 0;
+    final hasWholesale =
+        _isEditing && staleWholesalePrice != null && staleWholesalePrice > 0;
+    if (!hasCard && !hasWholesale) {
       return const SizedBox.shrink();
     }
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: _priceCtrl,
       builder: (context, _, __) {
         final currentSelling = ArsThousandsInputFormatter.parse(_priceCtrl.text);
-        if (currentSelling <= staleCardPrice + 0.01) {
+        final isCardBelowSelling =
+            hasCard && currentSelling > staleCardPrice + 0.01;
+        if (!isCardBelowSelling && !hasWholesale) {
           return const SizedBox.shrink();
         }
         return Container(
@@ -3783,7 +3890,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Precio Tarjeta fijo (\$${staleCardPrice.toCurrency()}) menor al Precio Venta (\$${currentSelling.toCurrency()})',
+                      isCardBelowSelling
+                          ? 'Precio Tarjeta fijo (\$${staleCardPrice.toCurrency()}) menor al Precio Venta (\$${currentSelling.toCurrency()})'
+                          : 'Este producto tiene Precio Mayorista fijo (\$${staleWholesalePrice!.toCurrency()}) heredado en BD',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
@@ -3795,32 +3904,56 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               ),
               const SizedBox(height: 2),
               Text(
-                'Si no se limpia, al elegir Lista Tarjeta en el POS se cobrará este importe fijo en lugar del recargo porcentual global.',
+                isCardBelowSelling
+                    ? 'Si no se limpia, al elegir Lista Tarjeta en el POS se cobrará este importe fijo en lugar del recargo porcentual global.'
+                    : 'Podés limpiarlo al guardar para que el producto utilice exclusivamente el % Mayorista global.',
                 style: TextStyle(
                   fontSize: 10.5,
                   color: Colors.amber.shade900,
                 ),
               ),
-              Material(
-                color: Colors.transparent,
-                child: CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  visualDensity: VisualDensity.compact,
-                  value: _clearStalePriceCard,
-                  onChanged: (val) =>
-                      setState(() => _clearStalePriceCard = val ?? false),
-                  title: Text(
-                    'Limpiar precio Tarjeta fijo al guardar (usar % global)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.amber.shade900,
+              if (isCardBelowSelling)
+                Material(
+                  color: Colors.transparent,
+                  child: CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    visualDensity: VisualDensity.compact,
+                    value: _clearStalePriceCard,
+                    onChanged: (val) =>
+                        setState(() => _clearStalePriceCard = val ?? false),
+                    title: Text(
+                      'Limpiar precio Tarjeta fijo al guardar (usar % global)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.amber.shade900,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              if (hasWholesale)
+                Material(
+                  color: Colors.transparent,
+                  child: CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    visualDensity: VisualDensity.compact,
+                    value: _clearStalePriceWholesale,
+                    onChanged: (val) => setState(
+                        () => _clearStalePriceWholesale = val ?? false),
+                    title: Text(
+                      'Limpiar precio Mayorista fijo (\$${staleWholesalePrice.toCurrency()}) al guardar (usar % global)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -4734,15 +4867,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   int _calcComboIngredientFit(double availStock, double qty) =>
       calcUnitsFitStock(availStock, qty);
 
-  double _roundComboPromoPrice(double value) =>
-      (value * 100).roundToDouble() / 100.0;
-
   Widget _buildComboPromoPriceButton({
     required Key key,
     required double targetPrice,
     required String label,
     required String appliedLabel,
     required double currentPrice,
+    bool isMarkup = false,
   }) {
     final isApplied =
         currentPrice > 0 && (currentPrice - targetPrice).abs() < 0.01;
@@ -4769,7 +4900,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         });
       },
       icon: Icon(
-        isApplied ? Icons.check_circle_outline : Icons.local_offer_outlined,
+        isApplied
+            ? Icons.check_circle_outline
+            : (isMarkup
+                ? Icons.trending_up_rounded
+                : Icons.local_offer_outlined),
         size: 14,
       ),
       label: Text(
@@ -4807,6 +4942,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       }
     }
 
+    final bool autoFractionMode =
+        ComboFractionPricing.hasFractionalQuantities(_comboIngredients);
+    final bool isFractionMode = _manualPortionPricingMode ?? autoFractionMode;
     final comboPrice = ArsThousandsInputFormatter.parse(_priceCtrl.text);
     final profit = comboPrice - totalCost;
     final savings = totalIndividualSelling - comboPrice;
@@ -4817,6 +4955,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final basePriceAlreadyApplied = totalIndividualSelling > 0 &&
         comboPrice > 0 &&
         (comboPrice - totalIndividualSelling).abs() < 0.01;
+    final yieldSummary = isFractionMode
+        ? ComboFractionPricing.computeWholeUnitYield(
+            ingredients: _comboIngredients,
+            appliedPrice: comboPrice,
+            proportionalBaseTotal: totalIndividualSelling,
+          )
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(top: 4),
@@ -4845,7 +4990,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'Resumen para calcular tu Precio de Combo',
+                        isFractionMode
+                            ? 'Cálculo de Porción / Fracción'
+                            : 'Resumen para calcular tu Precio de Combo',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12.5,
@@ -4855,29 +5002,46 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                   ],
                 ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: armables > 0 ? Colors.green.shade50 : Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: armables > 0
-                        ? Colors.green.shade300
-                        : Colors.red.shade300,
-                  ),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ComboFractionPricing.buildModeToggle(
+                      isFractionMode: isFractionMode,
+                      onChanged: (val) =>
+                          setState(() => _manualPortionPricingMode = val),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: armables > 0
+                            ? Colors.green.shade50
+                            : Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: armables > 0
+                              ? Colors.green.shade300
+                              : Colors.red.shade300,
+                        ),
+                      ),
+                      child: Text(
+                        isFractionMode
+                            ? 'Porciones/Fracciones armables hoy: $armables'
+                            : 'Combos armables hoy: $armables',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: armables > 0
+                              ? Colors.green.shade800
+                              : Colors.red.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  'Combos armables hoy: $armables',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: armables > 0
-                        ? Colors.green.shade800
-                        : Colors.red.shade800,
-                  ),
-                ),
-              ),
-            ],
+              ],
             ),
           ),
           const Divider(height: 14),
@@ -4891,7 +5055,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               Text(
-                'Suma Venta por Separado: \$${totalIndividualSelling.toCurrency()}',
+                isFractionMode
+                    ? 'Valor proporcional: \$${totalIndividualSelling.toCurrency()}'
+                    : 'Suma Venta por Separado: \$${totalIndividualSelling.toCurrency()}',
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -4913,12 +5079,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             Icon(Icons.check_circle_outline,
                                 size: 14, color: Colors.green.shade800),
                             const SizedBox(width: 4),
-                            Text(
-                              'Precio \$${totalIndividualSelling.toCurrency()} aplicado',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.green.shade800,
+                            Flexible(
+                              child: Text(
+                                'Base \$${totalIndividualSelling.toCurrency()} aplicada',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.green.shade800,
+                                ),
                               ),
                             ),
                           ],
@@ -4945,7 +5113,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         },
                         icon: const Icon(Icons.auto_fix_high_rounded, size: 14),
                         label: Text(
-                          'Aplicar \$${totalIndividualSelling.toCurrency()} al precio',
+                          isFractionMode
+                              ? 'Base (\$${totalIndividualSelling.toCurrency()})'
+                              : 'Aplicar \$${totalIndividualSelling.toCurrency()} al precio',
                           style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w700,
@@ -4954,42 +5124,33 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                 Builder(
                   builder: (_) {
-                    final baseTarget =
-                        _roundComboPromoPrice(totalIndividualSelling);
-                    final promo10 =
-                        _roundComboPromoPrice(totalIndividualSelling * 0.90);
-                    final promo15 =
-                        _roundComboPromoPrice(totalIndividualSelling * 0.85);
+                    final suggestions = ComboFractionPricing.buildSuggestions(
+                      baseTotal: totalIndividualSelling,
+                      isFractionMode: isFractionMode,
+                    );
                     return Wrap(
                       spacing: 8,
                       runSpacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'Recomendado combo:',
+                          isFractionMode
+                              ? 'Recomendado fracción:'
+                              : 'Recomendado combo:',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: Colors.deepPurple.shade800,
                           ),
                         ),
-                        if (promo10 > 0 && (promo10 - baseTarget).abs() >= 0.01)
+                        for (final s in suggestions)
                           _buildComboPromoPriceButton(
-                            key: const Key('catalog_apply_promo10_btn'),
-                            targetPrice: promo10,
-                            label: '-10% (\$${promo10.toCurrency()})',
-                            appliedLabel:
-                                '-10% (\$${promo10.toCurrency()}) aplicado',
+                            key: Key('catalog_apply_${s.keySuffix}_btn'),
+                            targetPrice: s.targetPrice,
+                            label: s.buttonLabel,
+                            appliedLabel: s.appliedLabel,
                             currentPrice: comboPrice,
-                          ),
-                        if (promo15 > 0 && (promo15 - promo10).abs() >= 0.01)
-                          _buildComboPromoPriceButton(
-                            key: const Key('catalog_apply_promo15_btn'),
-                            targetPrice: promo15,
-                            label: '-15% (\$${promo15.toCurrency()})',
-                            appliedLabel:
-                                '-15% (\$${promo15.toCurrency()}) aplicado',
-                            currentPrice: comboPrice,
+                            isMarkup: isFractionMode,
                           ),
                       ],
                     );
@@ -5006,7 +5167,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  'Tu Ganancia por Combo: \$${profit.toCurrency()}',
+                  isFractionMode
+                      ? 'Tu Ganancia por Fracción: \$${profit.toCurrency()}'
+                      : 'Tu Ganancia por Combo: \$${profit.toCurrency()}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -5043,11 +5206,31 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       border: Border.all(color: Colors.amber.shade300),
                     ),
                     child: Text(
-                      '+\$${(-savings).toCurrency()} (+${(-discountPct).toStringAsFixed(1)}% vs sueltos)',
+                      isFractionMode
+                          ? '+\$${(-savings).toCurrency()} (+${(-discountPct).toStringAsFixed(1)}% vs proporcional)'
+                          : '+\$${(-savings).toCurrency()} (+${(-discountPct).toStringAsFixed(1)}% vs sueltos)',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                if (yieldSummary != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.indigo.shade200),
+                    ),
+                    child: Text(
+                      yieldSummary.formatSummary(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.indigo.shade900,
                       ),
                     ),
                   ),

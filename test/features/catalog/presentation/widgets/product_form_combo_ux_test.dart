@@ -138,8 +138,8 @@ void main() {
       await tester.tap(find.text('Abrir Producto'));
       await tester.pumpAndSettle();
 
-      // Cambiar a modo Combo / Receta
-      await tester.tap(find.text('Combo / Receta'));
+      // Cambiar a modo Combo / Fracción
+      await tester.tap(find.text('Combo / Fracción'));
       await tester.pumpAndSettle();
 
       // Campos fantasma e inaplicables ocultos; métricas de receta visibles; Precios Mayoristas colapsado
@@ -172,21 +172,43 @@ void main() {
       await tester.tap(find.byKey(const Key('catalog_combo_apply_parts_50')));
       await tester.pumpAndSettle();
 
-      // Stock 1 / (1/16) = 16 combos armables hoy
-      expect(find.text('Combos armables hoy: 16'), findsOneWidget);
+      // Stock 1 / (1/16) = 16 porciones/fracciones armables hoy
+      expect(find.text('Cálculo de Porción / Fracción'), findsOneWidget);
+      expect(find.text('Porciones/Fracciones armables hoy: 16'), findsOneWidget);
+      expect(find.text('Valor proporcional: \$125'), findsOneWidget);
 
-      // Botón accionable "Aplicar $125 al precio" + sugerencias promocionales -10% y -15% según la porción
+      // Botón accionable "Base ($125)" + sugerencias de Fracción (+%) al dividir en 16 partes
       final applyBtn = find.byKey(const Key('catalog_apply_base_price_btn'));
       await tester.ensureVisible(applyBtn);
-      expect(find.text('Aplicar \$125 al precio'), findsOneWidget);
-      expect(find.text('-10% (\$112,50)'), findsOneWidget);
-      expect(find.text('-15% (\$106,25)'), findsOneWidget);
+      expect(find.text('Base (\$125)'), findsOneWidget);
+      expect(find.text('+30% (\$162,50)'), findsOneWidget);
+      expect(find.text('+50% (\$187,50)'), findsOneWidget);
+      expect(find.text('+100% (x2) (\$250)'), findsOneWidget);
 
       await tester.tap(applyBtn);
       await tester.pumpAndSettle();
 
-      expect(find.text('Precio \$125 aplicado'), findsOneWidget);
+      expect(find.text('Base \$125 aplicada'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '125'), findsOneWidget);
+
+      // Aplicar sugerencia de fracción +50% ($187,50) y verificar rendimiento por unidad entera
+      final plus50Btn = find.byKey(const Key('catalog_apply_plus50_btn'));
+      await tester.ensureVisible(plus50Btn);
+      await tester.tap(plus50Btn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('+50% (\$187,50) aplicado'), findsOneWidget);
+      expect(
+        find.textContaining('Rendimiento por unidad entera (16 porc.): \$3.000 (+50% vs \$2.000 entera)'),
+        findsOneWidget,
+      );
+
+      // Toggle manual a Combo (-%) -> sugiere -10% ($112,50) y -15% ($106,25)
+      await tester.ensureVisible(find.text('Combo (-%)'));
+      await tester.tap(find.text('Combo (-%)'));
+      await tester.pumpAndSettle();
+      expect(find.text('-10% (\$112,50)'), findsOneWidget);
+      expect(find.text('-15% (\$106,25)'), findsOneWidget);
 
       // Aplicar sugerencia -10% ($112,50) en 1 clic -> actualiza Precio Venta y ahorro exacto
       final promo10Btn = find.byKey(const Key('catalog_apply_promo10_btn'));
@@ -216,7 +238,7 @@ void main() {
       await tester.tap(find.text('Abrir Producto'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Combo / Receta'));
+      await tester.tap(find.text('Combo / Fracción'));
       await tester.pumpAndSettle();
 
       final inlineSearch = find.byKey(const Key('catalog_combo_inline_search'));
@@ -227,6 +249,96 @@ void main() {
       await tester.tap(find.text('TORTA MATILDA').last);
       await tester.pumpAndSettle();
 
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Fase 0 UX: Control de Vencimiento inicia plegado para producto nuevo y expande fila única compacta sin overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final catProv = _ComboFakeCatalogProvider([tortaMatilda]);
+      await tester.pumpWidget(buildDialogApp(catProv));
+      await tester.tap(find.text('Abrir Producto'));
+      await tester.pumpAndSettle();
+
+      // Producto nuevo sin datos de vencimiento: sección inicia plegada
+      expect(find.text('Control de Vencimiento y Alertas (Opcional)'), findsOneWidget);
+      expect(find.text('Configurar vencimiento'), findsOneWidget);
+      expect(find.text('Fecha de Vencimiento (Lote)'), findsNothing);
+      expect(find.byType(Tooltip), findsWidgets);
+
+      await tester.ensureVisible(find.text('Configurar vencimiento'));
+      await tester.tap(find.text('Configurar vencimiento'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ocultar'), findsOneWidget);
+      expect(find.text('Fecha de Vencimiento (Lote)'), findsOneWidget);
+      expect(find.text('Pre-Alerta'), findsOneWidget);
+      expect(find.text('Vida útil / envasado'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Fase 0 UX: Control de Vencimiento inicia expandido al editar producto que ya tiene fecha de vencimiento',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final catProv = _ComboFakeCatalogProvider([tortaMatilda]);
+      final productoConVto = Product(
+        id: 88,
+        name: 'YOGUR ENTERO',
+        internalCode: '00088',
+        costPrice: 800,
+        sellingPrice: 1500,
+        stock: 10,
+        active: true,
+        isSoldByWeight: false,
+        expirationDate: '2026-12-31',
+        expiryAlertDays: 10,
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<CatalogProvider>.value(value: catProv),
+            ChangeNotifierProvider<SettingsProvider>(
+                create: (_) => _ComboFakeSettingsProvider()),
+            ChangeNotifierProvider<SupplierProvider>(
+                create: (_) => _ComboFakeSupplierProvider()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => ProductFormDialog(
+                        provider: catProv,
+                        product: productoConVto,
+                      ),
+                    );
+                  },
+                  child: const Text('Editar Producto'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Editar Producto'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ocultar'), findsOneWidget);
+      expect(find.text('Fecha de Vencimiento (Lote)'), findsOneWidget);
+      expect(find.text('31/12/2026'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

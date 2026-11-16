@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/rubro.dart';
+import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'rubros_manager_dialog.dart';
 
 /// Dialog de gestión ABM de Categorías.
 /// Soporta asignación de Rubro padre en Plan Premium, y oculta el selector en Plan Básico.
@@ -125,6 +128,69 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
     }
   }
 
+  Future<void> _handleInlineCreateRubro({required bool forEdit}) async {
+    final newId = await RubrosManagerDialog.showQuickCreateDialog(context);
+    if (!mounted || newId == null) return;
+    setState(() {
+      if (forEdit) {
+        _editRubroId = newId;
+      } else {
+        _newRubroId = newId;
+      }
+    });
+  }
+
+  Widget _buildRubroSelector({
+    required List<Rubro> rubros,
+    required int? selectedRubroId,
+    required ValueChanged<int?> onChanged,
+    required bool forEdit,
+    EdgeInsetsGeometry contentPadding =
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    InputBorder? border,
+  }) {
+    final resolvedValue = rubros.any((r) => r.id == selectedRubroId)
+        ? selectedRubroId
+        : (rubros.isNotEmpty ? rubros.first.id : null);
+
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            isExpanded: true,
+            // ignore: deprecated_member_use
+            value: resolvedValue,
+            decoration: InputDecoration(
+              labelText: 'Rubro Padre',
+              border: border,
+              contentPadding: contentPadding,
+              isDense: true,
+            ),
+            items: rubros
+                .map(
+                  (r) => DropdownMenuItem<int?>(
+                    value: r.id,
+                    child: Text(r.name, overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(),
+            onChanged: (!forEdit && _adding) ? null : onChanged,
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, size: 20),
+          tooltip: 'Crear nuevo rubro',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+          onPressed: (!forEdit && _adding)
+              ? null
+              : () => _handleInlineCreateRubro(forEdit: forEdit),
+        ),
+      ],
+    );
+  }
+
   // ── Build ────────────────────────────────────────────────────────
 
   @override
@@ -151,7 +217,10 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
               builder: (context, constraints) {
                 final isNarrow = constraints.maxWidth < 380;
                 final catalogProv = context.watch<CatalogProvider>();
-                final rubros = catalogProv.rubros;
+                final rubros = sortByAlphabeticalName(
+                  catalogProv.rubros,
+                  (r) => r.name,
+                );
 
                 // Auto-seleccionar primer rubro en Premium si no se seleccionó
                 if (isPremium && _newRubroId == null && rubros.isNotEmpty) {
@@ -239,25 +308,14 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
                         onSubmitted: (_) => _createCategory(catalogProv, true),
                       ),
                       const SizedBox(height: 8),
-                      DropdownButtonFormField<int?>(
-                        isExpanded: true,
-                        // ignore: deprecated_member_use
-                        value: rubros.any((r) => r.id == _newRubroId)
-                            ? _newRubroId
-                            : (rubros.isNotEmpty ? rubros.first.id : null),
-                        decoration: InputDecoration(
-                          labelText: 'Rubro Padre',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                        ),
-                        items: rubros
-                            .map((r) => DropdownMenuItem<int?>(
-                                  value: r.id,
-                                  child: Text(r.name, overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
+                      _buildRubroSelector(
+                        rubros: rubros,
+                        selectedRubroId: _newRubroId,
                         onChanged: (val) => setState(() => _newRubroId = val),
+                        forEdit: false,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       FilledButton.icon(
@@ -293,26 +351,15 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      flex: 4,
-                      child: DropdownButtonFormField<int?>(
-                        isExpanded: true,
-                        // ignore: deprecated_member_use
-                        value: rubros.any((r) => r.id == _newRubroId)
-                            ? _newRubroId
-                            : (rubros.isNotEmpty ? rubros.first.id : null),
-                        decoration: InputDecoration(
-                          labelText: 'Rubro Padre',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                        ),
-                        items: rubros
-                            .map((r) => DropdownMenuItem<int?>(
-                                  value: r.id,
-                                  child: Text(r.name, overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
+                      flex: 5,
+                      child: _buildRubroSelector(
+                        rubros: rubros,
+                        selectedRubroId: _newRubroId,
                         onChanged: (val) => setState(() => _newRubroId = val),
+                        forEdit: false,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -419,24 +466,16 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
                 ),
                 if (isPremium) ...[
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<int?>(
-                    isExpanded: true,
-                    // ignore: deprecated_member_use
-                    value: provider.rubros.any((r) => r.id == _editRubroId)
-                        ? _editRubroId
-                        : (provider.rubros.isNotEmpty ? provider.rubros.first.id : null),
-                    decoration: const InputDecoration(
-                      labelText: 'Rubro Padre',
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                  _buildRubroSelector(
+                    rubros: sortByAlphabeticalName(
+                      provider.rubros,
+                      (r) => r.name,
                     ),
-                    items: provider.rubros
-                        .map((r) => DropdownMenuItem<int?>(
-                              value: r.id,
-                              child: Text(r.name, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
+                    selectedRubroId: _editRubroId,
                     onChanged: (val) => setState(() => _editRubroId = val),
+                    forEdit: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                   ),
                 ],
               ],

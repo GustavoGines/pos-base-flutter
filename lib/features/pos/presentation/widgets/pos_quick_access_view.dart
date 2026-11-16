@@ -1186,6 +1186,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         cardFactor: pos.cardFactor,
         customFactor: pos.currentCustomFactor,
         cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: pos.discountTierOnOffersMode,
       ).finalUnitPrice;
     } catch (_) {
       displayPrice = ProductPricingCalculator.roundMoney(displayPrice);

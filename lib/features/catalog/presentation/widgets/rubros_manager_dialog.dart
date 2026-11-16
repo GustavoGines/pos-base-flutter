@@ -8,8 +8,162 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 class RubrosManagerDialog extends StatefulWidget {
   const RubrosManagerDialog({super.key});
 
+  /// Abre un diálogo rápido para crear un Rubro en línea y devuelve su ID.
+  static Future<int?> showQuickCreateDialog(
+    BuildContext context, {
+    String? initialName,
+  }) {
+    return showDialog<int?>(
+      context: context,
+      builder: (_) => _QuickCreateRubroDialog(initialName: initialName),
+    );
+  }
+
   @override
   State<RubrosManagerDialog> createState() => _RubrosManagerDialogState();
+}
+
+class _QuickCreateRubroDialog extends StatefulWidget {
+  final String? initialName;
+
+  const _QuickCreateRubroDialog({this.initialName});
+
+  @override
+  State<_QuickCreateRubroDialog> createState() =>
+      _QuickCreateRubroDialogState();
+}
+
+class _QuickCreateRubroDialogState extends State<_QuickCreateRubroDialog> {
+  late final TextEditingController _nameCtrl;
+  final TextEditingController _descCtrl = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.initialName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Ingresá el nombre del rubro.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    final provider = context.read<CatalogProvider>();
+    final desc = _descCtrl.text.trim();
+    final newId = await provider.createRubro(
+      name,
+      description: desc.isEmpty ? null : desc,
+    );
+
+    if (!mounted) return;
+    if (newId != null) {
+      Navigator.pop(context, newId);
+      return;
+    }
+
+    setState(() {
+      _saving = false;
+      _error = provider.errorMessage ?? 'No se pudo crear el rubro.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Nuevo Rubro Comercial',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _nameCtrl,
+                autofocus: true,
+                enabled: !_saving,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre *',
+                  hintText: 'Ej: Panadería, Bebidas, Tecnología...',
+                  prefixIcon: Icon(Icons.folder_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _saving ? null : _submit(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descCtrl,
+                enabled: !_saving,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Descripción (opcional)',
+                  prefixIcon: Icon(Icons.description_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _saving ? null : _submit(),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: TextStyle(color: colorScheme.error, fontSize: 12.5),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _submit,
+          icon: _saving
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.check, size: 16),
+          label: Text(_saving ? 'Creando...' : 'Crear Rubro'),
+        ),
+      ],
+    );
+  }
 }
 
 class _RubrosManagerDialogState extends State<RubrosManagerDialog> {

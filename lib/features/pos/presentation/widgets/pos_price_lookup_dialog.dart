@@ -302,17 +302,20 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
   Widget build(BuildContext context) {
     final pos = context.watch<PosProvider>();
     final offerProv = context.watch<OfferProvider>();
-    final isResponsableInscripto =
-        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ??
-            false;
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.watch<SettingsProvider>();
+    } on ProviderNotFoundException catch (_) {
+      settingsProv = context.watch<SettingsProvider?>();
+    }
+    final settings = settingsProv?.settings;
+    final isResponsableInscripto = settings?.isResponsableInscripto ?? false;
 
     final product = _selectedProduct;
     final double dialogWidth =
         600.0.clamp(320.0, MediaQuery.of(context).size.width - 48);
 
-    double? wholesalePrice;
-    double? cardPrice;
-    double? customPrice;
+    List<ProductPriceTierPreview> multiPricePreviews = const [];
     double? promoPrice;
     String? promoName;
 
@@ -327,34 +330,19 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
             ?.name;
       }
 
-      wholesalePrice = ProductPricingCalculator.calculate(
+      multiPricePreviews = ProductPricingCalculator.buildMultiPricePreviews(
         product: product,
-        activeTier: PriceTier.wholesale,
-        wholesaleFactor: pos.wholesaleFactor,
+        multiPriceEnabled: settings?.hasMultiPriceEnabled == true,
+        wholesaleFactor: settings?.wholesalePriceFactor ?? pos.wholesaleFactor,
+        cardFactor: settings?.cardPriceFactor ?? pos.cardFactor,
+        customTiers: settings?.customPriceTiers ?? const [],
         promotionalPrice: promoPrice,
         hasExplicitOffer: promoPrice != null,
         cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
-      ).tierCalculatedUnitPrice;
-
-      cardPrice = ProductPricingCalculator.calculate(
-        product: product,
-        activeTier: PriceTier.card,
-        cardFactor: pos.cardFactor,
-        promotionalPrice: promoPrice,
-        hasExplicitOffer: promoPrice != null,
-        cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
-      ).finalUnitPrice;
-
-      if ((pos.currentCustomFactor - 1.0).abs() > 0.0001) {
-        customPrice = ProductPricingCalculator.calculate(
-          product: product,
-          activeTier: PriceTier.custom,
-          customFactor: pos.currentCustomFactor,
-          promotionalPrice: promoPrice,
-          hasExplicitOffer: promoPrice != null,
-          cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
-        ).finalUnitPrice;
-      }
+        discountTierOnOffersMode: pos.discountTierOnOffersMode,
+        ignoreFixedPrices: settings?.ignoreProductFixedPrices ??
+            pos.ignoreProductFixedPrices,
+      );
     }
 
     return RemoteScannerListener(
@@ -846,35 +834,24 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-
-                        // Listas de precios
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            if (wholesalePrice != null)
-                              _PriceTierCard(
-                                label: 'Mayorista',
-                                priceText:
-                                    '\$${wholesalePrice.toCurrency()}${product.isSoldByWeight ? '/Kg' : ''}',
-                              ),
-                            if (cardPrice != null)
-                              _PriceTierCard(
-                                label: 'Tarjeta',
-                                priceText:
-                                    '\$${cardPrice.toCurrency()}${product.isSoldByWeight ? '/Kg' : ''}',
-                              ),
-                            if (customPrice != null)
-                              _PriceTierCard(
-                                label: (pos.customTierLabel ?? '').trim().isNotEmpty
-                                    ? pos.customTierLabel!
-                                    : 'Lista Pers.',
-                                priceText:
-                                    '\$${customPrice.toCurrency()}${product.isSoldByWeight ? '/Kg' : ''}',
-                              ),
-                          ],
-                        ),
+                        if (multiPricePreviews.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          // Listas de precios
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: multiPricePreviews
+                                .map(
+                                  (preview) => _PriceTierCard(
+                                    label:
+                                        '${preview.label}${preview.isFixedOverride ? ' (Fijo)' : ''}',
+                                    priceText:
+                                        '\$${preview.price.toCurrency()}${product.isSoldByWeight ? '/Kg' : ''}',
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
 
                         if (product.isCombo &&
                             product.comboIngredients != null &&

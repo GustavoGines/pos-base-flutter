@@ -656,5 +656,62 @@ void main() {
       expect(deliveryFittedBoxAncestor, findsNothing,
           reason: 'Delivery address must wrap naturally without FittedBox');
     });
+
+    testWidgets(
+        'Fase 3: ThermalReceiptWidget separa SUBTOTAL LISTA, AHORRO y RECARGO LISTA en ítem en oferta + Lista Tarjeta',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(310, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final ps5Item = CartItem(
+        product: Product(
+          id: 501,
+          name: 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+          internalCode: '00501',
+          costPrice: 2500000.0,
+          sellingPrice: 3250000.0,
+          stock: 5.0,
+          active: true,
+          isSoldByWeight: false,
+        ),
+        quantity: 1.0,
+        activeTier: PriceTier.card,
+        cardFactor: 1.15,
+        promotionalPrice: 2600000.0,
+        promotionalLabel: 'Oferta Semanal',
+        cardSurchargeOnOffersMode: CardSurchargeOnOffersMode.surchargeOnOffer,
+      );
+
+      expect(ps5Item.unitPrice, 2990000.0);
+      expect(ps5Item.discountSavings, 650000.0);
+      expect(ps5Item.surchargeAmount, 390000.0);
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm80,
+            businessSettings: testSettings,
+            items: [ps5Item],
+            payments: const [
+              {'name': 'Tarjeta Crédito', 'amount': 2990000.0},
+            ],
+            total: 2990000.0,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('SUBTOTAL LISTA:'), findsOneWidget);
+      expect(find.text('\$3.250.000'), findsOneWidget);
+      expect(find.text('AHORRO / DESCUENTO:'), findsOneWidget);
+      expect(find.text('-\$650.000'), findsOneWidget);
+      expect(find.text('RECARGO LISTA:'), findsOneWidget);
+      expect(find.text('+\$390.000'), findsOneWidget);
+    });
   });
 }

@@ -755,5 +755,63 @@ void main() {
       await tester.pump();
       assertZeroRenderFlexOverflow(tester, 'Scrolling back to top at 712x800 breakpoint');
     });
+
+    testWidgets('Precios Globales tab renders and switches Regla Mayorista / Descuento sobre Ofertas', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(createHarnessApp());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await navigateToTab(tester, 'Precios Globales', isCompact: false);
+      expect(tester.takeException(), isNull);
+
+      final labelFinder = find.text(
+        'Regla de Lista Mayorista / Descuento (-%) sobre Productos en Oferta',
+      );
+      final discountDropdownField = find.ancestor(
+        of: labelFinder,
+        matching: find.byType(DropdownButtonFormField<String>),
+      );
+      await tester.ensureVisible(discountDropdownField);
+      await tester.pump();
+      expect(labelFinder, findsOneWidget);
+      expect(discountDropdownField, findsOneWidget);
+
+      // Valor inicial por defecto: best_price_wins
+      expect(
+        find.text('Mejor precio gana (sin acumular descuentos — recomendado)'),
+        findsWidgets,
+      );
+
+      // Abrir dropdown y verificar ambas opciones
+      await tester.tap(
+        find.descendant(
+          of: discountDropdownField,
+          matching: find.byType(DropdownButton<String>),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Lista Mayorista / Descuento (-%) anula ofertas de mostrador'),
+        findsWidgets,
+      );
+
+      // Seleccionar Option 2: wholesale_overrides_offer
+      await tester.tap(
+        find.text('Lista Mayorista / Descuento (-%) anula ofertas de mostrador').last,
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          'Al activar Mayorista o una lista con descuento (-%), se ignoran las ofertas de mostrador y se aplica estrictamente el precio de la lista elegida.',
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

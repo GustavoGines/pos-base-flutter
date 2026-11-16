@@ -98,6 +98,7 @@ class _PosScreenState extends State<PosScreen> {
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
       final settings = Provider.of<SettingsProvider>(context, listen: false).settings;
+      final isMultiPriceEnabled = settings?.hasMultiPriceEnabled == true;
       
       String initialTier = 'base';
       String? initialLabel;
@@ -105,11 +106,11 @@ class _PosScreenState extends State<PosScreen> {
       if (localTerminal.lockedPriceTier != 'none') {
         final lockedTier = localTerminal.lockedPriceTier;
         
-        // Validar si es una lista custom y si aún existe/está habilitada en la configuración global
-        if (lockedTier.startsWith('custom_')) {
+        if (!isMultiPriceEnabled) {
+          localTerminal.setLockedPriceTier('none');
+        } else if (lockedTier.startsWith('custom_')) {
           final tierName = lockedTier.replaceFirst('custom_', '');
-          final isEnabledGlobal = settings != null && (settings.features.multiplePrices || settings.enableAdvancedPriceTiers);
-          final exists = isEnabledGlobal && settings.customPriceTiers.any((t) => t['name'] == tierName);
+          final exists = settings!.customPriceTiers.any((t) => t['name'] == tierName);
           
           if (exists) {
             initialTier = lockedTier;
@@ -124,6 +125,7 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
 
+      posProvider.updateSettings(settings);
       posProvider.setDefaultTier(initialTier, initialLabel);
       if (posProvider.cart.isEmpty) {
         posProvider.clearCart(); // Aplica la lista fijada inmediatamente
@@ -1029,13 +1031,44 @@ class _PosScreenState extends State<PosScreen> {
                           '\$${promoPrice.toCurrency()}',
                           valueColor: const Color(0xFF7B1FA2),
                         ),
-                      if (product.priceWholesale != null &&
-                          product.priceWholesale! > 0)
-                        _buildInfoRow('Precio Mayorista',
-                            '\$${product.priceWholesale!.toCurrency()}'),
-                      if (product.priceCard != null && product.priceCard! > 0)
-                        _buildInfoRow('Precio Tarjeta',
-                            '\$${product.priceCard!.toCurrency()}'),
+                      ...() {
+                        final settings = () {
+                          try {
+                            return Provider.of<SettingsProvider>(
+                              context,
+                              listen: false,
+                            ).settings;
+                          } catch (_) {
+                            return null;
+                          }
+                        }();
+                        final previews =
+                            ProductPricingCalculator.buildMultiPricePreviews(
+                          product: product,
+                          multiPriceEnabled:
+                              settings?.hasMultiPriceEnabled == true,
+                          wholesaleFactor: settings?.wholesalePriceFactor ??
+                              posProvider.wholesaleFactor,
+                          cardFactor: settings?.cardPriceFactor ??
+                              posProvider.cardFactor,
+                          customTiers: settings?.customPriceTiers ?? const [],
+                          promotionalPrice: hasPromo ? promoPrice : null,
+                          hasExplicitOffer: hasPromo,
+                          cardSurchargeOnOffersMode:
+                              posProvider.cardSurchargeOnOffersMode,
+                          discountTierOnOffersMode:
+                              posProvider.discountTierOnOffersMode,
+                          ignoreFixedPrices:
+                              settings?.ignoreProductFixedPrices ??
+                                  posProvider.ignoreProductFixedPrices,
+                        );
+                        return previews.map(
+                          (preview) => _buildInfoRow(
+                            'Precio ${preview.label}${preview.isFixedOverride ? ' (Fijo)' : ''}',
+                            '\$${preview.price.toCurrency()}',
+                          ),
+                        );
+                      }(),
                       if (product.priceTiers != null &&
                           product.priceTiers!.isNotEmpty) ...[
                         const Divider(height: 16),
@@ -1188,45 +1221,56 @@ class _PosScreenState extends State<PosScreen> {
                 ],
                 const SizedBox(height: 14),
 
-                // ── Footer de acciones (ancho controlado, sin estirar el diálogo) ──
-                Row(
-                  children: [
-                    TextButton.icon(
-                      icon: Icon(
-                          isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                          size: 18),
-                      label: Text(isPinned ? 'Desfijar' : '📌 Fijar'),
-                      onPressed: () {
-                        localTerminal.togglePinnedProduct(product.id);
-                        Navigator.pop(ctx);
-                        // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
-                        if (_quickAccessFilter == 'pinned' &&
-                            localTerminal.pinnedProductIds.isEmpty) {
-                          setState(() {
-                            _quickAccessFilter = 'all';
-                          });
-                        }
-                      },
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cerrar'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.add_shopping_cart, size: 18),
-                      label: const Text('Agregar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E88E5),
-                        foregroundColor: Colors.white,
+                // ── Footer de acciones (ancho controlado, sin desbordar en vista compacta) ──
+                SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      TextButton.icon(
+                        icon: Icon(
+                            isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                            size: 18),
+                        label: Text(isPinned ? 'Desfijar' : '📌 Fijar'),
+                        onPressed: () {
+                          localTerminal.togglePinnedProduct(product.id);
+                          Navigator.pop(ctx);
+                          // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
+                          if (_quickAccessFilter == 'pinned' &&
+                              localTerminal.pinnedProductIds.isEmpty) {
+                            setState(() {
+                              _quickAccessFilter = 'all';
+                            });
+                          }
+                        },
                       ),
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _handleProductSelection(product);
-                      },
-                    ),
-                  ],
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cerrar'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.add_shopping_cart, size: 18),
+                            label: const Text('Agregar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E88E5),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _handleProductSelection(product);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1323,7 +1367,14 @@ class _PosScreenState extends State<PosScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
           Text(value,
               style: TextStyle(
                   fontWeight: FontWeight.w600,
@@ -1862,12 +1913,17 @@ class _PosScreenState extends State<PosScreen> {
                   0.0,
                   (sum, it) => sum + it.discountSavings,
                 );
+                final double cartTierSurcharge = posProvider.lastSaleCart.fold(
+                  0.0,
+                  (sum, it) => sum + it.surchargeAmount,
+                );
                 final double cartSubtotalList = posProvider.lastSaleCart.fold(
                   0.0,
                   (sum, it) => sum + it.regularSubtotal,
                 );
                 sale['subtotal_list'] = cartSubtotalList;
                 sale['discount_amount'] = cartSavings;
+                sale['tier_surcharge_amount'] = cartTierSurcharge;
                 sale['items'] = posProvider.lastSaleCart
                     .map((item) => {
                           'product_id': item.product.id,
@@ -1880,6 +1936,7 @@ class _PosScreenState extends State<PosScreen> {
                           'regular_price': item.product.sellingPrice,
                           'regular_subtotal': item.regularSubtotal,
                           'discount_amount': item.discountSavings,
+                          'surcharge_amount': item.surchargeAmount,
                           'has_discount': item.hasDiscount,
                           'discount_label': item.hasActiveOffer
                               ? item.offerBadgeLabel
@@ -3147,15 +3204,24 @@ class _PosScreenState extends State<PosScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shopping_cart_outlined, size: 20, color: Colors.blueAccent),
-                    SizedBox(width: 8),
-                    Text('Ticket Actual',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                  ],
+                const Expanded(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shopping_cart_outlined, size: 20, color: Colors.blueAccent),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Ticket Actual',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 6),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   switchInCurve: Curves.easeOutCubic,
@@ -3299,448 +3365,491 @@ class _PosScreenState extends State<PosScreen> {
                           ? item.quantity.toQty()
                           : item.quantity.round().toString();
 
-                      // Fila 3 unificada (Orden estricto: 1.Estrategia -> 2.Stock/Vto -> 3.Origen/Costo -> 4.Fiscal IVA)
-                      final leadingBadges = <Widget>[];
-                      if (item.hasManualSellingPriceOverride) {
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: '✏️ Precio manual',
-                          bgColor: Colors.teal.shade50,
-                          borderColor: Colors.teal.shade300,
-                          textColor: Colors.teal.shade900,
-                          tooltip:
-                              'Precio ajustado manualmente (Lista: \$${item.product.sellingPrice.toCurrency()})',
-                        ));
-                      } else if (item.hasActiveOffer) {
-                        if (item.hasSurchargeOnOffer) {
-                          final tierName = item.activeTier == PriceTier.card
-                              ? 'Tarjeta'
-                              : ((item.customTierLabel ?? '').trim().isNotEmpty
-                                  ? item.customTierLabel!.trim()
-                                  : 'Lista +%');
-                          final f = item.calculatedPrice.appliedSurchargeFactor;
-                          final pctStr = (f != null && f > 1.0001)
-                              ? ' (+${((f - 1.0) * 100.0).toCleanMargin()}%)'
-                              : '';
-                          leadingBadges.add(_buildCartMicroChip(
-                            label: '💳 $tierName s/ Oferta$pctStr',
-                            bgColor: Colors.deepOrange.shade50,
-                            borderColor: Colors.deepOrange.shade300,
-                            textColor: Colors.deepOrange.shade900,
-                            tooltip:
-                                '${item.offerBadgeLabel} (\$${item.calculatedPrice.preSurchargeUnitPrice.toCurrency()}) + recargo de lista ($tierName) = \$${item.unitPrice.toCurrency()}',
-                          ));
-                        } else if (item.isOfferSurchargeExempt) {
-                          leadingBadges.add(_buildCartMicroChip(
-                            label: '🏷️ ${item.offerBadgeLabel} (Sin recargo)',
-                            bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
-                            borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
-                            textColor: const Color(0xFF7B1FA2),
-                            tooltip: 'Oferta vigente aplicada sin recargo de lista',
-                          ));
-                        } else {
-                          leadingBadges.add(_buildCartMicroChip(
-                            label: '🏷️ ${item.offerBadgeLabel}',
-                            bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
-                            borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
-                            textColor: const Color(0xFF7B1FA2),
-                            tooltip:
-                                'Oferta promocional aplicada (Lista: \$${item.product.sellingPrice.toCurrency()})',
-                          ));
-                        }
-                      } else if (item.hasAgreedPrice) {
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: '📋 Precio pactado',
-                          bgColor: Colors.blueGrey.shade50,
-                          borderColor: Colors.blueGrey.shade300,
-                          textColor: Colors.blueGrey.shade800,
-                          tooltip:
-                              'Precio congelado de orden o presupuesto (Lista: \$${item.product.sellingPrice.toCurrency()})',
-                        ));
-                      } else if (item.activeTier == PriceTier.wholesale) {
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: '🏭 Mayorista',
-                          bgColor: Colors.blue.shade50,
-                          borderColor: Colors.blue.shade300,
-                          textColor: Colors.blue.shade800,
-                          tooltip: 'Lista Mayorista aplicada',
-                        ));
-                      } else if (item.activeTier == PriceTier.card) {
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: '💳 Tarjeta',
-                          bgColor: Colors.orange.shade50,
-                          borderColor: Colors.orange.shade300,
-                          textColor: Colors.orange.shade800,
-                          tooltip: 'Recargo Lista Tarjeta aplicado',
-                        ));
-                      } else if (item.activeTier == PriceTier.custom) {
-                        final pct = (item.customFactor - 1.0) * 100.0;
-                        final pctStr = pct.abs() >= 0.05
-                            ? ' (${pct > 0 ? '+' : ''}${pct.toCleanMargin()}%)'
-                            : '';
-                        final tierLabel =
-                            (item.customTierLabel ?? '').trim().isNotEmpty
-                                ? item.customTierLabel!.trim()
-                                : 'Lista Esp.';
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: '🏷️ $tierLabel$pctStr',
-                          bgColor: Colors.purple.shade50,
-                          borderColor: Colors.purple.shade300,
-                          textColor: Colors.purple.shade800,
-                          tooltip: 'Lista personalizada: $tierLabel$pctStr',
-                        ));
-                      } else if (item.hasVolumeScale) {
-                        final tier = item.product.getApplicableTier(item.quantity);
-                        final minQ = tier != null
-                            ? ((tier['min_quantity'] as num?)?.toQty() ?? '')
-                            : '';
-                        leadingBadges.add(_buildCartMicroChip(
-                          label: minQ.isNotEmpty ? '📦 Escala x$minQ' : '📦 Escala',
-                          bgColor: Colors.green.shade50,
-                          borderColor: Colors.green.shade300,
-                          textColor: Colors.green.shade800,
-                          tooltip: 'Descuento por cantidad/volumen aplicado',
-                        ));
-                      }
+                      return LayoutBuilder(
+                        builder: (context, itemConstraints) {
+                          final double cartWidth = itemConstraints.maxWidth;
+                          final bool isCompactCart = cartWidth < 395;
+                          final bool isWideCart = cartWidth >= 475;
 
-                      final trailingBadges = <Widget>[
-                        if (item.isTemporary && !item.saveToCatalog)
-                          _buildCartMicroChip(
-                            label: item.product.isCombo
-                                ? '⚡ Combo Temp.'
-                                : '⚡ Temporal',
-                            bgColor: Colors.amber.shade50,
-                            borderColor: Colors.amber.shade300,
-                            textColor: Colors.amber.shade900,
-                            tooltip: 'Ítem temporal solo para esta venta (no descuenta stock propio)',
-                          ),
-                        if (item.saveToCatalog)
-                          _buildCartMicroChip(
-                            label: '🆕 A catálogo',
-                            bgColor: Colors.blue.shade50,
-                            borderColor: Colors.blue.shade300,
-                            textColor: Colors.blue.shade900,
-                            tooltip: 'Se creará automáticamente en el catálogo al cobrar',
-                          ),
-                        if (item.isRenamed)
-                          _buildCartMicroChip(
-                            label: '✏️ Alias',
-                            bgColor: Colors.indigo.shade50,
-                            borderColor: Colors.indigo.shade200,
-                            textColor: Colors.indigo.shade800,
-                            tooltip: 'Nombre original en catálogo: ${item.product.name}',
-                          ),
-                        if (item.hasManualCostOverride)
-                          _buildCartMicroChip(
-                            label: '✏️ Costo',
-                            bgColor: Colors.teal.shade50,
-                            borderColor: Colors.teal.shade200,
-                            textColor: Colors.teal.shade800,
-                            tooltip:
-                                'Costo ajustado para esta venta: \$${item.effectiveCostPrice.toCurrency()}',
-                          ),
-                        if (isRI)
-                          _buildCartMicroChip(
-                            label: item.product.ivaRate == 0
-                                ? 'Exento 0%'
-                                : 'IVA ${item.product.ivaRate.toCleanMargin()}%',
-                            bgColor: item.product.ivaRate == 0
-                                ? Colors.blueGrey.shade50
-                                : (item.product.ivaRate == 10.5
-                                    ? Colors.indigo.shade50
-                                    : Colors.purple.shade50),
-                            borderColor: item.product.ivaRate == 0
-                                ? Colors.blueGrey.shade200
-                                : (item.product.ivaRate == 10.5
-                                    ? Colors.indigo.shade200
-                                    : Colors.purple.shade200),
-                            textColor: item.product.ivaRate == 0
-                                ? Colors.blueGrey.shade700
-                                : (item.product.ivaRate == 10.5
-                                    ? Colors.indigo.shade800
-                                    : Colors.purple.shade800),
-                          ),
-                      ];
+                          // Micro-badge de IVA: ahora vive junto al precio unitario en Fila 2
+                          final Widget? ivaChip = isRI
+                              ? _buildCartMicroChip(
+                                  label: item.product.ivaRate == 0
+                                      ? (isCompactCart ? 'Ex.' : 'Exento 0%')
+                                      : (isCompactCart
+                                          ? '${item.product.ivaRate.toCleanMargin()}%'
+                                          : 'IVA ${item.product.ivaRate.toCleanMargin()}%'),
+                                  bgColor: item.product.ivaRate == 0
+                                      ? Colors.blueGrey.shade50
+                                      : (item.product.ivaRate == 10.5
+                                          ? Colors.indigo.shade50
+                                          : Colors.purple.shade50),
+                                  borderColor: item.product.ivaRate == 0
+                                      ? Colors.blueGrey.shade200
+                                      : (item.product.ivaRate == 10.5
+                                          ? Colors.indigo.shade200
+                                          : Colors.purple.shade200),
+                                  textColor: item.product.ivaRate == 0
+                                      ? Colors.blueGrey.shade700
+                                      : (item.product.ivaRate == 10.5
+                                          ? Colors.indigo.shade800
+                                          : Colors.purple.shade800),
+                                  tooltip: item.product.ivaRate == 0
+                                      ? 'Producto Exento (IVA 0%)'
+                                      : 'Alícuota fiscal: IVA ${item.product.ivaRate.toCleanMargin()}%',
+                                )
+                              : null;
 
-                      final nameColumn = Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.effectiveDisplayName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.5,
-                              height: 1.2,
-                            ),
-                          ),
-                          if (item.customDetails != null &&
-                              item.customDetails!.trim().isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                '📝 ${item.customDetails!.trim()}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.blueGrey.shade700,
-                                  fontStyle: FontStyle.italic,
-                                ),
+                          // Fila 3 unificada (Orden estricto: 1.Estrategia -> 2.Stock/Vto -> 3.Origen/Costo)
+                          final leadingBadges = <Widget>[];
+                          if (item.hasManualSellingPriceOverride) {
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: '✏️ Precio manual',
+                              bgColor: Colors.teal.shade50,
+                              borderColor: Colors.teal.shade300,
+                              textColor: Colors.teal.shade900,
+                              tooltip:
+                                  'Precio ajustado manualmente (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                            ));
+                          } else if (item.hasActiveOffer) {
+                            if (item.hasSurchargeOnOffer) {
+                              final rawTierName = item.activeTier == PriceTier.card
+                                  ? 'Tarjeta'
+                                  : ((item.customTierLabel ?? '').trim().isNotEmpty
+                                      ? item.customTierLabel!.trim()
+                                      : 'Lista +%');
+                              final tierName = isCompactCart && rawTierName == 'Tarjeta'
+                                  ? 'Tarj.'
+                                  : rawTierName;
+                              final f = item.calculatedPrice.appliedSurchargeFactor;
+                              final pctStr = (f != null && f > 1.0001)
+                                  ? ' (+${((f - 1.0) * 100.0).toCleanMargin()}%)'
+                                  : '';
+                              leadingBadges.add(_buildCartMicroChip(
+                                label: isCompactCart
+                                    ? '💳 $tierName s/Of.$pctStr'
+                                    : '💳 $tierName s/ Oferta$pctStr',
+                                bgColor: Colors.deepOrange.shade50,
+                                borderColor: Colors.deepOrange.shade300,
+                                textColor: Colors.deepOrange.shade900,
+                                tooltip:
+                                    '${item.offerBadgeLabel} (\$${item.calculatedPrice.preSurchargeUnitPrice.toCurrency()}) + recargo de lista ($rawTierName) = \$${item.unitPrice.toCurrency()}',
+                              ));
+                            } else if (item.isOfferSurchargeExempt) {
+                              leadingBadges.add(_buildCartMicroChip(
+                                label: isCompactCart
+                                    ? '🏷️ ${item.offerBadgeLabel} (Sin rec.)'
+                                    : '🏷️ ${item.offerBadgeLabel} (Sin recargo)',
+                                bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
+                                borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
+                                textColor: const Color(0xFF7B1FA2),
+                                tooltip: 'Oferta vigente aplicada sin recargo de lista',
+                              ));
+                            } else {
+                              leadingBadges.add(_buildCartMicroChip(
+                                label: item.offerBeatDiscountTier && !isCompactCart
+                                    ? '🏷️ ${item.offerBadgeLabel} (Mejor precio)'
+                                    : '🏷️ ${item.offerBadgeLabel}',
+                                bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
+                                borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
+                                textColor: const Color(0xFF7B1FA2),
+                                tooltip: item.offerBeatDiscountTier
+                                    ? 'Oferta aplicada por tener menor precio que la lista activa (sin acumular descuentos). Lista base: \$${item.product.sellingPrice.toCurrency()}'
+                                    : 'Oferta promocional aplicada (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                              ));
+                            }
+                          } else if (item.hasAgreedPrice) {
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: isCompactCart ? '📋 Pactado' : '📋 Precio pactado',
+                              bgColor: Colors.blueGrey.shade50,
+                              borderColor: Colors.blueGrey.shade300,
+                              textColor: Colors.blueGrey.shade800,
+                              tooltip:
+                                  'Precio congelado de orden o presupuesto (Lista: \$${item.product.sellingPrice.toCurrency()})',
+                            ));
+                          } else if (item.activeTier == PriceTier.wholesale) {
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: '🏭 Mayorista',
+                              bgColor: Colors.blue.shade50,
+                              borderColor: Colors.blue.shade300,
+                              textColor: Colors.blue.shade800,
+                              tooltip: 'Lista Mayorista aplicada',
+                            ));
+                          } else if (item.activeTier == PriceTier.card) {
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: '💳 Tarjeta',
+                              bgColor: Colors.orange.shade50,
+                              borderColor: Colors.orange.shade300,
+                              textColor: Colors.orange.shade800,
+                              tooltip: 'Recargo Lista Tarjeta aplicado',
+                            ));
+                          } else if (item.activeTier == PriceTier.custom) {
+                            final pct = (item.customFactor - 1.0) * 100.0;
+                            final pctStr = pct.abs() >= 0.05
+                                ? ' (${pct > 0 ? '+' : ''}${pct.toCleanMargin()}%)'
+                                : '';
+                            final tierLabel =
+                                (item.customTierLabel ?? '').trim().isNotEmpty
+                                    ? item.customTierLabel!.trim()
+                                    : 'Lista Esp.';
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: '🏷️ $tierLabel$pctStr',
+                              bgColor: Colors.purple.shade50,
+                              borderColor: Colors.purple.shade300,
+                              textColor: Colors.purple.shade800,
+                              tooltip: 'Lista personalizada: $tierLabel$pctStr',
+                            ));
+                          } else if (item.hasVolumeScale) {
+                            final tier = item.product.getApplicableTier(item.quantity);
+                            final minQ = tier != null
+                                ? ((tier['min_quantity'] as num?)?.toQty() ?? '')
+                                : '';
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: minQ.isNotEmpty ? '📦 Escala x$minQ' : '📦 Escala',
+                              bgColor: Colors.green.shade50,
+                              borderColor: Colors.green.shade300,
+                              textColor: Colors.green.shade800,
+                              tooltip: 'Descuento por cantidad/volumen aplicado',
+                            ));
+                          }
+
+                          final trailingBadges = <Widget>[
+                            if (item.isTemporary && !item.saveToCatalog)
+                              _buildCartMicroChip(
+                                label: item.product.isCombo
+                                    ? '⚡ Combo Temp.'
+                                    : '⚡ Temporal',
+                                bgColor: Colors.amber.shade50,
+                                borderColor: Colors.amber.shade300,
+                                textColor: Colors.amber.shade900,
+                                tooltip: 'Ítem temporal solo para esta venta (no descuenta stock propio)',
                               ),
-                            ),
-                        ],
-                      );
+                            if (item.saveToCatalog)
+                              _buildCartMicroChip(
+                                label: '🆕 A catálogo',
+                                bgColor: Colors.blue.shade50,
+                                borderColor: Colors.blue.shade300,
+                                textColor: Colors.blue.shade900,
+                                tooltip: 'Se creará automáticamente en el catálogo al cobrar',
+                              ),
+                            if (item.isRenamed)
+                              _buildCartMicroChip(
+                                label: '✏️ Alias',
+                                bgColor: Colors.indigo.shade50,
+                                borderColor: Colors.indigo.shade200,
+                                textColor: Colors.indigo.shade800,
+                                tooltip: 'Nombre original en catálogo: ${item.product.name}',
+                              ),
+                            if (item.hasManualCostOverride)
+                              _buildCartMicroChip(
+                                label: '✏️ Costo',
+                                bgColor: Colors.teal.shade50,
+                                borderColor: Colors.teal.shade200,
+                                textColor: Colors.teal.shade800,
+                                tooltip:
+                                    'Costo ajustado para esta venta: \$${item.effectiveCostPrice.toCurrency()}',
+                              ),
+                          ];
 
-                      return _AnimatedCartItemTile(
-                        key: ObjectKey(item),
-                        quantity: item.quantity,
-                        subtotal: item.subtotal,
-                        onTap: () => _openRenameCartItemDialog(item),
-                        onSecondaryTap: () => _openRenameCartItemDialog(item),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          child: Column(
+                          // En anchos generosos del carrito, subir el badge comercial único a la Fila 2
+                          // ahorra una fila completa cuando el producto no tiene otros chips.
+                          final bool inlineStrategyInPriceRow =
+                              isWideCart && leadingBadges.length == 1;
+
+                          final nameColumn = Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Fila 1: Nombre del producto (100% ancho disponible) + Editar + Eliminar
-                              Row(
+                              Text(
+                                item.effectiveDisplayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13.5,
+                                  height: 1.2,
+                                ),
+                              ),
+                              if (item.customDetails != null &&
+                                  item.customDetails!.trim().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    '📝 ${item.customDetails!.trim()}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.blueGrey.shade700,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+
+                          return _AnimatedCartItemTile(
+                            key: ObjectKey(item),
+                            quantity: item.quantity,
+                            subtotal: item.subtotal,
+                            onTap: () => _openRenameCartItemDialog(item),
+                            onSecondaryTap: () => _openRenameCartItemDialog(item),
+                            child: Padding(
+                              padding: isCompactCart
+                                  ? const EdgeInsets.symmetric(
+                                      horizontal: 9, vertical: 7)
+                                  : const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: item.isRenamed
-                                        ? Tooltip(
-                                            message:
-                                                '${item.effectiveDisplayName}\n(Catálogo: ${item.product.name})',
-                                            waitDuration: const Duration(
-                                                milliseconds: 500),
-                                            child: nameColumn,
-                                          )
-                                        : nameColumn,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Tooltip(
-                                    message:
-                                        'Editar Línea en Carrito (Clic / Clic Der. / Ctrl+E)',
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(6),
-                                      onTap: () =>
-                                          _openRenameCartItemDialog(item),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(2.0),
-                                        child: Icon(
-                                          Icons.edit_note_rounded,
-                                          size: 19,
-                                          color: item.isRenamed ||
-                                                  item.hasManualPriceOverride ||
-                                                  (item.customDetails != null &&
-                                                      item.customDetails!
-                                                          .trim()
-                                                          .isNotEmpty)
-                                              ? Colors.indigo.shade700
-                                              : Colors.blueGrey.shade600,
-                                        ),
+                                  // Fila 1: Nombre del producto (100% ancho disponible) + Editar + Eliminar
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: item.isRenamed
+                                            ? Tooltip(
+                                                message:
+                                                    '${item.effectiveDisplayName}\n(Catálogo: ${item.product.name})',
+                                                waitDuration: const Duration(
+                                                    milliseconds: 500),
+                                                child: nameColumn,
+                                              )
+                                            : nameColumn,
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(6),
-                                    onTap: () {
-                                      pos.removeFromCart(item);
-                                      _searchFocusNode.requestFocus();
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(2.0),
-                                      child: Icon(
-                                        Icons.delete_outline,
-                                        size: 19,
-                                        color: Colors.red.shade600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-
-                              // Fila 2: Precio unitario + Controles de cantidad + Subtotal
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // Precio unitario (con tachado si hay oferta/descuento)
-                                  Expanded(
-                                    child: Wrap(
-                                      spacing: 5,
-                                      runSpacing: 2,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      children: [
-                                        if (item.unitPrice !=
-                                            item.effectiveRegularUnitPrice)
-                                          Text(
-                                            '\$${item.effectiveRegularUnitPrice.toCurrency()}',
-                                            style: const TextStyle(
-                                              decoration:
-                                                  TextDecoration.lineThrough,
-                                              color: Colors.grey,
-                                              fontSize: 11,
+                                      const SizedBox(width: 4),
+                                      Tooltip(
+                                        message:
+                                            'Editar Línea en Carrito (Clic / Clic Der. / Ctrl+E)',
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(6),
+                                          onTap: () =>
+                                              _openRenameCartItemDialog(item),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(2.0),
+                                            child: Icon(
+                                              Icons.edit_note_rounded,
+                                              size: 19,
+                                              color: item.isRenamed ||
+                                                      item.hasManualPriceOverride ||
+                                                      (item.customDetails != null &&
+                                                          item.customDetails!
+                                                              .trim()
+                                                              .isNotEmpty)
+                                                  ? Colors.indigo.shade700
+                                                  : Colors.blueGrey.shade600,
                                             ),
                                           ),
-                                        Text(
-                                          '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: (item.unitPrice !=
-                                                        item.effectiveRegularUnitPrice ||
-                                                    item.hasManualPriceOverride)
-                                                ? FontWeight.bold
-                                                : FontWeight.w500,
-                                            color: item.unitPrice >
-                                                    item.effectiveRegularUnitPrice
-                                                ? Colors.red.shade700
-                                                : (item.unitPrice <
-                                                        item.effectiveRegularUnitPrice
-                                                    ? Colors.green.shade700
-                                                    : (item.hasManualPriceOverride
-                                                        ? Colors.teal.shade800
-                                                        : Colors.black87)),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(6),
+                                        onTap: () {
+                                          pos.removeFromCart(item);
+                                          _searchFocusNode.requestFocus();
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(2.0),
+                                          child: Icon(
+                                            Icons.delete_outline,
+                                            size: 19,
+                                            color: Colors.red.shade600,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(height: 5),
 
-                                  // Controles (- / +) y Subtotal adaptables
-                                  Flexible(
-                                    flex: 0,
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (item.product.isSoldByWeight)
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.scale_outlined,
-                                                  size: 20,
-                                                  color: Colors.blue),
-                                              padding: EdgeInsets.zero,
-                                              constraints:
-                                                  const BoxConstraints(),
-                                              tooltip: 'Editar peso',
-                                              onPressed: () {
-                                                _openRenameCartItemDialog(
-                                                  item,
-                                                  focusQuantityInitially: true,
-                                                );
-                                              },
-                                            )
-                                          else ...[
-                                            InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              onTap: () {
-                                                if (item.quantity > 1) {
-                                                  pos.updateQuantity(
-                                                      item, item.quantity - 1);
-                                                } else {
-                                                  pos.removeFromCart(item);
-                                                }
-                                                _searchFocusNode.requestFocus();
-                                              },
-                                              child: const Padding(
-                                                padding: EdgeInsets.all(2.0),
-                                                child: Icon(
-                                                    Icons.remove_circle_outline,
-                                                    size: 20,
-                                                    color: Colors.grey),
-                                              ),
-                                            ),
-                                            InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              onTap: () =>
-                                                  _openRenameCartItemDialog(
-                                                item,
-                                                focusQuantityInitially: true,
-                                              ),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
-                                                child: Text(
-                                                  qtyDisplay,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
-                                                  ),
+                                  // Fila 2: Precio unitario + Micro-IVA (+ badge en modo ancho) + Stepper + Subtotal
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: Wrap(
+                                          spacing: 5,
+                                          runSpacing: 3,
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
+                                          children: [
+                                            if (item.unitPrice !=
+                                                item.effectiveRegularUnitPrice)
+                                              Text(
+                                                '\$${item.effectiveRegularUnitPrice.toCurrency()}',
+                                                style: const TextStyle(
+                                                  decoration:
+                                                      TextDecoration.lineThrough,
+                                                  color: Colors.grey,
+                                                  fontSize: 11,
                                                 ),
                                               ),
-                                            ),
-                                            InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              onTap: () {
-                                                final catalogProducts = Provider
-                                                        .of<CatalogProvider>(
-                                                            context,
-                                                            listen: false)
-                                                    .products;
-                                                final blockMsg = pos
-                                                    .validateUnitStockConstraint(
-                                                  item.product,
-                                                  item.quantity + 1,
-                                                  excludingItem: item,
-                                                  catalogProducts:
-                                                      catalogProducts,
-                                                );
-                                                if (blockMsg != null) {
-                                                  SnackBarService.error(
-                                                      context, blockMsg);
-                                                  _searchFocusNode
-                                                      .requestFocus();
-                                                  return;
-                                                }
-                                                pos.updateQuantity(
-                                                    item, item.quantity + 1);
-                                                _searchFocusNode.requestFocus();
-                                              },
-                                              child: const Padding(
-                                                padding: EdgeInsets.all(2.0),
-                                                child: Icon(
-                                                    Icons.add_circle_outline,
-                                                    size: 20,
-                                                    color: Colors.blue),
+                                            Text(
+                                              '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
+                                              style: TextStyle(
+                                                fontSize: isCompactCart ? 11.5 : 12,
+                                                fontWeight: (item.unitPrice !=
+                                                            item.effectiveRegularUnitPrice ||
+                                                        item.hasManualPriceOverride)
+                                                    ? FontWeight.bold
+                                                    : FontWeight.w500,
+                                                color: item.unitPrice >
+                                                        item.effectiveRegularUnitPrice
+                                                    ? Colors.red.shade700
+                                                    : (item.unitPrice <
+                                                            item.effectiveRegularUnitPrice
+                                                        ? Colors.green.shade700
+                                                        : (item.hasManualPriceOverride
+                                                            ? Colors.teal.shade800
+                                                            : Colors.black87)),
                                               ),
                                             ),
+                                            if (ivaChip != null) ivaChip,
+                                            if (inlineStrategyInPriceRow)
+                                              ...leadingBadges,
                                           ],
-                                          const SizedBox(width: 10),
-                                          Text(
-                                            '\$${item.subtotal.toCurrency()}',
-                                            style: const TextStyle(
-                                              fontSize: 14.5,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
+                                      SizedBox(width: isCompactCart ? 4 : 6),
+
+                                      // Controles (- / +) y Subtotal adaptables
+                                      Flexible(
+                                        flex: 0,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (item.product.isSoldByWeight)
+                                                IconButton(
+                                                  icon: const Icon(
+                                                      Icons.scale_outlined,
+                                                      size: 20,
+                                                      color: Colors.blue),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                  tooltip: 'Editar peso',
+                                                  onPressed: () {
+                                                    _openRenameCartItemDialog(
+                                                      item,
+                                                      focusQuantityInitially: true,
+                                                    );
+                                                  },
+                                                )
+                                              else ...[
+                                                InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  onTap: () {
+                                                    if (item.quantity > 1) {
+                                                      pos.updateQuantity(
+                                                          item, item.quantity - 1);
+                                                    } else {
+                                                      pos.removeFromCart(item);
+                                                    }
+                                                    _searchFocusNode.requestFocus();
+                                                  },
+                                                  child: Padding(
+                                                    padding: EdgeInsets.all(
+                                                        isCompactCart ? 1.5 : 2.0),
+                                                    child: Icon(
+                                                        Icons.remove_circle_outline,
+                                                        size: isCompactCart ? 18 : 20,
+                                                        color: Colors.grey),
+                                                  ),
+                                                ),
+                                                InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  onTap: () =>
+                                                      _openRenameCartItemDialog(
+                                                    item,
+                                                    focusQuantityInitially: true,
+                                                  ),
+                                                  child: Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal:
+                                                                isCompactCart ? 4 : 6,
+                                                            vertical: 2),
+                                                    child: Text(
+                                                      qtyDisplay,
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 13,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  onTap: () {
+                                                    final catalogProducts = Provider
+                                                            .of<CatalogProvider>(
+                                                                context,
+                                                                listen: false)
+                                                        .products;
+                                                    final blockMsg = pos
+                                                        .validateUnitStockConstraint(
+                                                      item.product,
+                                                      item.quantity + 1,
+                                                      excludingItem: item,
+                                                      catalogProducts:
+                                                          catalogProducts,
+                                                    );
+                                                    if (blockMsg != null) {
+                                                      SnackBarService.error(
+                                                          context, blockMsg);
+                                                      _searchFocusNode
+                                                          .requestFocus();
+                                                      return;
+                                                    }
+                                                    pos.updateQuantity(
+                                                        item, item.quantity + 1);
+                                                    _searchFocusNode.requestFocus();
+                                                  },
+                                                  child: Padding(
+                                                    padding: EdgeInsets.all(
+                                                        isCompactCart ? 1.5 : 2.0),
+                                                    child: Icon(
+                                                        Icons.add_circle_outline,
+                                                        size: isCompactCart ? 18 : 20,
+                                                        color: Colors.blue),
+                                                  ),
+                                                ),
+                                              ],
+                                              SizedBox(
+                                                  width: isCompactCart ? 6 : 10),
+                                              Text(
+                                                '\$${item.subtotal.toCurrency()}',
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      isCompactCart ? 13.5 : 14.5,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Fila 3 unificada: Estrategia/Precio (si no se subió en ancho) -> Stock/Vto -> Origen/Costo
+                                  _CartItemStockIndicator(
+                                    item: item,
+                                    leadingBadges: inlineStrategyInPriceRow
+                                        ? const []
+                                        : leadingBadges,
+                                    trailingBadges: trailingBadges,
                                   ),
                                 ],
                               ),
-
-                              // Fila 3 unificada: Estrategia/Precio -> Stock/Vto -> Origen/Costo -> Fiscal IVA
-                              _CartItemStockIndicator(
-                                item: item,
-                                leadingBadges: leadingBadges,
-                                trailingBadges: trailingBadges,
-                              ),
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -3765,15 +3874,9 @@ class _PosScreenState extends State<PosScreen> {
               children: [
                 // ── Lista de Precios [Premium Feature + Modo Avanzado] ────────────────
                 if (context
-                        .read<SettingsProvider>()
+                        .watch<SettingsProvider>()
                         .settings
-                        ?.features
-                        .multiplePrices ==
-                    true &&
-                    context
-                        .read<SettingsProvider>()
-                        .settings
-                        ?.enableAdvancedPriceTiers ==
+                        ?.hasMultiPriceEnabled ==
                     true)
                   Builder(builder: (_) {
                     final settings = context.read<SettingsProvider>().settings;
@@ -3849,32 +3952,18 @@ class _PosScreenState extends State<PosScreen> {
                                           } else if (val == 'wholesale') {
                                             pos.setPriceTier(
                                               PriceTier.wholesale,
-                                              wholesaleFactor: settings != null
-                                                  ? 1 +
-                                                      (settings
-                                                              .globalWholesalePercentage /
-                                                          100)
-                                                  : null,
-                                              cardFactor: settings != null
-                                                  ? 1 +
-                                                      (settings.globalCardPercentage /
-                                                          100)
-                                                  : null,
+                                              wholesaleFactor:
+                                                  settings?.wholesalePriceFactor,
+                                              cardFactor:
+                                                  settings?.cardPriceFactor,
                                             );
                                           } else if (val == 'card') {
                                             pos.setPriceTier(
                                               PriceTier.card,
-                                              wholesaleFactor: settings != null
-                                                  ? 1 +
-                                                      (settings
-                                                              .globalWholesalePercentage /
-                                                          100)
-                                                  : null,
-                                              cardFactor: settings != null
-                                                  ? 1 +
-                                                      (settings.globalCardPercentage /
-                                                          100)
-                                                  : null,
+                                              wholesaleFactor:
+                                                  settings?.wholesalePriceFactor,
+                                              cardFactor:
+                                                  settings?.cardPriceFactor,
                                             );
                                           } else if (val.startsWith('custom_')) {
                                             final label =
@@ -6203,6 +6292,8 @@ class _PosScreenState extends State<PosScreen> {
           promotionalPrice: promoPrice,
           hasExplicitOffer: hasOffer,
           cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
+          discountTierOnOffersMode: pos.discountTierOnOffersMode,
+          ignoreFixedPrices: pos.ignoreProductFixedPrices,
         );
 
         final displayPrice = calc.finalUnitPrice;

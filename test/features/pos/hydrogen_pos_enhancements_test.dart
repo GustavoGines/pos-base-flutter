@@ -250,8 +250,8 @@ void main() {
         expect(find.text('Servicio / Honorario en Mostrador'), findsOneWidget);
         expect(find.textContaining('Modalidad Servicio / Honorario'), findsOneWidget);
 
-        // Cambiar a Combo / Promoción y muestrear mitad de transición
-        await tester.tap(find.text('Combo / Promoción'));
+        // Cambiar a Combo / Fracción y muestrear mitad de transición
+        await tester.tap(find.text('Combo / Fracción'));
         await tester.pump(const Duration(milliseconds: 140));
         await tester.pumpAndSettle();
         expect(find.text('Combo / Oferta Rápida en Mostrador'), findsOneWidget);

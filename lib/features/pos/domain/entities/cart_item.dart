@@ -5,6 +5,7 @@ export '../services/product_pricing_calculator.dart'
     show
         PriceTier,
         CardSurchargeOnOffersMode,
+        DiscountTierOnOffersMode,
         CalculatedProductPrice,
         ProductPricingCalculator;
 
@@ -21,6 +22,8 @@ class CartItem {
   String? promotionalPeriodType; // 'daily', 'weekly', 'monthly', 'custom'
   double? agreedUnitPrice; // Precio congelado pactado (ej. Orden en espera / Presupuesto recuperado)
   CardSurchargeOnOffersMode cardSurchargeOnOffersMode;
+  DiscountTierOnOffersMode discountTierOnOffersMode;
+  bool ignoreFixedPrices;
   bool isTemporary; // Ítem/Combo temporal creado en POS (sin descuento de stock)
   bool saveToCatalog; // Si es true, el backend creará el producto en el catálogo con needs_catalog_review=true
   String? customDescription; // Sobrescritura temporal del nombre para Factura/Ticket
@@ -43,6 +46,8 @@ class CartItem {
     this.promotionalPeriodType,
     this.agreedUnitPrice,
     this.cardSurchargeOnOffersMode = CardSurchargeOnOffersMode.surchargeOnOffer,
+    this.discountTierOnOffersMode = DiscountTierOnOffersMode.bestPriceWins,
+    this.ignoreFixedPrices = false,
     this.isTemporary = false,
     this.saveToCatalog = false,
     this.customDescription,
@@ -142,6 +147,8 @@ class CartItem {
                 agreedUnitPrice == null),
         agreedUnitPrice: agreedUnitPrice,
         cardSurchargeOnOffersMode: cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: discountTierOnOffersMode,
+        ignoreFixedPrices: ignoreFixedPrices,
       );
 
   /// Precio unitario calculado automáticamente por lista/oferta (sin override manual)
@@ -175,19 +182,51 @@ class CartItem {
           : ProductPricingCalculator.roundMoney(product.sellingPrice);
 
   /// Subtotal de lista regular (sin descuentos ni listas especiales)
-  double get regularSubtotal => effectiveRegularUnitPrice * quantity;
+  double get regularSubtotal =>
+      ProductPricingCalculator.roundMoney(effectiveRegularUnitPrice * quantity);
 
-  /// Monto de descuento ahorrado en este ítem
-  double get discountSavings => (regularSubtotal - subtotal).clamp(0.0, double.infinity);
+  /// Monto de descuento ahorrado en este ítem.
+  /// Si una oferta tiene recargo de Tarjeta/Lista encima, se preserva íntegro el
+  /// ahorro real respecto al precio de lista (sin netearlo contra el recargo).
+  double get discountSavings {
+    if (!hasManualSellingPriceOverride && calculatedPrice.hasSurchargeOnOffer) {
+      final preSurchargeSub = ProductPricingCalculator.roundMoney(
+        calculatedPrice.preSurchargeUnitPrice * quantity,
+      );
+      if (regularSubtotal > preSurchargeSub + 0.001) {
+        return ProductPricingCalculator.roundMoney(
+          regularSubtotal - preSurchargeSub,
+        );
+      }
+    }
+    return ProductPricingCalculator.roundMoney(
+      (regularSubtotal - subtotal).clamp(0.0, double.infinity),
+    );
+  }
 
-  /// Monto de recargo aplicado a este ítem (por lista de precios tarjeta/custom con incremento)
-  double get surchargeAmount => (subtotal - regularSubtotal).clamp(0.0, double.infinity);
+  /// Monto de recargo aplicado a este ítem (por lista de precios tarjeta/custom con incremento).
+  /// Si recae sobre un ítem en oferta, mide el recargo real desde el precio promocional.
+  double get surchargeAmount {
+    if (!hasManualSellingPriceOverride && calculatedPrice.hasSurchargeOnOffer) {
+      final preSurchargeSub = ProductPricingCalculator.roundMoney(
+        calculatedPrice.preSurchargeUnitPrice * quantity,
+      );
+      if (subtotal > preSurchargeSub + 0.001) {
+        return ProductPricingCalculator.roundMoney(
+          subtotal - preSurchargeSub,
+        );
+      }
+    }
+    return ProductPricingCalculator.roundMoney(
+      (subtotal - regularSubtotal).clamp(0.0, double.infinity),
+    );
+  }
 
   /// Indica si este ítem tiene algún descuento aplicado respecto al precio de lista
-  bool get hasDiscount => subtotal < regularSubtotal - 0.001;
+  bool get hasDiscount => discountSavings > 0.001;
 
   /// Indica si este ítem tiene un recargo aplicado respecto al precio de lista
-  bool get hasSurcharge => subtotal > regularSubtotal + 0.001;
+  bool get hasSurcharge => surchargeAmount > 0.001;
 
   /// Indica si este ítem tiene una oferta promocional activa aplicada.
   bool get hasActiveOffer =>
@@ -200,6 +239,10 @@ class CartItem {
   /// Indica si la oferta vigente ignoró el recargo de la lista activa por configuración del comercio.
   bool get isOfferSurchargeExempt =>
       !hasManualSellingPriceOverride && calculatedPrice.isOfferSurchargeExempt;
+
+  /// Indica si la oferta promocional vigente ganó frente a una lista con descuento (ej. Mayorista).
+  bool get offerBeatDiscountTier =>
+      !hasManualSellingPriceOverride && calculatedPrice.offerBeatDiscountTier;
 
   /// Indica si se aplica un precio pactado congelado (orden recuperada o presupuesto).
   bool get hasAgreedPrice =>

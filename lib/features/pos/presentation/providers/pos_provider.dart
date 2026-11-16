@@ -218,8 +218,35 @@ class PosProvider with ChangeNotifier {
   double _currentWholesaleFactor = 1.0;
   double _currentCardFactor = 1.0;
   double _currentCustomFactor = 1.0;
+  bool? _lastMultiPriceEnabled;
+  bool _ignoreProductFixedPrices = false;
+  bool get ignoreProductFixedPrices => _ignoreProductFixedPrices;
+
+  void setIgnoreProductFixedPrices(bool value) {
+    if (_ignoreProductFixedPrices == value) return;
+    _ignoreProductFixedPrices = value;
+    for (final item in _cart) {
+      item.ignoreFixedPrices = value;
+    }
+    notifyListeners();
+  }
+
   CardSurchargeOnOffersMode _cardSurchargeOnOffersMode =
       CardSurchargeOnOffersMode.surchargeOnOffer;
+
+  DiscountTierOnOffersMode _discountTierOnOffersMode =
+      DiscountTierOnOffersMode.bestPriceWins;
+  DiscountTierOnOffersMode get discountTierOnOffersMode =>
+      _discountTierOnOffersMode;
+
+  void setDiscountTierOnOffersMode(DiscountTierOnOffersMode mode) {
+    if (_discountTierOnOffersMode == mode) return;
+    _discountTierOnOffersMode = mode;
+    for (final item in _cart) {
+      item.discountTierOnOffersMode = mode;
+    }
+    notifyListeners();
+  }
   double get currentCustomFactor => _currentCustomFactor;
   double get wholesaleFactor => _currentWholesaleFactor;
   double get cardFactor => _currentCardFactor;
@@ -260,6 +287,8 @@ class PosProvider with ChangeNotifier {
       item.customFactor = _currentCustomFactor;
       item.customTierLabel = _customTierLabel;
       item.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
+      item.discountTierOnOffersMode = _discountTierOnOffersMode;
+      item.ignoreFixedPrices = _ignoreProductFixedPrices;
       // Limpiar precios pactados/congelados al cambiar de lista para recalcular con la nueva lista
       item.agreedUnitPrice = null;
       if (item.promotionalLabel == null && item.promotionalPeriodType == null) {
@@ -349,14 +378,66 @@ class PosProvider with ChangeNotifier {
   }
 
   void updateSettings(BusinessSettings? settings) {
-    if (settings != null) {
-      setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
-      setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
-      setCardSurchargeOnOffersMode(
-        CardSurchargeOnOffersMode.fromApiString(
-          settings.cardSurchargeOnOffersMode,
-        ),
-      );
+    if (settings == null) return;
+    final wasMultiPrice = _lastMultiPriceEnabled;
+    final isMultiPrice = settings.hasMultiPriceEnabled;
+    _lastMultiPriceEnabled = isMultiPrice;
+
+    final prevWholesale = _currentWholesaleFactor;
+    final prevCard = _currentCardFactor;
+    final prevCustom = _currentCustomFactor;
+
+    if (isMultiPrice) {
+      _currentWholesaleFactor = settings.wholesalePriceFactor;
+      _currentCardFactor = settings.cardPriceFactor;
+      if (_activeTier == PriceTier.custom &&
+          _customTierLabel != null &&
+          _customTierLabel!.trim().isNotEmpty) {
+        final match = settings.customPriceTiers.firstWhere(
+          (t) =>
+              (t['name'] ?? '').toString().trim() == _customTierLabel!.trim(),
+          orElse: () => const {},
+        );
+        if (match.isNotEmpty) {
+          final mod =
+              double.tryParse(match['modifier']?.toString() ?? '0') ?? 0.0;
+          _currentCustomFactor = 1.0 + (mod / 100.0);
+        }
+      }
+      for (final item in _cart) {
+        item.wholesaleFactor = _currentWholesaleFactor;
+        item.cardFactor = _currentCardFactor;
+        if (_activeTier == PriceTier.custom) {
+          item.customFactor = _currentCustomFactor;
+        }
+      }
+    }
+
+    setIgnoreProductFixedPrices(settings.ignoreProductFixedPrices);
+    setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
+    setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
+    setCardSurchargeOnOffersMode(
+      CardSurchargeOnOffersMode.fromApiString(
+        settings.cardSurchargeOnOffersMode,
+      ),
+    );
+    setDiscountTierOnOffersMode(
+      DiscountTierOnOffersMode.fromApiString(
+        settings.discountTierOnOffersMode,
+      ),
+    );
+
+    // Si Multi-Listas se desactiva desde Configuración, limpiar lista fijada/activa
+    if (wasMultiPrice == true && !isMultiPrice) {
+      _defaultTierStr = 'base';
+      _defaultTierLabel = null;
+      if (_activeTier != PriceTier.base) {
+        resetPriceTier();
+      }
+    } else if ((prevWholesale - _currentWholesaleFactor).abs() > 0.0001 ||
+        (prevCard - _currentCardFactor).abs() > 0.0001 ||
+        (prevCustom - _currentCustomFactor).abs() > 0.0001) {
+      notifyListeners();
     }
   }
 
@@ -885,6 +966,8 @@ class PosProvider with ChangeNotifier {
         promotionalLabel: resolvedPromoLabel,
         promotionalPeriodType: resolvedPromoPeriodType,
         cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: _discountTierOnOffersMode,
+        ignoreFixedPrices: _ignoreProductFixedPrices,
       ));
     } else {
       final index = _cart.indexWhere(
@@ -910,6 +993,8 @@ class PosProvider with ChangeNotifier {
         existing.quantity += quantity;
         existing.manualSubtotal = null;
         existing.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
+        existing.discountTierOnOffersMode = _discountTierOnOffersMode;
+        existing.ignoreFixedPrices = _ignoreProductFixedPrices;
         if (resolvedPromoPrice != null) {
           _cart[index].agreedUnitPrice = null;
           _cart[index].promotionalPrice = resolvedPromoPrice;
@@ -934,6 +1019,8 @@ class PosProvider with ChangeNotifier {
           promotionalLabel: resolvedPromoLabel,
           promotionalPeriodType: resolvedPromoPeriodType,
           cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
+          discountTierOnOffersMode: _discountTierOnOffersMode,
+          ignoreFixedPrices: _ignoreProductFixedPrices,
         ));
       }
     }
@@ -943,6 +1030,7 @@ class PosProvider with ChangeNotifier {
   /// Agrega un Producto o Combo Rápido (temporal o con alta on-the-fly al catálogo) directamente al carrito
   void addQuickOrTemporaryItem(CartItem item) {
     item.cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
+    item.discountTierOnOffersMode = _discountTierOnOffersMode;
     _cart.add(item);
     notifyListeners();
   }
@@ -1372,6 +1460,8 @@ class PosProvider with ChangeNotifier {
           agreedUnitPrice: hasDiscountedPrice ? item.unitPrice : null,
           manualUnitPrice: hasHigherBasePrice ? item.unitPrice : null,
           cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
+          discountTierOnOffersMode: _discountTierOnOffersMode,
+          ignoreFixedPrices: _ignoreProductFixedPrices,
           customDescription: customDesc,
         ));
       } else {
@@ -1524,6 +1614,8 @@ class PosProvider with ChangeNotifier {
         agreedUnitPrice: hasDiscountedPrice ? unitPriceCharged : null,
         manualUnitPrice: hasHigherBasePrice ? unitPriceCharged : null,
         cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: _discountTierOnOffersMode,
+        ignoreFixedPrices: _ignoreProductFixedPrices,
         isTemporary: isTempItem,
         customDescription: customDesc,
         customDetails: customDet,
@@ -1652,6 +1744,7 @@ class PosProvider with ChangeNotifier {
             : (_overrideIibbPerceptionRate != null ? 0.0 : null));
     final totalSnapshot = ((cartSubtotal + effectivePerceptionAmount + shippingCostSnapshot) * 100).roundToDouble() / 100.0;
     final totalSavingsSnapshot = cartTotalSavings;
+    final tierSurchargeSnapshot = cartTotalSurcharge;
     final grossSubtotalSnapshot = cartGrossSubtotal;
     final discountLabelSnapshot = activeTierDiscountLabel;
 
@@ -1904,6 +1997,7 @@ class PosProvider with ChangeNotifier {
               }).toList(),
               'subtotal_list': grossSubtotalSnapshot,
               'discount_amount': totalSavingsSnapshot,
+              'tier_surcharge_amount': tierSurchargeSnapshot,
               'discount_label': discountLabelSnapshot,
               'total': totalSnapshot,
               'shipping_cost': shippingCostSnapshot,
@@ -2653,6 +2747,10 @@ class PosProvider with ChangeNotifier {
                     .toList(),
                 'subtotal_list': itemsGross,
                 'discount_amount': itemsSavings,
+                'tier_surcharge_amount': ticketItems.fold<double>(
+                  0.0,
+                  (sum, i) => sum + i.surchargeAmount,
+                ),
                 'total': baseSaleTotal,
                 'shipping_cost': shippingCost,
                 'surcharge_amount': totalSurcharge,

@@ -10,6 +10,7 @@ import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/catalog/utils/combo_fraction_pricing.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -109,6 +110,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   final Map<int, TextEditingController> _comboQtyCtrls = {};
   final Map<int, TextEditingController> _comboCustomPartsCtrls = {};
   final Set<int> _expandedFractionIngredientIds = <int>{};
+  bool? _manualPortionPricingMode;
   final _comboSearchCtrl = TextEditingController();
   final _comboSearchFocus = FocusNode();
   List<Product> _comboSearchResults = [];
@@ -237,9 +239,6 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     );
   }
 
-  double _roundComboPromoPrice(double value) =>
-      (value * 100).roundToDouble() / 100.0;
-
   String _buildComboIngredientsSummary() {
     return _comboIngredients
         .map((ing) =>
@@ -295,6 +294,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     required String label,
     required String appliedLabel,
     required double currentUnitPrice,
+    bool isMarkup = false,
   }) {
     final isApplied =
         currentUnitPrice > 0 && (currentUnitPrice - targetPrice).abs() < 0.01;
@@ -322,7 +322,11 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
         });
       },
       icon: Icon(
-        isApplied ? Icons.check_circle_outline : Icons.auto_fix_high_rounded,
+        isApplied
+            ? Icons.check_circle_outline
+            : (isMarkup
+                ? Icons.trending_up_rounded
+                : Icons.auto_fix_high_rounded),
         size: 13.5,
       ),
       label: Text(
@@ -599,7 +603,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     } else {
       SnackBarService.warning(
         context,
-        'Cambiá a la pestaña "Combo / Promoción" para escanear ingredientes.',
+        'Cambiá a la pestaña "Combo / Fracción" para escanear ingredientes.',
       );
     }
   }
@@ -1316,105 +1320,153 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
               }).toList(),
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  'Suma lista: \$${individualTotal.toCurrency()} · Combo: \$${currentUnitPrice.toCurrency()}',
-                  style: TextStyle(
-                    fontSize: 11.8,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.deepPurple.shade900,
-                  ),
-                ),
-                if (currentUnitPrice > 0 && individualTotal > 0 && savings > 0.01)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.green.shade300),
-                    ),
-                    child: Text(
-                      'Ahorro \$${savings.toCurrency()} (-${savingsPct.toStringAsFixed(1)}%)',
-                      style: TextStyle(
-                        fontSize: 10.8,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.green.shade800,
-                      ),
-                    ),
-                  )
-                else if (currentUnitPrice > 0 && individualTotal > 0 && savings < -0.01)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.shade300),
-                    ),
-                    child: Text(
-                      '+\$${(-savings).toCurrency()} (+${(-savingsPct).toStringAsFixed(1)}%)',
-                      style: TextStyle(
-                        fontSize: 10.8,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.amber.shade900,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            if (individualTotal > 0) ...[
-              const SizedBox(height: 6),
-              Builder(
-                builder: (_) {
-                  final baseTarget = _roundComboPromoPrice(individualTotal);
-                  final promo10 = _roundComboPromoPrice(individualTotal * 0.90);
-                  final promo15 = _roundComboPromoPrice(individualTotal * 0.85);
-                  return Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        'Sugerido s/ porciones:',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.deepPurple.shade800,
+            Builder(
+              builder: (_) {
+                final bool autoFractionMode =
+                    ComboFractionPricing.hasFractionalQuantities(
+                        _comboIngredients);
+                final bool isFractionMode =
+                    _manualPortionPricingMode ?? autoFractionMode;
+                final baseTarget =
+                    ProductPricingCalculator.roundMoney(individualTotal);
+                final suggestions = ComboFractionPricing.buildSuggestions(
+                  baseTotal: individualTotal,
+                  isFractionMode: isFractionMode,
+                );
+                final yieldSummary = isFractionMode
+                    ? ComboFractionPricing.computeWholeUnitYield(
+                        ingredients: _comboIngredients,
+                        appliedPrice: currentUnitPrice,
+                        proportionalBaseTotal: individualTotal,
+                      )
+                    : null;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          isFractionMode
+                              ? 'Valor proporcional: \$${individualTotal.toCurrency()} · Fracción: \$${currentUnitPrice.toCurrency()}'
+                              : 'Suma lista: \$${individualTotal.toCurrency()} · Combo: \$${currentUnitPrice.toCurrency()}',
+                          style: TextStyle(
+                            fontSize: 11.8,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.deepPurple.shade900,
+                          ),
                         ),
-                      ),
-                      _buildComboPriceSuggestionButton(
-                        key: const Key('quick_combo_apply_base_btn'),
-                        targetPrice: baseTarget,
-                        label: 'Usar \$${baseTarget.toCurrency()}',
-                        appliedLabel: 'Base \$${baseTarget.toCurrency()} aplicada',
-                        currentUnitPrice: currentUnitPrice,
-                      ),
-                      if (promo10 > 0 && (promo10 - baseTarget).abs() >= 0.01)
-                        _buildComboPriceSuggestionButton(
-                          key: const Key('quick_combo_apply_promo10_btn'),
-                          targetPrice: promo10,
-                          label: '-10% (\$${promo10.toCurrency()})',
-                          appliedLabel: '-10% (\$${promo10.toCurrency()}) aplicado',
-                          currentUnitPrice: currentUnitPrice,
+                        ComboFractionPricing.buildModeToggle(
+                          isFractionMode: isFractionMode,
+                          onChanged: (val) =>
+                              setState(() => _manualPortionPricingMode = val),
                         ),
-                      if (promo15 > 0 && (promo15 - promo10).abs() >= 0.01)
-                        _buildComboPriceSuggestionButton(
-                          key: const Key('quick_combo_apply_promo15_btn'),
-                          targetPrice: promo15,
-                          label: '-15% (\$${promo15.toCurrency()})',
-                          appliedLabel: '-15% (\$${promo15.toCurrency()}) aplicado',
-                          currentUnitPrice: currentUnitPrice,
-                        ),
+                        if (currentUnitPrice > 0 &&
+                            individualTotal > 0 &&
+                            savings > 0.01)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.green.shade300),
+                            ),
+                            child: Text(
+                              'Ahorro \$${savings.toCurrency()} (-${savingsPct.toStringAsFixed(1)}%)',
+                              style: TextStyle(
+                                fontSize: 10.8,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          )
+                        else if (currentUnitPrice > 0 &&
+                            individualTotal > 0 &&
+                            savings < -0.01)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.amber.shade300),
+                            ),
+                            child: Text(
+                              '+\$${(-savings).toCurrency()} (+${(-savingsPct).toStringAsFixed(1)}%)',
+                              style: TextStyle(
+                                fontSize: 10.8,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (individualTotal > 0) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            isFractionMode
+                                ? 'Sugerido fracción:'
+                                : 'Sugerido s/ porciones:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.deepPurple.shade800,
+                            ),
+                          ),
+                          _buildComboPriceSuggestionButton(
+                            key: const Key('quick_combo_apply_base_btn'),
+                            targetPrice: baseTarget,
+                            label: 'Usar \$${baseTarget.toCurrency()}',
+                            appliedLabel:
+                                'Base \$${baseTarget.toCurrency()} aplicada',
+                            currentUnitPrice: currentUnitPrice,
+                          ),
+                          for (final s in suggestions)
+                            _buildComboPriceSuggestionButton(
+                              key: Key('quick_combo_apply_${s.keySuffix}_btn'),
+                              targetPrice: s.targetPrice,
+                              label: s.buttonLabel,
+                              appliedLabel: s.appliedLabel,
+                              currentUnitPrice: currentUnitPrice,
+                              isMarkup: isFractionMode,
+                            ),
+                        ],
+                      ),
                     ],
-                  );
-                },
-              ),
-            ],
+                    if (yieldSummary != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.indigo.shade200),
+                        ),
+                        child: Text(
+                          yieldSummary.formatSummary(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.indigo.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
           ] else
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1475,7 +1527,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     const tabs = [
       ('product', Icons.bolt_rounded, 'Producto Rápido'),
       ('service', Icons.work_outline_rounded, 'Servicio / Honorario'),
-      ('combo', Icons.inventory_2_outlined, 'Combo / Promoción'),
+      ('combo', Icons.inventory_2_outlined, 'Combo / Fracción'),
     ];
 
     return Container(
@@ -1898,7 +1950,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                             onFieldSubmitted: (_) => _priceFocus.requestFocus(),
                             decoration: InputDecoration(
                               labelText: _isComboMode
-                                  ? 'Nombre del Combo / Promoción *'
+                                  ? 'Nombre del Combo / Fracción *'
                                   : (_isServiceMode
                                       ? 'Descripción del Servicio / Honorario *'
                                       : 'Descripción del Producto *'),

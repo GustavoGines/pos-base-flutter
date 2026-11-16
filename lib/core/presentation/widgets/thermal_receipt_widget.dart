@@ -1023,6 +1023,17 @@ class ThermalReceiptWidget extends StatelessWidget {
       }
     }
 
+    double tierSurcharge = 0.0;
+    for (final rawItem in items) {
+      if (rawItem is CartItem) {
+        tierSurcharge += rawItem.surchargeAmount;
+      } else if (rawItem is Map<String, dynamic>) {
+        tierSurcharge +=
+            double.tryParse(rawItem['surcharge_amount']?.toString() ?? '0') ??
+                0.0;
+      }
+    }
+
     final isComplexSummary = hasMultiplePayments ||
         hasSurcharge ||
         hasShipping ||
@@ -1037,7 +1048,7 @@ class ThermalReceiptWidget extends StatelessWidget {
           if (hasSavings) ...[
             _buildKeyValueRow(
               'SUBTOTAL LISTA:',
-              '\$${_formatPrice(total + totalSavings - shippingCost - perceptionAmt)}',
+              '\$${_formatPrice(total + totalSavings - tierSurcharge - shippingCost - perceptionAmt)}',
               factor: factor,
             ),
             _buildKeyValueRow(
@@ -1048,6 +1059,12 @@ class ThermalReceiptWidget extends StatelessWidget {
               factor: factor,
               isBold: true,
             ),
+            if (tierSurcharge > 0.01)
+              _buildKeyValueRow(
+                'RECARGO LISTA:',
+                '+\$${_formatPrice(tierSurcharge)}',
+                factor: factor,
+              ),
           ] else if (!hasFacturaABreakdown) ...[
             _buildKeyValueRow(
               'SUBTOTAL:',
