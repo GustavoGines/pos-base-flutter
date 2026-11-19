@@ -22,6 +22,12 @@ class Product {
   final int? vencimientoDias;
   final String? expirationDate;
   final int? expiryAlertDays;
+  final bool trackBatches;
+  final String lotDeductionPolicy;
+  final bool allowSellExpired;
+  final bool hasProductionRecipe;
+  final double recipeYieldQuantity;
+  final List<Map<String, dynamic>>? recipeIngredients;
   final double? minStock;
   final int salesCount;
   final String unitType;
@@ -54,6 +60,12 @@ class Product {
     this.vencimientoDias,
     this.expirationDate,
     this.expiryAlertDays,
+    this.trackBatches = false,
+    this.lotDeductionPolicy = 'fefo',
+    this.allowSellExpired = false,
+    this.hasProductionRecipe = false,
+    this.recipeYieldQuantity = 1.0,
+    this.recipeIngredients,
     this.unitType = 'un',
     this.ivaRate = 21.0,
     this.needsCatalogReview = false,
@@ -84,7 +96,14 @@ class Product {
     int? salesCount,
     int? vencimientoDias,
     String? expirationDate,
+    bool clearExpirationDate = false,
     int? expiryAlertDays,
+    bool? trackBatches,
+    String? lotDeductionPolicy,
+    bool? allowSellExpired,
+    bool? hasProductionRecipe,
+    double? recipeYieldQuantity,
+    List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
     double? ivaRate,
     bool? needsCatalogReview,
@@ -117,8 +136,14 @@ class Product {
       priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
-      expirationDate: expirationDate ?? this.expirationDate,
+      expirationDate: clearExpirationDate ? null : (expirationDate ?? this.expirationDate),
       expiryAlertDays: expiryAlertDays ?? this.expiryAlertDays,
+      trackBatches: trackBatches ?? this.trackBatches,
+      lotDeductionPolicy: lotDeductionPolicy ?? this.lotDeductionPolicy,
+      allowSellExpired: allowSellExpired ?? this.allowSellExpired,
+      hasProductionRecipe: hasProductionRecipe ?? this.hasProductionRecipe,
+      recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
+      recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,

@@ -30,6 +30,7 @@ class InventoryAlertsDataSource {
     required String action,
     int? days,
     String? expirationDate,
+    int? batchId,
   }) async {
     final uri = Uri.parse('$baseUrl/inventory/alerts/$productId/snooze');
     final response = await client.post(
@@ -42,6 +43,7 @@ class InventoryAlertsDataSource {
         'action': action,
         if (days != null) 'days': days,
         if (expirationDate != null) 'expiration_date': expirationDate,
+        if (batchId != null) 'batch_id': batchId,
       }),
     );
     if (response.statusCode == 200) {

@@ -80,7 +80,16 @@ void main() {
       expect(plainTexts.contains('A'), isTrue, reason: 'Voucher letter box must display "A"');
       expect(plainTexts.contains('COD. 01'), isTrue, reason: 'Voucher letter box must display "COD. 01"');
       expect(plainTexts.any((t) => t.contains('FACTURA A')), isTrue, reason: 'Header title must be "FACTURA A"');
-      expect(plainTexts.any((t) => t.contains('00001-00000124')), isTrue, reason: 'Formatted number must be present');
+      expect(
+        plainTexts.any((t) => t.contains('Punto de Venta: 00001   Comp. Nro: 00000124')),
+        isTrue,
+        reason: 'Point of sale and 8-digit voucher number must be present without duplicate parenthesis',
+      );
+      expect(
+        plainTexts.any((t) => t.contains('(00001-00000124)')),
+        isFalse,
+        reason: 'Redundant parenthesized formatted_number must not be repeated',
+      );
       expect(plainTexts.any((t) => t.contains(testCae)), isTrue, reason: 'CAE must be present in text');
       expect(plainTexts.any((t) => t.contains(testFormattedExpiration)), isTrue, reason: 'CAE expiration must be present in text');
       expect(plainTexts.any((t) => t.contains('Comprobante Autorizado por AFIP (RG 4892)')), isTrue,

@@ -867,6 +867,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
+  String? _getAuthorizedExpiredBatchPinSafe(PosProvider posProvider) {
+    try {
+      return posProvider.authorizedExpiredBatchPin;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _saveDraftToProvider() {
     final posProvider = _posProviderRef;
     if (_saleCompleted ||
@@ -2092,7 +2100,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               c.defaultPriceTier != null &&
               c.defaultPriceTier!.isNotEmpty) {
             final appSettings = context.read<SettingsProvider>();
-            if (appSettings.settings?.hasMultiPriceEnabled == true) {
+            if (appSettings.settings?.isPriceTierKeyAvailable(
+                    c.defaultPriceTier!) ==
+                true) {
               PriceTier tier;
               switch (c.defaultPriceTier) {
                 case 'wholesale':
@@ -2409,8 +2419,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         apiClient = context.read<ApiClient>();
       } catch (_) {}
 
-      final effectiveAdminPin =
-          creditLimitAdminPin ?? _getAuthorizedDiscountPinSafe(posProvider);
+      final effectiveAdminPin = creditLimitAdminPin ??
+          _getAuthorizedDiscountPinSafe(posProvider) ??
+          _getAuthorizedExpiredBatchPinSafe(posProvider);
       if (effectiveAdminPin != null && apiClient != null) {
         success = await apiClient.withAdminPin(
           effectiveAdminPin,
@@ -2418,6 +2429,32 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         );
       } else {
         success = await executeCheckoutCall();
+      }
+
+      if (!success && mounted) {
+        final firstErr = posProvider.errorMessage ?? '';
+        if (firstErr.contains('lotes vencidos') ||
+            firstErr.contains('PIN de supervisor')) {
+          final pinResult = await AdminPinDialog.verifyAndGetPin(
+            context,
+            action: 'Autorizar venta con lote vencido',
+          );
+          if (mounted && pinResult != null && pinResult.isNotEmpty) {
+            if (pinResult != 'ALREADY_AUTHORIZED') {
+              posProvider.setAuthorizedExpiredBatchPin(pinResult);
+              if (apiClient != null) {
+                success = await apiClient.withAdminPin(
+                  pinResult,
+                  executeCheckoutCall,
+                );
+              } else {
+                success = await executeCheckoutCall();
+              }
+            } else {
+              success = await executeCheckoutCall();
+            }
+          }
+        }
       }
 
       if (mounted) {

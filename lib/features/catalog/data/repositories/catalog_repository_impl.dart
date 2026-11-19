@@ -4,6 +4,8 @@ import '../../domain/entities/brand.dart';
 import '../../domain/entities/rubro.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../datasources/catalog_remote_datasource.dart';
+import '../models/product_batch_model.dart';
+import '../models/production_order_model.dart';
 
 class CatalogRepositoryImpl implements CatalogRepository {
   final CatalogRemoteDataSource remoteDataSource;
@@ -226,6 +228,12 @@ class CatalogRepositoryImpl implements CatalogRepository {
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
   }) async {
     return await remoteDataSource.adjustStock(
       productId: productId,
@@ -233,6 +241,152 @@ class CatalogRepositoryImpl implements CatalogRepository {
       quantity: quantity,
       minStock: minStock,
       notes: notes,
+      batchId: batchId,
+      batchCode: batchCode,
+      expirationDate: expirationDate,
+      manufacturedAt: manufacturedAt,
+      unitCost: unitCost,
+      reasonCode: reasonCode,
+    );
+  }
+
+  @override
+  Future<ProductBatchesResponse> fetchProductBatches(
+    int productId, {
+    bool includeClosed = true,
+  }) async {
+    return await remoteDataSource.fetchProductBatches(
+      productId,
+      includeClosed: includeClosed,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> createProductBatch(
+    int productId, {
+    required double quantity,
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    return await remoteDataSource.createProductBatch(
+      productId,
+      quantity: quantity,
+      batchCode: batchCode,
+      manufacturedAt: manufacturedAt,
+      expirationDate: expirationDate,
+      unitCost: unitCost,
+      notes: notes,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateProductBatch(
+    int batchId, {
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    return await remoteDataSource.updateProductBatch(
+      batchId,
+      batchCode: batchCode,
+      manufacturedAt: manufacturedAt,
+      expirationDate: expirationDate,
+      unitCost: unitCost,
+      notes: notes,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> writeOffBatch(
+    int batchId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    return await remoteDataSource.writeOffBatch(
+      batchId,
+      quantity: quantity,
+      notes: notes,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchExpiredBatches({bool includeToday = true}) async {
+    return await remoteDataSource.fetchExpiredBatches(includeToday: includeToday);
+  }
+
+  @override
+  Future<Map<String, dynamic>> splitBatch(
+    int batchId, {
+    required double quantity,
+    String? expirationDate,
+    String? batchCode,
+    String? notes,
+  }) async {
+    return await remoteDataSource.splitBatch(
+      batchId,
+      quantity: quantity,
+      expirationDate: expirationDate,
+      batchCode: batchCode,
+      notes: notes,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> writeOffExpiredBatches({
+    List<Map<String, dynamic>>? items,
+    bool includeToday = true,
+    String? notes,
+  }) async {
+    return await remoteDataSource.writeOffExpiredBatches(
+      items: items,
+      includeToday: includeToday,
+      notes: notes,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchProductionOrders({
+    int page = 1,
+    int? productId,
+    String? status,
+    String? search,
+  }) async {
+    return await remoteDataSource.fetchProductionOrders(
+      page: page,
+      productId: productId,
+      status: status,
+      search: search,
+    );
+  }
+
+  @override
+  Future<ProductionOrderModel> createProductionOrder(Map<String, dynamic> payload) async {
+    return await remoteDataSource.createProductionOrder(payload);
+  }
+
+  @override
+  Future<Map<String, dynamic>> createBatchProductionOrders(Map<String, dynamic> payload) async {
+    return await remoteDataSource.createBatchProductionOrders(payload);
+  }
+
+  @override
+  Future<ProductionOrderModel> voidProductionOrder(int orderId) async {
+    return await remoteDataSource.voidProductionOrder(orderId);
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchWasteReport({
+    String? startDate,
+    String? endDate,
+  }) async {
+    return await remoteDataSource.fetchWasteReport(
+      startDate: startDate,
+      endDate: endDate,
     );
   }
 

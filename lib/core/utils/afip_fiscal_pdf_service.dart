@@ -443,14 +443,21 @@ class AfipFiscalPdfService {
             (electronicInvoice['point_of_sale'] ?? sale['point_of_sale'] ?? 1)
                 .toString()) ??
         1;
+    final rawFormattedNum =
+        electronicInvoice['formatted_number']?.toString().trim() ?? '';
+    final extractedFromFormatted = rawFormattedNum.contains('-')
+        ? int.tryParse(rawFormattedNum.split('-').last.trim())
+        : int.tryParse(rawFormattedNum);
     final voucherNumber = int.tryParse((electronicInvoice['voucher_number'] ??
                 sale['voucher_number'] ??
+                extractedFromFormatted ??
                 sale['id'] ??
                 1)
             .toString()) ??
         1;
-    final formattedNumber = electronicInvoice['formatted_number']?.toString() ??
-        '${pointOfSale.toString().padLeft(5, '0')}-${voucherNumber.toString().padLeft(8, '0')}';
+    final formattedNumber = rawFormattedNum.isNotEmpty
+        ? rawFormattedNum
+        : '${pointOfSale.toString().padLeft(5, '0')}-${voucherNumber.toString().padLeft(8, '0')}';
     final ptoVtaFormatted = pointOfSale.toString().padLeft(5, '0');
     final cbteNroFormatted = voucherNumber.toString().padLeft(8, '0');
 
@@ -563,12 +570,15 @@ class AfipFiscalPdfService {
     if (electronicInvoice['tributes_breakdown'] != null && (electronicInvoice['tributes_breakdown'] as List).isNotEmpty) {
       extractedRate = double.tryParse(electronicInvoice['tributes_breakdown'][0]['Alic']?.toString() ?? '0') ?? 0.0;
     }
-    final iibbPerceptionRate = double.tryParse(
+    double iibbPerceptionRate = double.tryParse(
             (electronicInvoice['iibb_perception_rate'] ??
                     sale['iibb_perception_rate'] ??
-                    extractedRate)
+                    0)
                 .toString()) ??
         0.0;
+    if (iibbPerceptionRate <= 0.0 && extractedRate > 0.0) {
+      iibbPerceptionRate = extractedRate;
+    }
 
     final shippingCost =
         double.tryParse((sale['shipping_cost'] ?? 0).toString()) ?? 0.0;
@@ -1484,7 +1494,7 @@ class AfipFiscalPdfService {
                       ),
                       pw.SizedBox(height: 3),
                       pw.Text(
-                        'Punto de Venta: $ptoVtaFormatted   Comp. Nro: $cbteNroFormatted ($formattedNumber)',
+                        'Punto de Venta: $ptoVtaFormatted   Comp. Nro: $cbteNroFormatted',
                         style: pw.TextStyle(
                             fontSize: 8.5, fontWeight: pw.FontWeight.bold),
                       ),

@@ -15,6 +15,7 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
@@ -1558,8 +1559,13 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
     }
   }
 
-  Future<void> _handlePrintAfipInvoice(BuildContext context, {bool isCreditNote = false}) async {
-    final sale = widget.sale;
+  Future<void> _handlePrintAfipInvoice(
+    BuildContext context, {
+    bool isCreditNote = false,
+    SaleRecord? saleOverride,
+    Map<String, dynamic>? invoiceOverride,
+  }) async {
+    final sale = saleOverride ?? widget.sale;
     final settings = context.read<SettingsProvider>().settings;
     final localTerminal = context.read<LocalTerminalProvider>();
     if (settings == null) {
@@ -1567,7 +1573,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
       return;
     }
 
-    Map<String, dynamic>? invoice = _electronicInvoice ?? sale.electronicInvoice;
+    Map<String, dynamic>? invoice =
+        invoiceOverride ?? _electronicInvoice ?? sale.electronicInvoice;
     if (invoice == null || invoice['cae'] == null) {
       try {
         final posProvider = context.read<PosProvider>();
@@ -1646,20 +1653,26 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
       }
 
       DateTime effectivePrintDate = sale.createdAt;
-      if (isCreditNote && invoice['issued_at'] != null) {
-        final parsedCnDate =
+      if (invoice['issued_at'] != null) {
+        final parsedInvDate =
             DateTime.tryParse(invoice['issued_at'].toString())?.toLocal();
-        if (parsedCnDate != null) {
-          effectivePrintDate = parsedCnDate;
+        if (parsedInvDate != null) {
+          effectivePrintDate = parsedInvDate;
         }
       }
+
+      final invoiceTotalAmt =
+          double.tryParse((invoice['total_amount'] ?? 0).toString()) ?? 0.0;
+      final effectiveTotalWithoutSurcharge = invoiceTotalAmt > 0.01
+          ? (invoiceTotalAmt - sale.surchargeTotal).clamp(0.0, double.infinity)
+          : sale.totalWithShipping;
 
       if (isA4) {
         final salePayload = {
           'id': sale.id,
           'electronic_invoice': invoice,
-          'total': sale.totalWithShipping,
-          'total_amount': sale.totalWithShipping,
+          'total': effectiveTotalWithoutSurcharge,
+          'total_amount': effectiveTotalWithoutSurcharge,
           'subtotal_list': sale.subtotalList,
           'discount_amount': sale.totalSavings,
           'discount_label': sale.hasSavings ? 'Ahorro / Descuento' : null,
@@ -1820,7 +1833,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               businessSettings: settings,
               items: itemsParaImprimir,
               payments: paymentDetails,
-              total: sale.totalWithShipping,
+              total: effectiveTotalWithoutSurcharge,
               surchargeAmount: sale.surchargeTotal,
               discountAmount: sale.totalSavings,
               discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
@@ -1854,7 +1867,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           await ReceiptPrinterService.instance.printSplitTicket(
             electronicInvoice: invoice,
             items: itemsParaImprimir,
-            total: sale.totalWithShipping,
+            total: effectiveTotalWithoutSurcharge,
             shippingCost: sale.shippingCost,
             settings: settings,
             localTerminal: localTerminal,
@@ -1886,7 +1899,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           await ReceiptPrinterService.instance.printSaleTicket(
             electronicInvoice: invoice,
             items: itemsParaImprimir,
-            total: sale.totalWithShipping,
+            total: effectiveTotalWithoutSurcharge,
             shippingCost: sale.shippingCost,
             settings: settings,
             localTerminal: localTerminal,
@@ -1931,7 +1944,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
     final authorizedInvoice = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _EmitArcaInvoiceDialog(sale: sale),
+      builder: (ctx) => EmitArcaInvoiceDialog(sale: sale),
     );
 
     if (authorizedInvoice != null && mounted) {
@@ -1943,7 +1956,17 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           context,
           'Factura ARCA ${authorizedInvoice['voucher_letter'] ?? ''}-${authorizedInvoice['formatted_number'] ?? ''} autorizada exitosamente (CAE: ${authorizedInvoice['cae'] ?? ''})',
         );
-        context.read<SalesHistoryProvider>().loadSales();
+        final historyProvider = context.read<SalesHistoryProvider>();
+        await historyProvider.loadSales();
+        if (!mounted || !context.mounted) return;
+        final refreshedSale =
+            historyProvider.sales.where((s) => s.id == sale.id).firstOrNull ??
+                sale;
+        await _handlePrintAfipInvoice(
+          context,
+          saleOverride: refreshedSale,
+          invoiceOverride: authorizedInvoice,
+        );
       }
     }
   }
@@ -1952,6 +1975,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
   Widget build(BuildContext context) {
     final sale = widget.sale;
     final provider = widget.provider;
+    final afipEnabled = context.select<SettingsProvider, bool>(
+      (sp) => sp.settings?.afipEnabled == true,
+    );
     final hasCae = sale.hasCae ||
         (_electronicInvoice != null &&
             (_electronicInvoice!['cae'] != null &&
@@ -2250,7 +2276,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             spacing: 16,
             runSpacing: 16,
             children: [
-              if (!hasCae &&
+              if (afipEnabled &&
+                  !hasCae &&
                   (sale.status == 'completed' ||
                       sale.status == 'pending' ||
                       sale.status == 'active'))
@@ -2402,34 +2429,239 @@ class _PaymentBadge extends StatelessWidget {
 
 // ─── Diálogo para Emitir Comprobante Fiscal ARCA desde Registro de Ventas ────
 
-class _EmitArcaInvoiceDialog extends StatefulWidget {
+class EmitArcaInvoiceDialog extends StatefulWidget {
   final SaleRecord sale;
 
-  const _EmitArcaInvoiceDialog({required this.sale});
+  const EmitArcaInvoiceDialog({super.key, required this.sale});
 
   @override
-  State<_EmitArcaInvoiceDialog> createState() => _EmitArcaInvoiceDialogState();
+  State<EmitArcaInvoiceDialog> createState() => EmitArcaInvoiceDialogState();
 }
 
-class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
+class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
   static const double _cfAnonymousLimit = 340000.0;
 
-  late int _voucherType; // 1 = Factura A, 6 = Factura B, 11 = Factura C
-  late int _docType; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
-  late String _taxCondition;
+  int _voucherType = 6; // 1 = Factura A, 6 = Factura B, 11 = Factura C
+  int _docType = 99; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
+  String _taxCondition = 'consumidor_final';
   late TextEditingController _docNumberCtrl;
   late TextEditingController _receiverNameCtrl;
   late TextEditingController _receiverAddressCtrl;
 
   Customer? _selectedCustomer;
+  double? _customIibbRateOverride;
   String? _remoteMatchedName;
   String? _remoteMatchedSource;
   bool _isLookingUpPadron = false;
   bool _autoMatchedCustomerByDoc = false;
+  bool _userPickedVoucherType = false;
   bool _isSubmitting = false;
   String? _errorMessage;
 
-  bool get _exceedsAnonymousLimit => widget.sale.total >= _cfAnonymousLimit;
+  double _round2(double value) => (value * 100).roundToDouble() / 100.0;
+
+  double get _existingSaleIibb =>
+      _round2((widget.sale.iibbPerceptionAmount ?? 0.0).clamp(0.0, double.infinity));
+
+  double get _itemsGrossSubtotal {
+    if (widget.sale.items.isNotEmpty) {
+      final sum = widget.sale.items.fold<double>(0.0, (acc, i) => acc + i.subtotal);
+      if (sum > 0.009) return _round2(sum);
+    }
+    return _round2((widget.sale.total - _existingSaleIibb).clamp(0.0, double.infinity));
+  }
+
+  double get _extraGrossAmount =>
+      _round2(widget.sale.totalSurcharge + widget.sale.shippingCost);
+
+  double get _baseGrossTotal => _round2(_itemsGrossSubtotal + _extraGrossAmount);
+
+  double _normalizeAliquotRate(double rawRate) {
+    final r = _round2(rawRate);
+    if ((r - 0.0).abs() < 0.01) return 0.0;
+    if ((r - 2.5).abs() < 0.01) return 2.5;
+    if ((r - 5.0).abs() < 0.01) return 5.0;
+    if ((r - 10.5).abs() < 0.01) return 10.5;
+    if ((r - 27.0).abs() < 0.01) return 27.0;
+    return 21.0;
+  }
+
+  double get _taxableNetBase {
+    if (_voucherType == 11) {
+      return _baseGrossTotal;
+    }
+
+    final grouped = <double, double>{};
+    for (final item in widget.sale.items) {
+      final rate = _normalizeAliquotRate(item.ivaRate);
+      grouped[rate] = (grouped[rate] ?? 0.0) + item.subtotal;
+    }
+    if (_extraGrossAmount > 0) {
+      grouped[21.0] = (grouped[21.0] ?? 0.0) + _extraGrossAmount;
+    }
+    if (grouped.isEmpty) {
+      grouped[21.0] = _baseGrossTotal;
+    }
+
+    final ratesOrder = grouped.keys.toList();
+    final results = <double, ({double net, double iva})>{};
+    double totalNet = 0.0;
+    double totalIva = 0.0;
+
+    for (final rate in ratesOrder) {
+      final gross = _round2(grouped[rate]!);
+      final net = rate <= 0.0 ? gross : _round2(gross / (1.0 + (rate / 100.0)));
+      final iva = rate <= 0.0 ? 0.0 : _round2(gross - net);
+      results[rate] = (net: net, iva: iva);
+      totalNet += net;
+      totalIva += iva;
+    }
+
+    totalNet = _round2(totalNet);
+    totalIva = _round2(totalIva);
+
+    final expectedBase = _round2(
+      ((widget.sale.total + _extraGrossAmount) -
+              (_existingSaleIibb > 0.009 ? _existingSaleIibb : 0.0))
+          .clamp(0.0, double.infinity),
+    );
+    final diff = _round2(expectedBase - (totalNet + totalIva));
+    if (diff != 0.0 && diff.abs() < 1.0 && ratesOrder.isNotEmpty) {
+      final firstRate = ratesOrder.first;
+      final adjustedGross = _round2(grouped[firstRate]! + diff);
+      final net = firstRate <= 0.0
+          ? adjustedGross
+          : _round2(adjustedGross / (1.0 + (firstRate / 100.0)));
+      final iva = firstRate <= 0.0 ? 0.0 : _round2(adjustedGross - net);
+      results[firstRate] = (net: net, iva: iva);
+      totalNet = _round2(results.values.fold<double>(0.0, (s, r) => s + r.net));
+    }
+
+    return totalNet;
+  }
+
+  bool get _isFiscalCuitSubjectToIibb =>
+      _voucherType == 1 ||
+      (_docType == 80 &&
+          _taxCondition != 'consumidor_final' &&
+          _taxCondition != 'exento');
+
+  bool get _qualifiesByCustomer {
+    if (_selectedCustomer != null) {
+      return _selectedCustomer!.appliesIibbPerception ||
+          (_selectedCustomer!.documentType == 80 &&
+              _selectedCustomer!.taxCondition != 'consumidor_final' &&
+              _selectedCustomer!.taxCondition != 'exento');
+    }
+    return widget.sale.customerAppliesIibbPerception == true;
+  }
+
+  bool _showIibbSelectorBar(BusinessSettings? settings) {
+    if (_existingSaleIibb > 0.009) return true;
+    if (settings?.isIibbPerceptionAgent != true) return false;
+    return _qualifiesByCustomer || _isFiscalCuitSubjectToIibb;
+  }
+
+  double _effectiveIibbRate(BusinessSettings? settings) {
+    if (!_showIibbSelectorBar(settings) && _existingSaleIibb <= 0.009) {
+      return 0.0;
+    }
+    if (_customIibbRateOverride != null) {
+      return _customIibbRateOverride! > 0 ? _customIibbRateOverride! : 0.0;
+    }
+    if (_existingSaleIibb > 0.009) {
+      final savedRate = widget.sale.iibbPerceptionRate ?? 0.0;
+      if (savedRate > 0.0) return savedRate;
+      final base = _taxableNetBase;
+      if (base > 0.0) return _round2((_existingSaleIibb / base) * 100.0);
+      return 0.0;
+    }
+    if (widget.sale.iibbPerceptionRate != null &&
+        widget.sale.iibbPerceptionRate! <= 0.0) {
+      return 0.0;
+    }
+    if (settings?.isIibbPerceptionAgent != true) return 0.0;
+
+    final defaultRate = settings?.defaultIibbPerceptionRate ?? 0.0;
+    if (_selectedCustomer != null) {
+      if (_selectedCustomer!.appliesIibbPerception) {
+        final custRate = _selectedCustomer!.iibbPerceptionRate ?? 0.0;
+        return custRate > 0 ? custRate : defaultRate;
+      }
+      final hasExplicitlyDisabledCustomRate =
+          !_selectedCustomer!.appliesIibbPerception &&
+              (_selectedCustomer!.iibbPerceptionRate ?? 0.0) > 0;
+      if (hasExplicitlyDisabledCustomRate) return 0.0;
+      if (_isFiscalCuitSubjectToIibb) return defaultRate;
+      return 0.0;
+    }
+
+    if (widget.sale.customerAppliesIibbPerception == true) {
+      final custRate = widget.sale.customerIibbPerceptionRate ?? 0.0;
+      return custRate > 0 ? custRate : defaultRate;
+    }
+    final hasExplicitlyDisabledSaleCustRate =
+        widget.sale.customerAppliesIibbPerception == false &&
+            (widget.sale.customerIibbPerceptionRate ?? 0.0) > 0;
+    if (hasExplicitlyDisabledSaleCustRate) return 0.0;
+
+    if (_isFiscalCuitSubjectToIibb) return defaultRate;
+    return 0.0;
+  }
+
+  double _currentIibbAmount(BusinessSettings? settings) {
+    if (!_showIibbSelectorBar(settings) && _existingSaleIibb <= 0.009) {
+      return 0.0;
+    }
+    if (_customIibbRateOverride == null && _existingSaleIibb > 0.009) {
+      return _existingSaleIibb;
+    }
+    final rate = _effectiveIibbRate(settings);
+    if (rate <= 0.0) return 0.0;
+    return _round2(_taxableNetBase * (rate / 100.0));
+  }
+
+  double _totalToInvoice(BusinessSettings? settings) =>
+      _round2(_baseGrossTotal + _currentIibbAmount(settings));
+
+  bool _exceedsAnonymousLimit(BusinessSettings? settings) =>
+      _totalToInvoice(settings) >= _cfAnonymousLimit;
+
+  int _normalizeDocType(int rawDocType, int voucherType, bool exceedsLimit) {
+    if (voucherType == 1) return 80;
+    final allowed = <int>[
+      80,
+      86,
+      96,
+      if (!exceedsLimit) 99,
+    ];
+    if (allowed.contains(rawDocType)) return rawDocType;
+    return exceedsLimit ? 96 : 99;
+  }
+
+  String _normalizeTaxConditionForVoucher(String raw, int voucherType) {
+    final norm = raw.trim().toLowerCase();
+    if (voucherType == 1) {
+      return norm == 'monotributo' ? 'monotributo' : 'responsable_inscripto';
+    }
+    if (voucherType == 6) {
+      return norm == 'exento' ? 'exento' : 'consumidor_final';
+    }
+    const allowedC = [
+      'consumidor_final',
+      'responsable_inscripto',
+      'monotributo',
+      'exento',
+    ];
+    return allowedC.contains(norm) ? norm : 'consumidor_final';
+  }
+
+  String _formatPercentLabel(double rate) {
+    if ((rate * 10 - (rate * 10).round()).abs() < 0.01) {
+      return rate.toStringAsFixed(1);
+    }
+    return rate.toStringAsFixed(2);
+  }
 
   @override
   void initState() {
@@ -2456,11 +2688,9 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
 
     if (_voucherType == 1) {
       _docType = 80;
-      _taxCondition = initialTaxCond == 'monotributo'
-          ? 'monotributo'
-          : 'responsable_inscripto';
+      _taxCondition = _normalizeTaxConditionForVoucher(initialTaxCond, 1);
     } else {
-      _taxCondition = initialTaxCond == 'exento' ? 'exento' : 'consumidor_final';
+      _taxCondition = _normalizeTaxConditionForVoucher(initialTaxCond, _voucherType);
       if (sale.customerDocumentType != null &&
           [80, 86, 96, 99].contains(sale.customerDocumentType)) {
         _docType = sale.customerDocumentType!;
@@ -2470,8 +2700,13 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
         _docType = 96;
       } else {
         // Si supera el límite anónimo ($340.000), preseleccionamos DNI (96) para guiar al cajero
-        _docType = _exceedsAnonymousLimit ? 96 : 99;
+        _docType = _exceedsAnonymousLimit(settings) ? 96 : 99;
       }
+      _docType = _normalizeDocType(
+        _docType,
+        _voucherType,
+        _exceedsAnonymousLimit(settings),
+      );
     }
 
     _docNumberCtrl = TextEditingController(text: initialDocNum);
@@ -2486,12 +2721,41 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
       text: sale.customerAddress ?? '',
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       try {
         final custProv = context.read<CustomerProvider>();
         if (custProv.customers.isEmpty && !custProv.isLoading) {
-          custProv.fetchCustomers();
+          await custProv.fetchCustomers();
+        }
+        if (!mounted) return;
+        if (widget.sale.customerId != null && _selectedCustomer == null) {
+          final currentClean =
+              _docNumberCtrl.text.replaceAll(RegExp(r'\D'), '');
+          if (currentClean == initialDocNum) {
+            final match = custProv.customers
+                .where((c) => c.id == widget.sale.customerId)
+                .firstOrNull;
+            if (match != null) {
+              final currentSettings = context.read<SettingsProvider>().settings;
+              setState(() {
+                _selectedCustomer = match;
+                if (_receiverNameCtrl.text.trim().isEmpty &&
+                    match.name.trim().toLowerCase() != 'consumidor final') {
+                  _receiverNameCtrl.text = match.name;
+                }
+                if (_receiverAddressCtrl.text.trim().isEmpty) {
+                  _receiverAddressCtrl.text =
+                      match.fiscalAddress ?? match.deliveryAddress ?? '';
+                }
+                _docType = _normalizeDocType(
+                  _docType,
+                  _voucherType,
+                  _exceedsAnonymousLimit(currentSettings),
+                );
+              });
+            }
+          }
         }
       } catch (_) {}
     });
@@ -2513,47 +2777,65 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
 
     setState(() {
       _selectedCustomer = c;
+      _customIibbRateOverride = null;
       _autoMatchedCustomerByDoc = false;
+      _remoteMatchedName = null;
+      _remoteMatchedSource = null;
       _errorMessage = null;
       _docNumberCtrl.text = c.documentNumber.replaceAll(RegExp(r'\D'), '');
       _receiverNameCtrl.text = c.name;
       _receiverAddressCtrl.text = c.fiscalAddress ?? c.deliveryAddress ?? '';
-      _docType = c.documentType;
-      _taxCondition = c.taxCondition;
 
       if (isIssuerMonotributo) {
         _voucherType = 11;
-      } else if (c.taxCondition == 'responsable_inscripto' ||
-          c.taxCondition == 'monotributo') {
-        _voucherType = 1;
+      } else if (!_userPickedVoucherType) {
+        if (c.taxCondition == 'responsable_inscripto' ||
+            c.taxCondition == 'monotributo') {
+          _voucherType = 1;
+        } else {
+          _voucherType = 6;
+        }
+      }
+
+      _taxCondition =
+          _normalizeTaxConditionForVoucher(c.taxCondition, _voucherType);
+
+      if (_voucherType == 1) {
         _docType = 80;
       } else {
-        _voucherType = 6;
-        if (_docType == 99 && _docNumberCtrl.text.isNotEmpty) {
-          _docType = _docNumberCtrl.text.length == 11 ? 80 : 96;
+        var nextDocType = c.documentType;
+        if (nextDocType == 99 && _docNumberCtrl.text.isNotEmpty) {
+          nextDocType = _docNumberCtrl.text.length == 11 ? 80 : 96;
         }
+        _docType = _normalizeDocType(
+          nextDocType,
+          _voucherType,
+          _exceedsAnonymousLimit(settings),
+        );
       }
     });
   }
 
   void _onVoucherTypeChanged(int newType) {
+    if (_isSubmitting) return;
+    final settings = context.read<SettingsProvider>().settings;
     setState(() {
       _voucherType = newType;
+      _userPickedVoucherType = true;
+      _customIibbRateOverride = null;
       _errorMessage = null;
+      _taxCondition = _normalizeTaxConditionForVoucher(_taxCondition, newType);
       if (newType == 1) {
         _docType = 80;
-        if (_taxCondition != 'responsable_inscripto' &&
-            _taxCondition != 'monotributo') {
-          _taxCondition = 'responsable_inscripto';
-        }
-      } else if (newType == 6) {
-        if (_taxCondition == 'responsable_inscripto' ||
-            _taxCondition == 'monotributo') {
-          _taxCondition = 'consumidor_final';
-        }
+      } else {
         if (_docNumberCtrl.text.trim().isEmpty) {
-          _docType = _exceedsAnonymousLimit ? 96 : 99;
+          _docType = _exceedsAnonymousLimit(settings) ? 96 : 99;
         }
+        _docType = _normalizeDocType(
+          _docType,
+          newType,
+          _exceedsAnonymousLimit(settings),
+        );
       }
     });
   }
@@ -2573,15 +2855,19 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
 
     setState(() {
       _errorMessage = null;
+      final previousCustomerId = _selectedCustomer?.id;
       _docType = AfipModulo11.inferDocType(
         clean,
         currentDocType: _docType,
         isFacturaA: _voucherType == 1,
-        requiresIdentification: _exceedsAnonymousLimit,
+        requiresIdentification: _exceedsAnonymousLimit(settings),
       );
 
       if (matched != null) {
         _selectedCustomer = matched;
+        if (previousCustomerId != matched.id) {
+          _customIibbRateOverride = null;
+        }
         _remoteMatchedName = null;
         _remoteMatchedSource = null;
         _autoMatchedCustomerByDoc = true;
@@ -2590,31 +2876,56 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
         if (addr.isNotEmpty) {
           _receiverAddressCtrl.text = addr;
         }
-        _taxCondition = matched.taxCondition;
         if (isIssuerMonotributo) {
           _voucherType = 11;
-        } else if (matched.taxCondition == 'responsable_inscripto' ||
-            matched.taxCondition == 'monotributo') {
-          if (clean.length == 11) {
-            _voucherType = 1;
-            _docType = 80;
+        } else if (!_userPickedVoucherType) {
+          if (matched.taxCondition == 'responsable_inscripto' ||
+              matched.taxCondition == 'monotributo') {
+            if (clean.length == 11) {
+              _voucherType = 1;
+              _docType = 80;
+            } else {
+              _voucherType = 6;
+            }
           } else {
             _voucherType = 6;
-            _taxCondition = 'consumidor_final';
           }
-        } else {
-          _voucherType = 6;
         }
-      } else if (_autoMatchedCustomerByDoc) {
-        _selectedCustomer = null;
-        _remoteMatchedName = null;
-        _remoteMatchedSource = null;
-        _autoMatchedCustomerByDoc = false;
-        _receiverNameCtrl.clear();
-        _receiverAddressCtrl.clear();
-        _taxCondition =
-            _voucherType == 1 ? 'responsable_inscripto' : 'consumidor_final';
+        _taxCondition = _normalizeTaxConditionForVoucher(
+          matched.taxCondition,
+          _voucherType,
+        );
+      } else {
+        if (_selectedCustomer != null) {
+          final prevDoc = _selectedCustomer!.documentNumber
+              .replaceAll(RegExp(r'\D'), '');
+          if (clean != prevDoc) {
+            _selectedCustomer = null;
+            _customIibbRateOverride = null;
+          }
+        }
+        if (_autoMatchedCustomerByDoc) {
+          _selectedCustomer = null;
+          _customIibbRateOverride = null;
+          _remoteMatchedName = null;
+          _remoteMatchedSource = null;
+          _autoMatchedCustomerByDoc = false;
+          _receiverNameCtrl.clear();
+          _receiverAddressCtrl.clear();
+          _taxCondition = _normalizeTaxConditionForVoucher(
+            _voucherType == 1 ? 'responsable_inscripto' : 'consumidor_final',
+            _voucherType,
+          );
+        }
       }
+
+      _docType = _normalizeDocType(
+        _docType,
+        _voucherType,
+        _exceedsAnonymousLimit(settings),
+      );
+      _taxCondition =
+          _normalizeTaxConditionForVoucher(_taxCondition, _voucherType);
     });
 
     if (matched == null &&
@@ -2640,6 +2951,11 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
         final taxCond = (data['tax_condition'] ?? 'consumidor_final').toString();
         final source = (data['source'] ?? 'arca_padron').toString();
 
+        final settings = context.read<SettingsProvider>().settings;
+        final issuerCond = (settings?.taxCondition ?? '').trim().toLowerCase();
+        final isIssuerMonotributo =
+            issuerCond.contains('monotributo') || issuerCond.contains('exento');
+
         if (name.isNotEmpty) {
           setState(() {
             if (_receiverNameCtrl.text.trim().isEmpty ||
@@ -2651,16 +2967,23 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
               _remoteMatchedName = name;
               _remoteMatchedSource = source;
               _autoMatchedCustomerByDoc = true;
-              if (_voucherType == 1) {
-                _taxCondition = taxCond == 'monotributo'
-                    ? 'monotributo'
-                    : 'responsable_inscripto';
-              } else if (_voucherType == 6) {
-                _taxCondition =
-                    taxCond == 'exento' ? 'exento' : 'consumidor_final';
-              } else {
-                _taxCondition = taxCond;
+
+              if (!isIssuerMonotributo &&
+                  !_userPickedVoucherType &&
+                  clean.length == 11 &&
+                  (taxCond == 'responsable_inscripto' ||
+                      taxCond == 'monotributo')) {
+                _voucherType = 1;
+                _docType = 80;
+                _customIibbRateOverride = null;
               }
+              _taxCondition =
+                  _normalizeTaxConditionForVoucher(taxCond, _voucherType);
+              _docType = _normalizeDocType(
+                _docType,
+                _voucherType,
+                _exceedsAnonymousLimit(settings),
+              );
             }
           });
         }
@@ -2673,22 +2996,25 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
     }
   }
 
-  bool get _isFormValid {
+  bool _isFormValid(BusinessSettings? settings) {
     final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    final exceedsLimit = _exceedsAnonymousLimit(settings);
+    final safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+
     if (_voucherType == 1) {
-      if (_docType != 80) return false;
+      if (safeDocType != 80) return false;
       if (!AfipModulo11.validateCuit(cleanDoc)) return false;
       if (_receiverNameCtrl.text.trim().isEmpty) return false;
       return true;
     }
     // Factura B o C
-    if (_exceedsAnonymousLimit && (_docType == 99 || cleanDoc.isEmpty)) {
+    if (exceedsLimit && (safeDocType == 99 || cleanDoc.isEmpty)) {
       return false;
     }
-    if (_docType == 80 || _docType == 86) {
+    if (safeDocType == 80 || safeDocType == 86) {
       return AfipModulo11.validateCuit(cleanDoc);
     }
-    if (_docType == 96) {
+    if (safeDocType == 96) {
       return AfipModulo11.validateDni(cleanDoc);
     }
     return true;
@@ -2713,24 +3039,37 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
   }
 
   Future<void> _submit() async {
-    if (!_isFormValid || _isSubmitting) return;
+    final settings = context.read<SettingsProvider>().settings;
+    if (!_isFormValid(settings) || _isSubmitting) return;
 
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
     });
 
+    final exceedsLimit = _exceedsAnonymousLimit(settings);
+    final safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    final safeTaxCondition =
+        _normalizeTaxConditionForVoucher(_taxCondition, _voucherType);
+    final showIibbBar = _showIibbSelectorBar(settings);
+    final effectiveRate = _effectiveIibbRate(settings);
+    final currentIibb = _currentIibbAmount(settings);
+
     final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
     final payload = <String, dynamic>{
       'voucher_type': _voucherType,
-      'doc_type': _docType,
-      'doc_number': _docType == 99 ? '0' : cleanDoc,
+      'doc_type': safeDocType,
+      'doc_number': safeDocType == 99 ? '0' : cleanDoc,
       'receiver_name': _receiverNameCtrl.text.trim().isNotEmpty
           ? _receiverNameCtrl.text.trim()
           : 'Consumidor Final',
       'receiver_address': _receiverAddressCtrl.text.trim(),
-      'receiver_tax_condition': _taxCondition,
+      'receiver_tax_condition': safeTaxCondition,
       if (_selectedCustomer != null) 'customer_id': _selectedCustomer!.id,
+      if (showIibbBar || _customIibbRateOverride != null || currentIibb > 0.0) ...{
+        'iibb_perception_amount': currentIibb,
+        'iibb_perception_rate': currentIibb > 0.0 ? effectiveRate : 0.0,
+      },
     };
 
     try {
@@ -2748,8 +3087,8 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
         );
       } else {
         setState(() {
-          _errorMessage =
-              result?['message']?.toString() ?? 'No se pudo autorizar el comprobante en ARCA.';
+          _errorMessage = result?['message']?.toString() ??
+              'No se pudo autorizar el comprobante en ARCA.';
           _isSubmitting = false;
         });
       }
@@ -2762,6 +3101,242 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
     }
   }
 
+  Widget _buildIibbOverrideChip({
+    required String label,
+    required double rate,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: _isSubmitting
+          ? null
+          : () {
+              setState(() {
+                _customIibbRateOverride = rate;
+                _errorMessage = null;
+              });
+            },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.deepPurple.shade700 : Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected
+                ? Colors.deepPurple.shade800
+                : Colors.deepPurple.shade200,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.white : Colors.deepPurple.shade900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIibbPerceptionSection(
+    BusinessSettings? settings,
+    double effectiveRate,
+    double currentIibb,
+    double totalToInvoice,
+  ) {
+    final availableRates = <double>[0.0, 1.5, 3.0, 6.0];
+    void addRateIfMissing(double? rate) {
+      if (rate == null || rate <= 0.0) return;
+      if (!availableRates.any((r) => (r - rate).abs() < 0.01)) {
+        availableRates.add(_round2(rate));
+      }
+    }
+
+    addRateIfMissing(settings?.defaultIibbPerceptionRate);
+    addRateIfMissing(_selectedCustomer?.iibbPerceptionRate);
+    addRateIfMissing(widget.sale.customerIibbPerceptionRate);
+    addRateIfMissing(effectiveRate);
+    availableRates.sort();
+
+    final iibbDelta = _round2(currentIibb - _existingSaleIibb);
+    final isCurrentAccount = widget.sale.paymentStatus == 'pending' ||
+        widget.sale.paymentStatus == 'partial';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade50.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.deepPurple.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.tune_rounded,
+                  size: 16, color: Colors.deepPurple.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Percepción IIBB (Rentas):',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple.shade900,
+                  ),
+                ),
+              ),
+              Text(
+                currentIibb > 0
+                    ? '+\$${currentIibb.toCurrency()}'
+                    : '\$0,00',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: currentIibb > 0
+                      ? Colors.deepPurple.shade900
+                      : Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: availableRates.map((rate) {
+              final isSelected = (effectiveRate - rate).abs() < 0.01;
+              final label = rate <= 0.0
+                  ? 'Sin perc. (0%)'
+                  : '${_formatPercentLabel(rate)}%';
+              return _buildIibbOverrideChip(
+                label: label,
+                rate: rate,
+                isSelected: isSelected,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.deepPurple.shade100),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _voucherType == 11
+                          ? 'Base imponible:'
+                          : 'Base neta gravada:',
+                      style: TextStyle(
+                          fontSize: 11.5, color: Colors.grey.shade700),
+                    ),
+                    Text(
+                      '\$${_taxableNetBase.toCurrency()}',
+                      style: const TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Percepción IIBB (${_formatPercentLabel(effectiveRate)}%):',
+                      style: TextStyle(
+                          fontSize: 11.5, color: Colors.deepPurple.shade800),
+                    ),
+                    Text(
+                      '\$${currentIibb.toCurrency()}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple.shade900,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total fiscal ARCA:',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '\$${totalToInvoice.toCurrency()}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (iibbDelta > 0.009) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isCurrentAccount
+                    ? Colors.blue.shade50
+                    : Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isCurrentAccount
+                      ? Colors.blue.shade200
+                      : Colors.amber.shade300,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: isCurrentAccount
+                        ? Colors.blue.shade800
+                        : Colors.amber.shade900,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      isCurrentAccount
+                          ? 'Venta en Cuenta Corriente: se sumarán +\$${iibbDelta.toCurrency()} al saldo deudor del cliente al autorizar.'
+                          : 'Este ticket ya fue cobrado por \$${widget.sale.grandTotal.toCurrency()}. Al autorizar, la factura incluirá +\$${iibbDelta.toCurrency()} de IIBB (recordá cobrar la diferencia o elegí "Sin perc. (0%)").',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isCurrentAccount
+                            ? Colors.blue.shade900
+                            : Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>().settings;
@@ -2771,10 +3346,20 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
         issuerCond.contains('monotributo') || issuerCond.contains('exento');
     final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
 
+    final showIibbBar = _showIibbSelectorBar(settings);
+    final effectiveRate = _effectiveIibbRate(settings);
+    final currentIibb = _currentIibbAmount(settings);
+    final totalToInvoice = _totalToInvoice(settings);
+    final exceedsLimit = _exceedsAnonymousLimit(settings);
+    final safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    final safeTaxCondition =
+        _normalizeTaxConditionForVoucher(_taxCondition, _voucherType);
+    final formValid = _isFormValid(settings);
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 540),
+        constraints: const BoxConstraints(maxWidth: 560),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
@@ -2807,13 +3392,22 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                             ),
                           ),
                           Text(
-                            'Total a facturar: \$${widget.sale.grandTotal.toCurrency()}',
+                            'Total a facturar: \$${totalToInvoice.toCurrency()}',
                             style: TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w600,
                               color: Colors.green.shade700,
                             ),
                           ),
+                          if (currentIibb > 0.009)
+                            Text(
+                              'Subtotal: \$${_baseGrossTotal.toCurrency()} + Percepción IIBB (${_formatPercentLabel(effectiveRate)}%): +\$${currentIibb.toCurrency()}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.deepPurple.shade700,
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -2827,9 +3421,7 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                 const SizedBox(height: 16),
 
                 // Aviso de Tope Consumidor Final Anónimo ($340.000)
-                if (_exceedsAnonymousLimit &&
-                    _voucherType != 1 &&
-                    !_isFormValid) ...[
+                if (exceedsLimit && _voucherType != 1 && !formValid) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -2861,8 +3453,11 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                 ],
 
                 // Selector de Tipo de Comprobante (A / B / C)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
                   children: [
                     const Text(
                       'Clase de Comprobante:',
@@ -2895,7 +3490,9 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                         ),
                       ],
                       selected: {_voucherType},
-                      onSelectionChanged: (s) => _onVoucherTypeChanged(s.first),
+                      onSelectionChanged: _isSubmitting
+                          ? null
+                          : (s) => _onVoucherTypeChanged(s.first),
                     ),
                   ],
                 ),
@@ -2951,8 +3548,8 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                     SizedBox(
                       width: 155,
                       child: DropdownButtonFormField<int>(
-                        key: ValueKey('arca_emit_doc_type_$_docType'),
-                        initialValue: _docType,
+                        key: ValueKey('arca_emit_doc_type_${_voucherType}_$safeDocType'),
+                        initialValue: safeDocType,
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Tipo Doc.',
@@ -2968,7 +3565,7 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                                 value: 86, child: Text('CUIL (86)')),
                             const DropdownMenuItem(
                                 value: 96, child: Text('DNI (96)')),
-                            if (!_exceedsAnonymousLimit)
+                            if (!exceedsLimit)
                               const DropdownMenuItem(
                                   value: 99, child: Text('Sin Doc. (99)')),
                           ],
@@ -2997,24 +3594,24 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                           LengthLimitingTextInputFormatter(11),
                         ],
                         decoration: InputDecoration(
-                          labelText: _docType == 80
+                          labelText: safeDocType == 80
                               ? 'N° de CUIT (11 dígitos)'
-                              : (_docType == 96
+                              : (safeDocType == 96
                                   ? 'N° de DNI (7 u 8 dígitos)'
                                   : 'N° de Documento / CUIT'),
                           hintText:
-                              _docType == 80 ? 'Ej: 20396063299' : 'Ej: 39606329',
+                              safeDocType == 80 ? 'Ej: 20396063299' : 'Ej: 39606329',
                           isDense: true,
                           border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8)),
                           suffixIcon: cleanDoc.isEmpty
                               ? null
                               : Icon(
-                                  _isFormValid
+                                  formValid
                                       ? Icons.check_circle
                                       : Icons.error_outline,
                                   color:
-                                      _isFormValid ? Colors.green : Colors.red,
+                                      formValid ? Colors.green : Colors.red,
                                   size: 20,
                                 ),
                         ),
@@ -3026,7 +3623,7 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                 ),
 
                 // Feedback de validación del documento
-                if (_docType == 80 || _docType == 86) ...[
+                if (safeDocType == 80 || safeDocType == 86) ...[
                   if (cleanDoc.isNotEmpty &&
                       !AfipModulo11.validateCuit(cleanDoc))
                     const Padding(
@@ -3045,7 +3642,7 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                         style: TextStyle(color: Colors.green, fontSize: 11.5),
                       ),
                     ),
-                ] else if (_docType == 96 &&
+                ] else if (safeDocType == 96 &&
                     cleanDoc.isNotEmpty &&
                     !AfipModulo11.validateDni(cleanDoc)) ...[
                   const Padding(
@@ -3114,8 +3711,8 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                     Expanded(
                       flex: 2,
                       child: DropdownButtonFormField<String>(
-                        key: ValueKey('arca_emit_tax_cond_$_taxCondition'),
-                        initialValue: _taxCondition,
+                        key: ValueKey('arca_emit_tax_cond_${_voucherType}_$safeTaxCondition'),
+                        initialValue: safeTaxCondition,
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Condición frente al IVA',
@@ -3167,7 +3764,10 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                             ? null
                             : (val) {
                                 if (val != null) {
-                                  setState(() => _taxCondition = val);
+                                  setState(() {
+                                    _taxCondition = val;
+                                    _customIibbRateOverride = null;
+                                  });
                                 }
                               },
                       ),
@@ -3188,6 +3788,16 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                     ),
                   ],
                 ),
+
+                if (showIibbBar) ...[
+                  const SizedBox(height: 14),
+                  _buildIibbPerceptionSection(
+                    settings,
+                    effectiveRate,
+                    currentIibb,
+                    totalToInvoice,
+                  ),
+                ],
 
                 // Mensaje de error de ARCA en línea (sin cerrar el modal)
                 if (_errorMessage != null) ...[
@@ -3222,15 +3832,17 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                 const SizedBox(height: 20),
 
                 // Botones de acción
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 8,
                   children: [
                     TextButton(
                       onPressed:
                           _isSubmitting ? null : () => Navigator.pop(context),
                       child: const Text('Cancelar'),
                     ),
-                    const SizedBox(width: 12),
                     FilledButton.icon(
                       icon: _isSubmitting
                           ? const SizedBox(
@@ -3248,8 +3860,7 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 14),
                       ),
-                      onPressed:
-                          (_isFormValid && !_isSubmitting) ? _submit : null,
+                      onPressed: (formValid && !_isSubmitting) ? _submit : null,
                     ),
                   ],
                 ),
@@ -3293,9 +3904,12 @@ class _QuickCustomerPickerDialogState
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Seleccionar Cliente para Facturar',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                const Expanded(
+                  child: Text(
+                    'Seleccionar Cliente para Facturar',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),

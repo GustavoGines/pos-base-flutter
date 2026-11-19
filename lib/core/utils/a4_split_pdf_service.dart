@@ -442,7 +442,7 @@ class A4SplitPdfService {
         ? (invoice['formatted_number']?.toString() ??
             invoice['voucher_number']?.toString().padLeft(8, '0') ??
             '00001-${rawSaleId.padLeft(8, '0')}')
-        : '00001-${rawSaleId.padLeft(8, '0')}';
+        : rawSaleId.padLeft(8, '0');
 
     final customerMap = sale['customer'] as Map<String, dynamic>?;
     final rawDocNumber = _firstNonEmpty([

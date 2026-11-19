@@ -26,6 +26,12 @@ class ProductModel extends Product {
     super.vencimientoDias,
     super.expirationDate,
     super.expiryAlertDays,
+    super.trackBatches,
+    super.lotDeductionPolicy,
+    super.allowSellExpired,
+    super.hasProductionRecipe,
+    super.recipeYieldQuantity,
+    super.recipeIngredients,
     super.unitType,
     super.ivaRate,
     super.needsCatalogReview,
@@ -57,7 +63,14 @@ class ProductModel extends Product {
     int? salesCount,
     int? vencimientoDias,
     String? expirationDate,
+    bool clearExpirationDate = false,
     int? expiryAlertDays,
+    bool? trackBatches,
+    String? lotDeductionPolicy,
+    bool? allowSellExpired,
+    bool? hasProductionRecipe,
+    double? recipeYieldQuantity,
+    List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
     double? ivaRate,
     bool? needsCatalogReview,
@@ -90,8 +103,14 @@ class ProductModel extends Product {
       priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
-      expirationDate: expirationDate ?? this.expirationDate,
+      expirationDate: clearExpirationDate ? null : (expirationDate ?? this.expirationDate),
       expiryAlertDays: expiryAlertDays ?? this.expiryAlertDays,
+      trackBatches: trackBatches ?? this.trackBatches,
+      lotDeductionPolicy: lotDeductionPolicy ?? this.lotDeductionPolicy,
+      allowSellExpired: allowSellExpired ?? this.allowSellExpired,
+      hasProductionRecipe: hasProductionRecipe ?? this.hasProductionRecipe,
+      recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
+      recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
@@ -143,6 +162,40 @@ class ProductModel extends Product {
           .toList();
     }
 
+    List<Map<String, dynamic>>? parsedRecipe;
+    final rawRecipe = json['recipe_items'] ?? json['recipe_ingredients'];
+    if (rawRecipe != null && rawRecipe is List) {
+      parsedRecipe = rawRecipe.whereType<Map>().map((raw) {
+        final item = Map<String, dynamic>.from(raw);
+        final ing = item['ingredient'] is Map
+            ? Map<String, dynamic>.from(item['ingredient'] as Map)
+            : null;
+        final ingId = (item['ingredient_product_id'] as num?)?.toInt() ??
+            (ing?['id'] as num?)?.toInt() ??
+            (item['id'] as num?)?.toInt() ??
+            0;
+        return {
+          'id': ingId,
+          'ingredient_product_id': ingId,
+          'name': ing?['name']?.toString() ?? item['name']?.toString() ?? 'Ingrediente',
+          'internal_code': ing?['internal_code']?.toString() ?? item['internal_code']?.toString() ?? '',
+          'quantity': double.tryParse(item['quantity']?.toString() ?? '1') ?? 1.0,
+          'waste_pct': double.tryParse(item['waste_pct']?.toString() ?? '0') ?? 0.0,
+          'cost_price': double.tryParse((ing?['cost_price'] ?? item['cost_price'])?.toString() ?? '0') ?? 0.0,
+          'stock': double.tryParse((ing?['stock'] ?? item['stock'])?.toString() ?? '0') ?? 0.0,
+          'unit_type': (ing?['unit_type'] ?? item['unit_type'])?.toString() ?? 'un',
+          'is_sold_by_weight': ing?['is_sold_by_weight'] == true ||
+              ing?['is_sold_by_weight'] == 1 ||
+              item['is_sold_by_weight'] == true ||
+              item['is_sold_by_weight'] == 1,
+          'track_batches': ing?['track_batches'] == true ||
+              ing?['track_batches'] == 1 ||
+              item['track_batches'] == true ||
+              item['track_batches'] == 1,
+        };
+      }).toList();
+    }
+
     return ProductModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? 'Sin nombre',
@@ -181,6 +234,21 @@ class ProductModel extends Product {
       expiryAlertDays: json['expiry_alert_days'] != null
           ? int.tryParse(json['expiry_alert_days'].toString())
           : 15,
+      trackBatches: json['track_batches'] == 1 ||
+          json['track_batches'] == true ||
+          json['track_batches'] == '1' ||
+          json['track_batches'] == 'true',
+      lotDeductionPolicy: json['lot_deduction_policy']?.toString() ?? 'fefo',
+      allowSellExpired: json['allow_sell_expired'] == 1 ||
+          json['allow_sell_expired'] == true ||
+          json['allow_sell_expired'] == '1' ||
+          json['allow_sell_expired'] == 'true',
+      hasProductionRecipe: json['has_production_recipe'] == 1 ||
+          json['has_production_recipe'] == true ||
+          json['has_production_recipe'] == '1' ||
+          json['has_production_recipe'] == 'true',
+      recipeYieldQuantity: double.tryParse(json['recipe_yield_quantity']?.toString() ?? '1') ?? 1.0,
+      recipeIngredients: parsedRecipe,
       unitType: json['unit_type']?.toString() ?? 'un',
       ivaRate: json['iva_rate'] != null
           ? (double.tryParse(json['iva_rate'].toString()) ?? 21.0)

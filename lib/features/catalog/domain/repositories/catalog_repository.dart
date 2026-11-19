@@ -2,6 +2,8 @@ import '../entities/product.dart';
 import '../entities/category.dart';
 import '../entities/brand.dart';
 import '../entities/rubro.dart';
+import '../../data/models/product_batch_model.dart';
+import '../../data/models/production_order_model.dart';
 
 abstract class CatalogRepository {
   /// Returns {data: `List<Product>`, current_page: int, last_page: int}
@@ -88,6 +90,64 @@ abstract class CatalogRepository {
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
+  });
+  Future<ProductBatchesResponse> fetchProductBatches(
+    int productId, {
+    bool includeClosed = true,
+  });
+  Future<Map<String, dynamic>> createProductBatch(
+    int productId, {
+    required double quantity,
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> updateProductBatch(
+    int batchId, {
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> writeOffBatch(
+    int batchId, {
+    double? quantity,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> fetchExpiredBatches({bool includeToday = true});
+  Future<Map<String, dynamic>> splitBatch(
+    int batchId, {
+    required double quantity,
+    String? expirationDate,
+    String? batchCode,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> writeOffExpiredBatches({
+    List<Map<String, dynamic>>? items,
+    bool includeToday = true,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> fetchProductionOrders({
+    int page = 1,
+    int? productId,
+    String? status,
+    String? search,
+  });
+  Future<ProductionOrderModel> createProductionOrder(Map<String, dynamic> payload);
+  Future<Map<String, dynamic>> createBatchProductionOrders(Map<String, dynamic> payload);
+  Future<ProductionOrderModel> voidProductionOrder(int orderId);
+  Future<Map<String, dynamic>> fetchWasteReport({
+    String? startDate,
+    String? endDate,
   });
   Future<List<Product>> fetchCriticalAlerts();
   /// Fetches only {id, stock} for the given IDs. Avoids a full catalog reload post-sale.

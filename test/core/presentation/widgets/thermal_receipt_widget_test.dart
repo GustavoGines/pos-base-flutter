@@ -118,7 +118,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify AFIP fiscal elements exist
-      expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
+      expect(find.text('FACTURA A Nro 00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
@@ -156,7 +156,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify AFIP fiscal elements
-      expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
+      expect(find.text('FACTURA A Nro 00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
@@ -426,7 +426,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('FACTURA B Nro 00001-00000035'), findsOneWidget);
+      expect(find.text('FACTURA B Nro 00000035'), findsOneWidget);
       expect(find.text('COD. 006'), findsOneWidget);
       expect(find.text('IVA RESPONSABLE INSCRIPTO'), findsOneWidget);
       expect(find.text('A CONSUMIDOR FINAL'), findsOneWidget);

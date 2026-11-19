@@ -299,10 +299,36 @@ class _QuoteScreenState extends State<QuoteScreen> {
   Widget _buildSearchBar() {
     return Consumer<QuoteProvider>(
       builder: (_, qProvider, __) {
-        final settings = context.watch<SettingsProvider>();
-        final hasMultiPrice = settings.settings?.hasMultiPriceEnabled == true;
+        final appSettings = context.watch<SettingsProvider>().settings;
+        final hasMultiPrice = appSettings?.hasAnyAlternativePriceTier == true;
         final tierColor = qProvider.activePriceListColor;
-        final customTiers = settings.settings?.customPriceTiers ?? [];
+        final customTiers = appSettings?.activeCustomPriceTiers ?? const [];
+
+        final quoteTierItems = <DropdownMenuItem<String>>[
+          const DropdownMenuItem(value: 'base', child: Text('Precio Base')),
+          if (appSettings?.isWholesaleTierAvailable == true)
+            const DropdownMenuItem(
+                value: 'wholesale', child: Text('Mayorista')),
+          if (appSettings?.isCardTierAvailable == true)
+            const DropdownMenuItem(value: 'card', child: Text('Tarjeta')),
+          ...customTiers.map((ct) {
+            final name = ct['name']?.toString().trim() ?? '';
+            return DropdownMenuItem(value: name, child: Text(name));
+          }),
+        ];
+        final rawTierKey =
+            _tierToKey(qProvider.activeTier, qProvider.customTierLabel);
+        final safeTierKey =
+            quoteTierItems.any((item) => item.value == rawTierKey)
+                ? rawTierKey
+                : 'base';
+        if (hasMultiPrice &&
+            rawTierKey != safeTierKey &&
+            qProvider.activeTier != PriceTier.base) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) qProvider.setPriceTier(PriceTier.base);
+          });
+        }
 
         return Container(
           padding: const EdgeInsets.all(12),
@@ -346,7 +372,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
-                      value: _tierToKey(qProvider.activeTier, qProvider.customTierLabel),
+                      value: safeTierKey,
                       icon: Icon(Icons.expand_more, color: tierColor, size: 18),
                       style: TextStyle(
                         color: tierColor,
@@ -368,7 +394,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                           default:
                             // Lista custom del JSON
                             final t = customTiers.firstWhere(
-                              (ct) => ct['name'] == v,
+                              (ct) => (ct['name'] ?? '').toString().trim() == v,
                               orElse: () => {'modifier': 0.0},
                             );
                             final mod = (t['modifier'] as num?)?.toDouble() ?? 0.0;
@@ -379,15 +405,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                             );
                         }
                       },
-                      items: [
-                        const DropdownMenuItem(value: 'base',      child: Text('Precio Base')),
-                        const DropdownMenuItem(value: 'wholesale', child: Text('Mayorista')),
-                        const DropdownMenuItem(value: 'card',      child: Text('Tarjeta')),
-                        ...customTiers.map((ct) => DropdownMenuItem(
-                          value: ct['name']?.toString() ?? '',
-                          child: Text(ct['name']?.toString() ?? ''),
-                        )),
-                      ],
+                      items: quoteTierItems,
                     ),
                   ),
                 ),

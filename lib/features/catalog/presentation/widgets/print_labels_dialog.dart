@@ -8,6 +8,8 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../domain/entities/product.dart';
+import '../../data/models/product_batch_model.dart';
+import 'package:frontend_desktop/features/pos/utils/batch_barcode_helper.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -31,8 +33,15 @@ import 'package:frontend_desktop/core/utils/ean13_generator.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 class PrintLabelsDialog extends StatefulWidget {
   final List<Product> products;
+  final Map<int, ProductBatchModel>? batchByProductId;
+  final Map<int, int>? initialQuantities;
 
-  const PrintLabelsDialog({super.key, required this.products});
+  const PrintLabelsDialog({
+    super.key,
+    required this.products,
+    this.batchByProductId,
+    this.initialQuantities,
+  });
 
   @override
   State<PrintLabelsDialog> createState() => _PrintLabelsDialogState();
@@ -45,6 +54,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   // Smart default: se activa solo si algún producto tiene balanza o días de vencimiento.
   // Se calcula en initState() una vez que se conocen los productos.
   bool _printDates = false;
+  bool _useBatchBarcode = false;
 
   // Debounce + UniqueKey para forzar rebuild del PdfPreview
   Key _previewKey = UniqueKey();
@@ -67,7 +77,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   void initState() {
     super.initState();
     for (var p in widget.products) {
-      _quantities[p.id] = 1;
+      final preset = widget.initialQuantities?[p.id];
+      _quantities[p.id] = (preset != null && preset >= 0) ? preset : 1;
       if (p.isSoldByWeight) {
         _weights[p.id] = 100.0;
       }
@@ -79,7 +90,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     _printDates = widget.products.any(
       (p) =>
           p.isSoldByWeight ||
-          (p.vencimientoDias != null && p.vencimientoDias! > 0),
+          (p.vencimientoDias != null && p.vencimientoDias! > 0) ||
+          (widget.batchByProductId?.containsKey(p.id) ?? false),
     );
     // Leer settings una sola vez para tenerlos disponibles en el motor PDF
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -169,6 +181,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     pw.Widget buildLabel(Product product,
         {required double heightLabel, required double widthLabel}) {
       final bool isThermal = _paperFormat.startsWith('thermal');
+      final ProductBatchModel? batch = widget.batchByProductId?[product.id];
       final double? customWeight = _weights[product.id];
       final bool hasWeight =
           product.isSoldByWeight && customWeight != null && customWeight > 0;
@@ -187,16 +200,38 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               plu: numericPlu,
               existingBarcode: product.barcode,
             );
-
-      final String envStr = dateFmt.format(now);
-      final String? vtoStr = (product.vencimientoDias != null &&
-              product.vencimientoDias! > 0)
-          ? dateFmt.format(now.add(Duration(days: product.vencimientoDias!)))
+      final String? batchBarcode = (batch != null && _useBatchBarcode)
+          ? BatchBarcodeHelper.encode(
+              batchId: batch.id,
+              weightGrams: hasWeight ? customWeight : null,
+            )
           : null;
+      final String barcodeValue = batchBarcode ?? ean13;
+
+      final DateTime envDt = (batch?.manufacturedAt != null
+              ? DateTime.tryParse(batch!.manufacturedAt!)
+              : null) ??
+          now;
+      final String envStr = dateFmt.format(envDt);
+
+      DateTime? vtoDt = batch?.expirationDate != null
+          ? DateTime.tryParse(batch!.expirationDate!)
+          : null;
+      vtoDt ??= product.expirationDate != null
+          ? DateTime.tryParse(product.expirationDate!)
+          : null;
+      vtoDt ??= (product.vencimientoDias != null && product.vencimientoDias! > 0)
+          ? now.add(Duration(days: product.vencimientoDias!))
+          : null;
+      final String? vtoStr = vtoDt != null ? dateFmt.format(vtoDt) : null;
 
       final String precioStr =
           NumberFormat('#,##0', 'es_AR').format(finalPrice);
-      final bool isValidEan = Ean13Generator.isValid(ean13);
+      final bool useEan13 =
+          batchBarcode == null && Ean13Generator.isValid(ean13);
+      final double hPadMm = isThermal ? 1.0 : 1.5;
+      final double innerWidthPt =
+          (widthLabel - (hPadMm * 2)) * PdfPageFormat.mm;
 
       // ── Layout completamente plano: un solo Column min-size, sin spaceBetween
       // spaceBetween causaba que los bloques se separaran más allá del SizedBox
@@ -209,10 +244,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             width: widthLabel * PdfPageFormat.mm,
             height: heightLabel * PdfPageFormat.mm,
             padding: pw.EdgeInsets.symmetric(
-              horizontal:
-                  isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
-              vertical:
-                  isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
+              horizontal: hPadMm * PdfPageFormat.mm,
+              vertical: hPadMm * PdfPageFormat.mm,
             ),
             decoration: isThermal
                 ? null
@@ -220,10 +253,15 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
                     borderRadius: pw.BorderRadius.circular(2),
                   ),
-            child: pw.Column(
-              mainAxisSize: pw.MainAxisSize.min,
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
+            child: pw.FittedBox(
+              fit: pw.BoxFit.scaleDown,
+              alignment: pw.Alignment.topCenter,
+              child: pw.SizedBox(
+                width: innerWidthPt,
+                child: pw.Column(
+                  mainAxisSize: pw.MainAxisSize.min,
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
                 // ── NOMBRE ──
                 pw.Text(
                   product.name.toUpperCase(),
@@ -246,8 +284,17 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                   pw.SizedBox(height: 1 * PdfPageFormat.mm),
                 ],
 
-                // ── FECHAS (solo si aplica) ──
-                if (printDates && (hasWeight || vtoStr != null)) ...[
+                // ── FECHAS / LOTE (solo si aplica) ──
+                if (batch != null || (printDates && (hasWeight || vtoStr != null))) ...[
+                  if (batch != null)
+                    pw.Text(
+                      'LOTE: ${batch.batchCode}',
+                      style: pw.TextStyle(
+                        fontSize: 6.0,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
@@ -261,7 +308,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                       ],
                     ],
                   ),
-                  pw.SizedBox(height: 1 * PdfPageFormat.mm),
+                  pw.SizedBox(
+                      height: (batch != null ? 0.7 : 1.0) * PdfPageFormat.mm),
                 ],
 
                 // ── UNIDADES / PRECIO X KG ──
@@ -309,10 +357,10 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                               style: const pw.TextStyle(fontSize: 5)),
                           pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
                           pw.BarcodeWidget(
-                            barcode: isValidEan
+                            barcode: useEan13
                                 ? pw.Barcode.ean13()
                                 : pw.Barcode.code128(),
-                            data: ean13,
+                            data: barcodeValue,
                             drawText: false,
                             height: (widthLabel >= 75.0 ? 11 : 8) *
                                 PdfPageFormat.mm,
@@ -323,7 +371,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                           ),
                           pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
                           pw.Text(
-                            Ean13Generator.format(ean13),
+                            batchBarcode != null
+                                ? '${batch!.batchCode} ($barcodeValue)'
+                                : Ean13Generator.format(ean13),
                             style: pw.TextStyle(fontSize: 5, font: ttfRegular),
                             textAlign: pw.TextAlign.left,
                           ),
@@ -381,12 +431,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     textAlign: pw.TextAlign.center,
                     maxLines: 1,
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
     // Generar lista plana de etiquetas para reportes o A4
     final double labelWidth = _paperFormat == 'thermal_58'
@@ -602,6 +654,47 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     letterSpacing: 0.8,
                   ),
                 ),
+                if (widget.initialQuantities != null &&
+                    widget.initialQuantities!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.looks_one_outlined, size: 14),
+                        label: const Text('1 por lote/bandeja',
+                            style: TextStyle(fontSize: 10.5)),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          setState(() {
+                            for (final p in widget.products) {
+                              _quantities[p.id] = 1;
+                            }
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.auto_fix_high, size: 14),
+                        label: const Text('Cant. producida',
+                            style: TextStyle(fontSize: 10.5)),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          setState(() {
+                            for (final p in widget.products) {
+                              final preset = widget.initialQuantities?[p.id];
+                              if (preset != null && preset >= 0) {
+                                _quantities[p.id] = preset;
+                              }
+                            }
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 ...widget.products.map((p) => _buildProductQtyRow(p)),
                 const SizedBox(height: 16),
@@ -720,6 +813,39 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     ),
                   ),
                 ),
+                if (widget.batchByProductId != null &&
+                    widget.batchByProductId!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: CheckboxListTile(
+                        title: const Text('Código de barras por lote (L#)',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold)),
+                        subtitle: const Text(
+                            'Desmarcado: usa el código EAN-13 del producto.',
+                            style: TextStyle(fontSize: 10)),
+                        value: _useBatchBarcode,
+                        activeColor: Colors.deepPurple,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 0),
+                        visualDensity: VisualDensity.compact,
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _useBatchBarcode = val);
+                            _schedulePreviewRebuild();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

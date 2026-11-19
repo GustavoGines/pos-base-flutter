@@ -56,4 +56,5 @@ abstract class PosRepository {
   /// Crea automáticamente un Remito de Logística a partir de una venta ya procesada.
   /// Se llama como side-effect silencioso cuando el cajero activa "Enviar a Logística".
   Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'});
+  Future<Map<String, dynamic>> scanBatch(String code);
 }

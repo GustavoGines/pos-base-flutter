@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/inventory_alerts_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/expired_batches_sweep_dialog.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/production_orders_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_adjustment_dialog.dart';
+import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
@@ -22,7 +31,6 @@ class InventoryAlertsWidget extends StatefulWidget {
 
 class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   final _overlayController = OverlayPortalController();
-  final _link = LayerLink();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
@@ -177,22 +185,32 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     }
   }
 
+  List<dynamic> _safeDeficitAlerts(InventoryAlertsProvider provider) {
+    try {
+      return provider.deficitAlerts;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TapRegion(
       groupId: 'inventory_alerts_overlay',
-      child: CompositedTransformTarget(
-        link: _link,
-        child: OverlayPortal(
-          controller: _overlayController,
-          overlayChildBuilder: (context) => _buildOverlayContent(context),
-          child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
+      child: OverlayPortal.overlayChildLayoutBuilder(
+        controller: _overlayController,
+        overlayChildBuilder: (context, info) =>
+            _buildOverlayContent(context, info),
+        child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
               final expAlerts = _safeExpirationAlerts(provider);
+              final deficitAlerts = _safeDeficitAlerts(provider);
               final count = hasPredictive
                   ? provider.totalAlertsCount
-                  : (provider.reactiveAlerts.length + expAlerts.length);
+                  : (provider.reactiveAlerts.length +
+                      expAlerts.length +
+                      deficitAlerts.length);
               final hasCritical = provider.reactiveAlerts.isNotEmpty ||
                   expAlerts.any((a) => a['alert_level'] == 'critical') ||
                   (hasPredictive &&
@@ -213,8 +231,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                       angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
                       child: IconButton(
                         tooltip: count == 0
-                            ? 'Sin alertas de stock'
-                            : '$count producto${count > 1 ? 's' : ''} con bajo stock',
+                            ? 'Sin alertas'
+                            : '$count alerta${count > 1 ? 's' : ''} activa${count > 1 ? 's' : ''}',
                         icon: Icon(
                           count > 0
                               ? Icons.notifications_active
@@ -234,45 +252,49 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
             },
           ),
         ),
-      ),
     );
   }
 
-  Widget _buildOverlayContent(BuildContext context) {
-    return TapRegion(
-      groupId: 'inventory_alerts_overlay',
-      onTapOutside: (_) => _hideOverlay(),
-      child: CompositedTransformFollower(
-        link: _link,
-        showWhenUnlinked: false,
-        targetAnchor: Alignment.bottomRight,
-        followerAnchor: Alignment.topRight,
-        offset: const Offset(0, 8),
-        child: Align(
-          alignment: Alignment.topRight,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 540),
-            child: Material(
-              elevation: 16,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              shadowColor: Colors.black.withValues(alpha: 0.3),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(context),
-                    _buildSearchBar(context),
-                    const Divider(height: 1),
-                    Flexible(child: _buildBody()),
-                    const Divider(height: 1),
-                    _buildFooter(),
-                  ],
-                ),
+  Widget _buildOverlayContent(
+    BuildContext context,
+    OverlayChildLayoutInfo info,
+  ) {
+    final Offset targetBottomRight = MatrixUtils.transformPoint(
+      info.childPaintTransform,
+      Offset(info.childSize.width, info.childSize.height),
+    );
+    final double top = targetBottomRight.dy + 8.0;
+    final double rawRight = info.overlaySize.width - targetBottomRight.dx;
+    final double right = rawRight < 8.0 ? 8.0 : rawRight;
+
+    return Positioned(
+      top: top,
+      right: right,
+      child: TapRegion(
+        groupId: 'inventory_alerts_overlay',
+        onTapOutside: (_) => _hideOverlay(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 540),
+          child: Material(
+            elevation: 16,
+            borderRadius: BorderRadius.circular(20),
+            clipBehavior: Clip.antiAlias,
+            shadowColor: Colors.black.withValues(alpha: 0.3),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(context),
+                  _buildSearchBar(context),
+                  const Divider(height: 1),
+                  Flexible(child: _buildBody()),
+                  const Divider(height: 1),
+                  _buildFooter(),
+                ],
               ),
             ),
           ),
@@ -319,9 +341,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
         final expAlerts = _safeExpirationAlerts(provider);
+        final deficitAlerts = _safeDeficitAlerts(provider);
         final hasAnyAlerts = hasPredictive
-            ? provider.alerts.isNotEmpty
-            : (provider.reactiveAlerts.isNotEmpty || expAlerts.isNotEmpty);
+            ? (provider.alerts.isNotEmpty || deficitAlerts.isNotEmpty)
+            : (provider.reactiveAlerts.isNotEmpty ||
+                expAlerts.isNotEmpty ||
+                deficitAlerts.isNotEmpty);
 
         if (provider.isLoading || !hasAnyAlerts) {
           return const SizedBox.shrink();
@@ -402,6 +427,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
         final expAlerts = _safeExpirationAlerts(provider);
+        final deficitAlerts = _safeDeficitAlerts(provider);
 
         if (provider.isLoading) {
           return const Padding(
@@ -410,10 +436,11 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           );
         }
 
-        if ((hasPredictive && provider.alerts.isEmpty) ||
+        if ((hasPredictive && provider.alerts.isEmpty && deficitAlerts.isEmpty) ||
             (!hasPredictive &&
                 provider.reactiveAlerts.isEmpty &&
-                expAlerts.isEmpty)) {
+                expAlerts.isEmpty &&
+                deficitAlerts.isEmpty)) {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -465,11 +492,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                 .where((a) => _matchesSearch(a, queryTokens, catalogProvider))
                 .toList()
             : const <dynamic>[];
+        final filteredDeficitAlerts = deficitAlerts
+            .where((a) => _matchesSearch(a, queryTokens, catalogProvider))
+            .toList();
 
         if (queryTokens.isNotEmpty &&
             filteredExpAlerts.isEmpty &&
             filteredReactiveAlerts.isEmpty &&
-            filteredPredictiveAlerts.isEmpty) {
+            filteredPredictiveAlerts.isEmpty &&
+            filteredDeficitAlerts.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
             child: Column(
@@ -514,6 +545,17 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         }
 
         final entries = <Widget>[
+          if (filteredDeficitAlerts.isNotEmpty) ...[
+            _SectionHeader(
+              label: queryTokens.isEmpty
+                  ? '⚠️ VENTAS SIN LOTE RESPALDATORIO (${filteredDeficitAlerts.length})'
+                  : '⚠️ VENTAS SIN LOTE (${filteredDeficitAlerts.length}/${deficitAlerts.length})',
+              color: Colors.deepOrange.shade50,
+              textColor: Colors.deepOrange.shade900,
+            ),
+            ...filteredDeficitAlerts
+                .map((a) => _buildDeficitTile(context, provider, a)),
+          ],
           if (filteredExpAlerts.isNotEmpty) ...[
             _SectionHeader(
               label: queryTokens.isEmpty
@@ -521,6 +563,32 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   : '⏰ ALERTAS DE VENCIMIENTO (${filteredExpAlerts.length}/${expAlerts.length})',
               color: Colors.purple.shade50,
               textColor: Colors.purple.shade900,
+              trailing: TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: Colors.deepOrange.shade800,
+                ),
+                icon: const Icon(Icons.cleaning_services_outlined, size: 14),
+                label: const Text(
+                  'Barrido Vencidos',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () async {
+                  _hideOverlay();
+                  if (!mounted) return;
+                  final catalogProvider = context.read<CatalogProvider>();
+                  final swept = await showDialog<bool>(
+                    context: context,
+                    builder: (_) =>
+                        ExpiredBatchesSweepDialog(provider: catalogProvider),
+                  );
+                  if (swept == true && mounted) {
+                    provider.fetchAlerts();
+                  }
+                },
+              ),
             ),
             ...filteredExpAlerts
                 .map((a) => _buildExpirationTile(context, provider, a)),
@@ -586,6 +654,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     dynamic alert,
   ) {
     final productId = (alert['product_id'] as num?)?.toInt() ?? 0;
+    final batchId = (alert['batch_id'] as num?)?.toInt();
+    final batchCode = alert['batch_code']?.toString();
     final name = (alert['product_name'] ?? alert['name'])?.toString() ?? 'Producto';
     final daysRemaining = ((alert['days_until_expiry'] ?? alert['days_until_expiration']) as num?)?.toInt() ?? 0;
     final stageLabel = alert['expiry_stage_label']?.toString() ?? 'Próximo a vencer';
@@ -651,6 +721,23 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                         ),
                       ),
                     ),
+                    if (batchCode != null && batchCode.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.teal.shade200),
+                        ),
+                        child: Text(
+                          'Lote $batchCode',
+                          style: TextStyle(
+                            color: Colors.teal.shade900,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     Text(
                       isExpired
                           ? 'Venció ($expDate)'
@@ -674,54 +761,703 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
             tooltip: 'Posponer o gestionar alerta',
             icon: Icon(Icons.snooze, size: 18, color: Colors.blueGrey.shade600),
             onSelected: (action) async {
-              if (action == 'snooze_1') {
-                await provider.snoozeExpirationAlert(productId, action: 'snooze_days', days: 1);
-              } else if (action == 'snooze_3') {
-                await provider.snoozeExpirationAlert(productId, action: 'snooze_days', days: 3);
-              } else if (action == 'snooze_stage') {
-                await provider.snoozeExpirationAlert(productId, action: 'snooze_next_stage');
-              } else if (action == 'clear') {
+              if (action == 'snooze_1' || action == 'snooze_3' || action == 'snooze_stage') {
+                _hideOverlay();
+                final ok = await provider.snoozeExpirationAlert(
+                  productId,
+                  action: action == 'snooze_stage' ? 'snooze_next_stage' : 'snooze_days',
+                  days: action == 'snooze_1' ? 1 : (action == 'snooze_3' ? 3 : null),
+                  batchId: batchId,
+                );
+                if (!mounted) return;
+                if (ok) {
+                  final msg = action == 'snooze_stage'
+                      ? 'Alerta silenciada hasta la siguiente etapa.'
+                      : 'Alerta pospuesta por ${action == 'snooze_1' ? '1 día' : '3 días'}.';
+                  SnackBarService.success(context, msg);
+                } else {
+                  SnackBarService.error(context, provider.error ?? 'No se pudo posponer la alerta.');
+                }
+              } else if (action == 'write_off') {
+                await _openWriteOffFromAlert(
+                  provider,
+                  productId: productId,
+                  batchId: batchId,
+                  batchCode: batchCode,
+                  productName: name,
+                  availableQty: stock,
+                );
+              } else if (action == 'transform' && batchId != null) {
                 _hideOverlay();
                 if (!mounted) return;
-                await AdminPinDialog.protectAction(
-                  context,
-                  action: 'Quitar fecha de vencimiento del lote',
-                  permissionKey: AppPermissions.manageCatalog,
-                  onAuthorized: () async {
-                    await provider.snoozeExpirationAlert(productId, action: 'clear_expiration');
-                  },
+                final catalogProvider = context.read<CatalogProvider>();
+                await showDialog(
+                  context: context,
+                  builder: (_) => ProductionOrdersDialog(
+                    provider: catalogProvider,
+                    filterIngredientProductId: productId,
+                    initialExplicitBatchId: batchId,
+                  ),
+                );
+                if (mounted) provider.fetchAlerts();
+              } else if (action == 'liquidate') {
+                await _openLiquidateFromAlert(
+                  productId: productId,
+                  productName: name,
+                  batchCode: batchCode,
+                  expDate: expDate,
+                  isExpired: isExpired,
+                );
+              } else if (action == 'update_exp') {
+                await _openUpdateExpirationFromAlert(
+                  provider,
+                  productId: productId,
+                  productName: name,
+                  batchId: batchId,
+                  batchCode: batchCode,
+                  currentExpDate: expDate,
+                );
+              } else if (action == 'batches' && batchId != null) {
+                _hideOverlay();
+                if (!mounted) return;
+                final catalogProvider = context.read<CatalogProvider>();
+                final product = await catalogProvider.resolveProductById(productId);
+                if (!mounted) return;
+                if (product == null) {
+                  SnackBarService.error(context, 'Producto no disponible en catálogo.');
+                  return;
+                }
+                await showDialog(
+                  context: context,
+                  builder: (_) => ProductBatchesDialog(
+                    provider: catalogProvider,
+                    product: product,
+                  ),
+                );
+                if (mounted) provider.fetchAlerts();
+              } else if (action == 'clear') {
+                await _openClearExpirationFromAlert(
+                  provider,
+                  productId: productId,
+                  productName: name,
+                  batchId: batchId,
+                  batchCode: batchCode,
                 );
               } else if (action == 'view') {
                 await _handleViewProductTap(alert);
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'snooze_stage',
-                child: Text('Silenciar hasta próximo umbral (7d / 3d / Vto)',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
-              PopupMenuItem(
-                value: 'snooze_1',
-                child: Text('Posponer por 1 día', style: TextStyle(fontSize: 12)),
-              ),
-              PopupMenuItem(
-                value: 'snooze_3',
-                child: Text('Posponer por 3 días', style: TextStyle(fontSize: 12)),
-              ),
-              PopupMenuItem(
-                value: 'view',
-                child: Text('Editar producto / lote en Catálogo', style: TextStyle(fontSize: 12)),
-              ),
-              PopupMenuItem(
-                value: 'clear',
-                child: Text('Lote vendido / Quitar fecha vto.',
-                    style: TextStyle(fontSize: 12, color: Colors.red)),
-              ),
-            ],
+            itemBuilder: (context) {
+              final nextStageLabel = daysRemaining > 7
+                  ? 'Silenciar hasta próximo aviso (7 días)'
+                  : (daysRemaining > 3
+                      ? 'Silenciar hasta aviso crítico (3 días)'
+                      : 'Silenciar hasta el día del vencimiento');
+              return [
+                PopupMenuItem(
+                  value: 'write_off',
+                  child: Text(
+                    batchId != null
+                        ? 'Registrar Merma / Dar de baja lote'
+                        : 'Registrar Merma / Dar de baja stock',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.deepOrange,
+                    ),
+                  ),
+                ),
+                if (batchId != null)
+                  const PopupMenuItem(
+                    value: 'transform',
+                    child: Text('Transformar / Re-elaborar en receta',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal)),
+                  ),
+                const PopupMenuItem(
+                  value: 'liquidate',
+                  child: Text('Crear Oferta de Liquidación (%)',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
+                ),
+                const PopupMenuItem(
+                  value: 'update_exp',
+                  child: Text('Actualizar fecha de vencimiento',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo)),
+                ),
+                if (!isExpired)
+                  PopupMenuItem(
+                    value: 'snooze_stage',
+                    child: Text(
+                      nextStageLabel,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                const PopupMenuItem(
+                  value: 'snooze_1',
+                  child: Text('Posponer por 1 día', style: TextStyle(fontSize: 12)),
+                ),
+                const PopupMenuItem(
+                  value: 'snooze_3',
+                  child: Text('Posponer por 3 días', style: TextStyle(fontSize: 12)),
+                ),
+                if (batchId != null)
+                  const PopupMenuItem(
+                    value: 'batches',
+                    child: Text('Gestionar lotes del producto', style: TextStyle(fontSize: 12)),
+                  ),
+                const PopupMenuItem(
+                  value: 'view',
+                  child: Text('Editar producto en Catálogo', style: TextStyle(fontSize: 12)),
+                ),
+                const PopupMenuItem(
+                  value: 'clear',
+                  child: Text('Lote vendido / Quitar fecha vto.',
+                      style: TextStyle(fontSize: 12, color: Colors.red)),
+                ),
+              ];
+            },
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDeficitTile(
+    BuildContext context,
+    InventoryAlertsProvider provider,
+    dynamic alert,
+  ) {
+    final productId = (alert['product_id'] as num?)?.toInt() ?? 0;
+    final name = (alert['product_name'] ?? alert['name'])?.toString() ?? 'Producto';
+    final batchCode = alert['batch_code']?.toString() ?? 'DÉFICIT';
+    final deficitQty = double.tryParse((alert['deficit_quantity'] ?? 0).toString()) ?? 0.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.shade50.withValues(alpha: 0.35),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.deepOrange.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.sync_problem, color: Colors.deepOrange.shade900, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Faltante sin respaldo de lote ($batchCode): ${deficitQty.toQty()} u. • Cargar producción o compra para conciliar.',
+                  style: TextStyle(fontSize: 11.5, color: Colors.deepOrange.shade900),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () async {
+              _hideOverlay();
+              if (!mounted) return;
+              final catalogProvider = context.read<CatalogProvider>();
+              final product = await catalogProvider.resolveProductById(productId);
+              if (!mounted) return;
+              if (product == null) {
+                await _handleViewProductTap(alert);
+                return;
+              }
+              await showDialog(
+                context: context,
+                builder: (_) => ProductBatchesDialog(
+                  provider: catalogProvider,
+                  product: product,
+                  initialOpenCreate: true,
+                ),
+              );
+              if (mounted) provider.fetchAlerts();
+            },
+            child: const Text('Conciliar', style: TextStyle(fontSize: 11.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openWriteOffFromAlert(
+    InventoryAlertsProvider alertsProvider, {
+    required int productId,
+    int? batchId,
+    String? batchCode,
+    required String productName,
+    required double availableQty,
+  }) async {
+    _hideOverlay();
+    if (!mounted) return;
+    final qtyCtrl = TextEditingController(text: availableQty > 0 ? availableQty.toQty() : '');
+    final notesCtrl = TextEditingController(text: 'Merma desde alerta de vencimiento');
+    String? inlineError;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: Text('Merma: $productName'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  batchId != null
+                      ? 'Lote: ${batchCode ?? '#$batchId'} • Stock lote: ${availableQty.toQty()}'
+                      : 'Stock actual disponible: ${availableQty.toQty()}',
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: qtyCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Cantidad a dar de baja',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: notesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de merma',
+                    isDense: true,
+                  ),
+                ),
+                if (inlineError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    inlineError!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
+              onPressed: () {
+                final parsed = double.tryParse(qtyCtrl.text.replaceAll(',', '.').trim());
+                if (parsed == null || parsed <= 0) {
+                  setModalState(() => inlineError = 'Ingresá una cantidad mayor a cero.');
+                  return;
+                }
+                if (availableQty > 0 && parsed > availableQty + 0.0005) {
+                  setModalState(
+                    () => inlineError = 'No podés dar de baja más que el stock disponible (${availableQty.toQty()}).',
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Confirmar Merma'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final qty = double.tryParse(qtyCtrl.text.replaceAll(',', '.').trim());
+    final notes = notesCtrl.text.trim();
+    qtyCtrl.dispose();
+    notesCtrl.dispose();
+    if (confirmed != true || qty == null || qty <= 0 || !mounted) return;
+
+    final catalogProvider = context.read<CatalogProvider>();
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Registrar Merma en $productName',
+      permissionKey: AppPermissions.adjustStock,
+      onAuthorized: () async {
+        if (batchId != null) {
+          final res = await catalogProvider.writeOffBatch(
+            batchId,
+            quantity: qty,
+            notes: notes.isNotEmpty ? notes : null,
+          );
+          if (!mounted) return;
+          if (res != null) {
+            final lost = (res['cost_lost'] as num?)?.toDouble();
+            SnackBarService.success(
+              context,
+              'Merma registrada${lost != null && lost > 0 ? ' (Costo perdido: \$${lost.toCurrency()})' : ''}.',
+            );
+            alertsProvider.fetchAlerts();
+          } else {
+            SnackBarService.error(
+              context,
+              catalogProvider.errorMessage ?? 'No se pudo registrar la merma.',
+            );
+          }
+        } else {
+          final ok = await catalogProvider.adjustStock(
+            productId: productId,
+            type: 'out',
+            quantity: qty,
+            notes: notes.isNotEmpty ? notes : 'Merma desde alerta de vencimiento',
+            reasonCode: 'waste',
+          );
+          if (!mounted) return;
+          if (ok) {
+            SnackBarService.success(context, 'Merma registrada y stock actualizado (-${qty.toQty()}).');
+            alertsProvider.fetchAlerts();
+          } else {
+            SnackBarService.error(
+              context,
+              catalogProvider.errorMessage ?? 'No se pudo registrar la merma.',
+            );
+          }
+        }
+      },
+    );
+  }
+
+  Future<void> _openLiquidateFromAlert({
+    required int productId,
+    required String productName,
+    String? batchCode,
+    required String expDate,
+    bool isExpired = false,
+  }) async {
+    _hideOverlay();
+    if (!mounted) return;
+    final rawBaseName =
+        'Liquidación $productName${batchCode != null && batchCode.isNotEmpty ? ' ($batchCode)' : ''}';
+    final defaultName =
+        rawBaseName.length > 140 ? '${rawBaseName.substring(0, 137).trimRight()}...' : rawBaseName;
+    final nameCtrl = TextEditingController(text: defaultName);
+    final pctCtrl = TextEditingController(text: '30');
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parsedRaw = DateTime.tryParse(expDate.trim());
+    final parsedExpDay =
+        parsedRaw != null ? DateTime(parsedRaw.year, parsedRaw.month, parsedRaw.day) : null;
+    final bool expWasInPast = parsedExpDay != null && parsedExpDay.isBefore(today);
+
+    DateTime endDate = (parsedExpDay != null && !parsedExpDay.isBefore(today))
+        ? parsedExpDay
+        : today.add(const Duration(days: 3));
+    String? inlineError;
+
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.local_offer_outlined, color: Colors.purple),
+              SizedBox(width: 8),
+              Flexible(child: Text('Crear Oferta de Liquidación')),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (expWasInPast || isExpired) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade400),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber.shade900),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            parsedExpDay != null
+                                ? 'La fecha registrada (${DateFormat('dd/MM/yyyy').format(parsedExpDay)}) ya pasó. Para que la oferta impacte hoy en caja, sugerimos vigencia hasta el ${DateFormat('dd/MM/yyyy').format(endDate)}. Si la mercadería no está apta, usá "Registrar Merma".'
+                                : 'Producto marcado como vencido. Si vas a liquidarlo hoy, elegí una fecha límite desde hoy en adelante; si no es apto, registrá Merma.',
+                            style: TextStyle(fontSize: 11.5, color: Colors.amber.shade900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                TextField(
+                  controller: nameCtrl,
+                  maxLength: 150,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre de la oferta',
+                    isDense: true,
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: pctCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Porcentaje de descuento (%)',
+                    suffixText: '%',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final preset in const [
+                      ('Solo hoy', 0),
+                      ('+2 días', 2),
+                      ('+3 días', 3),
+                      ('+7 días', 7),
+                    ])
+                      ChoiceChip(
+                        label: Text(preset.$1, style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        selected: sameDay(endDate, today.add(Duration(days: preset.$2))),
+                        onSelected: (_) {
+                          setModalState(() {
+                            endDate = today.add(Duration(days: preset.$2));
+                            inlineError = null;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.event, size: 16),
+                  label: Text('Válida hasta: ${DateFormat('dd/MM/yyyy').format(endDate)}'),
+                  onPressed: () async {
+                    final picked = await showCompactDatePicker(
+                      context: ctx,
+                      initialDate: endDate.isBefore(today) ? today : endDate,
+                      firstDate: today,
+                      helpText: 'Fecha fin de liquidación',
+                    );
+                    if (picked != null) {
+                      setModalState(() {
+                        endDate = DateTime(picked.year, picked.month, picked.day);
+                        inlineError = null;
+                      });
+                    }
+                  },
+                ),
+                if (inlineError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    inlineError!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                final pct = double.tryParse(pctCtrl.text.replaceAll(',', '.').trim());
+                if (pct == null || pct <= 0 || pct > 100) {
+                  setModalState(() => inlineError = 'Ingresá un descuento válido entre 1% y 100%.');
+                  return;
+                }
+                if (endDate.isBefore(today)) {
+                  setModalState(
+                    () => inlineError = 'La fecha límite no puede ser anterior a hoy para que aplique en caja.',
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Publicar Oferta'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final offerName = nameCtrl.text.trim();
+    final discount = double.tryParse(pctCtrl.text.replaceAll(',', '.').trim());
+    nameCtrl.dispose();
+    pctCtrl.dispose();
+    if (confirmed != true || discount == null || discount <= 0 || discount > 100 || !mounted) {
+      return;
+    }
+
+    final offerProv = context.read<OfferProvider>();
+    final ok = await offerProv.createQuickOffer(
+      name: offerName.isNotEmpty ? offerName : 'Liquidación $productName',
+      description: batchCode != null && batchCode.isNotEmpty
+          ? 'Liquidación por vencimiento lote $batchCode'
+          : 'Liquidación por próximo vencimiento',
+      type: 'percentage',
+      discountPercentage: discount,
+      periodType: 'custom',
+      startDate: DateTime(today.year, today.month, today.day, 0, 0, 0),
+      endDate: DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59),
+      productIds: [productId],
+    );
+    if (mounted) {
+      if (ok) {
+        try {
+          context.read<PosProvider>().syncActiveOffers(offerProv.activeOffers);
+        } catch (_) {}
+        SnackBarService.success(
+          context,
+          'Oferta de liquidación (${discount.toQty()}% OFF) activa hasta ${DateFormat('dd/MM/yyyy').format(endDate)} y aplicada en caja.',
+        );
+      } else {
+        SnackBarService.error(context, offerProv.errorMessage ?? 'No se pudo crear la oferta.');
+      }
+    }
+  }
+
+  Future<void> _openUpdateExpirationFromAlert(
+    InventoryAlertsProvider alertsProvider, {
+    required int productId,
+    required String productName,
+    int? batchId,
+    String? batchCode,
+    required String currentExpDate,
+  }) async {
+    _hideOverlay();
+    if (!mounted) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parsed = DateTime.tryParse(currentExpDate.trim());
+    final initial = (parsed != null && !parsed.isBefore(today))
+        ? parsed
+        : today.add(const Duration(days: 3));
+
+    final picked = await showCompactDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: today,
+      helpText: batchCode != null && batchCode.isNotEmpty
+          ? 'Nuevo vencimiento — $productName (Lote $batchCode)'
+          : 'Nuevo vencimiento — $productName',
+    );
+    if (picked == null || !mounted) return;
+
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Actualizar vencimiento de $productName',
+      permissionKey: AppPermissions.manageCatalog,
+      onAuthorized: () async {
+        final formatted = DateFormat('yyyy-MM-dd').format(picked);
+        final ok = await alertsProvider.snoozeExpirationAlert(
+          productId,
+          action: 'update_expiration',
+          expirationDate: formatted,
+          batchId: batchId,
+        );
+        if (!mounted) return;
+        if (ok) {
+          SnackBarService.success(
+            context,
+            'Vencimiento actualizado al ${DateFormat('dd/MM/yyyy').format(picked)}.',
+          );
+        } else {
+          SnackBarService.error(
+            context,
+            alertsProvider.error ?? 'No se pudo actualizar el vencimiento.',
+          );
+        }
+      },
+    );
+  }
+
+  Future<void> _openClearExpirationFromAlert(
+    InventoryAlertsProvider alertsProvider, {
+    required int productId,
+    required String productName,
+    int? batchId,
+    String? batchCode,
+  }) async {
+    _hideOverlay();
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitar fecha de vencimiento'),
+        content: Text(
+          batchId != null
+              ? 'Se quitará la fecha de vencimiento del lote ${batchCode ?? '#$batchId'} de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".'
+              : 'Se quitará la fecha de vencimiento de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitar fecha'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Quitar fecha de vencimiento ($productName)',
+      permissionKey: AppPermissions.manageCatalog,
+      onAuthorized: () async {
+        final ok = await alertsProvider.snoozeExpirationAlert(
+          productId,
+          action: 'clear_expiration',
+          batchId: batchId,
+        );
+        if (!mounted) return;
+        if (ok) {
+          SnackBarService.success(context, 'Fecha de vencimiento quitada.');
+        } else {
+          SnackBarService.error(
+            context,
+            alertsProvider.error ?? 'No se pudo quitar la fecha de vencimiento.',
+          );
+        }
+      },
     );
   }
 
@@ -819,17 +1555,38 @@ class _SectionHeader extends StatelessWidget {
   final String label;
   final Color color;
   final Color textColor;
-  const _SectionHeader(
-      {required this.label, required this.color, required this.textColor});
+  final Widget? trailing;
+  const _SectionHeader({
+    required this.label,
+    required this.color,
+    required this.textColor,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: color,
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.bold, color: textColor)),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            trailing!,
+          ],
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 
 /// Opción seleccionable dentro de [SearchableSelectField].
@@ -44,6 +46,8 @@ class SearchableSelectField<T> extends StatelessWidget {
   final bool sortAlphabetically;
   final Future<void> Function(String initialQuery)? onCreateNew;
   final String Function(String query)? createLabelBuilder;
+  final Future<List<SearchableSelectOption<T>>> Function(String query)?
+      onRemoteSearch;
 
   const SearchableSelectField({
     super.key,
@@ -66,6 +70,7 @@ class SearchableSelectField<T> extends StatelessWidget {
     this.sortAlphabetically = true,
     this.onCreateNew,
     this.createLabelBuilder,
+    this.onRemoteSearch,
   });
 
   SearchableSelectOption<T>? _findSelectedOption() {
@@ -105,6 +110,7 @@ class SearchableSelectField<T> extends StatelessWidget {
         sortAlphabetically: sortAlphabetically,
         canCreateNew: onCreateNew != null,
         createLabelBuilder: createLabelBuilder,
+        onRemoteSearch: onRemoteSearch,
       ),
     );
 
@@ -116,6 +122,38 @@ class SearchableSelectField<T> extends StatelessWidget {
     if (result.hasSelection) {
       onChanged(result.selectedValue);
     }
+  }
+
+  /// Abre directamente el diálogo buscador (útil para acciones como "+ Agregar insumo"
+  /// sin requerir un cuadro intermedio y con soporte de lector USB/Android).
+  static Future<T?> showPickerModal<T>(
+    BuildContext context, {
+    required String title,
+    required List<SearchableSelectOption<T>> options,
+    T? currentValue,
+    String searchHintText = 'Buscar por nombre, código o barras...',
+    String emptySearchText = 'Sin coincidencias para tu búsqueda.',
+    bool sortAlphabetically = true,
+    Future<List<SearchableSelectOption<T>>> Function(String query)?
+        onRemoteSearch,
+  }) async {
+    final result = await showDialog<_PickerResult<T>>(
+      context: context,
+      builder: (_) => _SearchableSelectPickerDialog<T>(
+        title: title,
+        currentValue: currentValue,
+        options: options,
+        searchHintText: searchHintText,
+        emptySearchText: emptySearchText,
+        sortAlphabetically: sortAlphabetically,
+        canCreateNew: false,
+        onRemoteSearch: onRemoteSearch,
+      ),
+    );
+    if (result != null && result.hasSelection) {
+      return result.selectedValue;
+    }
+    return null;
   }
 
   @override
@@ -222,6 +260,8 @@ class _SearchableSelectPickerDialog<T> extends StatefulWidget {
   final bool sortAlphabetically;
   final bool canCreateNew;
   final String Function(String query)? createLabelBuilder;
+  final Future<List<SearchableSelectOption<T>>> Function(String query)?
+      onRemoteSearch;
 
   const _SearchableSelectPickerDialog({
     required this.title,
@@ -232,6 +272,7 @@ class _SearchableSelectPickerDialog<T> extends StatefulWidget {
     required this.sortAlphabetically,
     required this.canCreateNew,
     this.createLabelBuilder,
+    this.onRemoteSearch,
   });
 
   @override
@@ -243,6 +284,10 @@ class _SearchableSelectPickerDialogState<T>
     extends State<_SearchableSelectPickerDialog<T>> {
   final TextEditingController _searchCtrl = TextEditingController();
   late final List<SearchableSelectOption<T>> _orderedOptions;
+  List<SearchableSelectOption<T>> _remoteOptions = const [];
+  Timer? _remoteDebounce;
+  bool _isSearchingRemote = false;
+  int _remoteSeq = 0;
   String _rawQuery = '';
 
   @override
@@ -258,8 +303,39 @@ class _SearchableSelectPickerDialogState<T>
 
   @override
   void dispose() {
+    _remoteDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _triggerRemoteSearch(String query) {
+    _remoteDebounce?.cancel();
+    final trimmed = query.trim();
+    if (widget.onRemoteSearch == null || trimmed.length < 2) {
+      if (_remoteOptions.isNotEmpty || _isSearchingRemote) {
+        setState(() {
+          _remoteOptions = const [];
+          _isSearchingRemote = false;
+        });
+      }
+      return;
+    }
+
+    final seq = ++_remoteSeq;
+    setState(() => _isSearchingRemote = true);
+    _remoteDebounce = Timer(const Duration(milliseconds: 220), () async {
+      try {
+        final fetched = await widget.onRemoteSearch!(trimmed);
+        if (!mounted || seq != _remoteSeq) return;
+        setState(() {
+          _remoteOptions = fetched;
+          _isSearchingRemote = false;
+        });
+      } catch (_) {
+        if (!mounted || seq != _remoteSeq) return;
+        setState(() => _isSearchingRemote = false);
+      }
+    });
   }
 
   bool _matchesQuery(SearchableSelectOption<T> option, String normQuery) {
@@ -279,18 +355,87 @@ class _SearchableSelectPickerDialogState<T>
     return false;
   }
 
+  bool _matchesExactOption(SearchableSelectOption<T> option, String normQuery) {
+    if (option.isResetOption || normQuery.isEmpty) return false;
+    if (normalizeSearchText(option.label) == normQuery) return true;
+    for (final keyword in option.searchKeywords) {
+      if (normalizeSearchText(keyword) == normQuery) return true;
+    }
+    return false;
+  }
+
+  Future<void> _handleSubmittedOrScanned(String rawInput) async {
+    final trimmed = rawInput.trim();
+    if (trimmed.isEmpty || !mounted) return;
+
+    _remoteDebounce?.cancel();
+    final seq = ++_remoteSeq;
+
+    if (_searchCtrl.text != trimmed) {
+      _searchCtrl.text = trimmed;
+      _searchCtrl.selection = TextSelection.collapsed(offset: trimmed.length);
+    }
+    setState(() => _rawQuery = trimmed);
+
+    final normQuery = normalizeSearchText(trimmed);
+    var filtered = _buildFilteredOptions(normQuery);
+    var exact = filtered.where((o) => _matchesExactOption(o, normQuery)).toList();
+
+    if (exact.isEmpty &&
+        widget.onRemoteSearch != null &&
+        trimmed.length >= 2) {
+      setState(() => _isSearchingRemote = true);
+      try {
+        final fetched = await widget.onRemoteSearch!(trimmed);
+        if (!mounted || seq != _remoteSeq) return;
+        setState(() {
+          _remoteOptions = fetched;
+          _isSearchingRemote = false;
+        });
+        filtered = _buildFilteredOptions(normQuery);
+        exact =
+            filtered.where((o) => _matchesExactOption(o, normQuery)).toList();
+      } catch (_) {
+        if (!mounted || seq != _remoteSeq) return;
+        setState(() => _isSearchingRemote = false);
+      }
+    }
+
+    if (!mounted) return;
+    if (exact.length == 1) {
+      Navigator.of(context).pop(_PickerResult<T>.selected(exact.first.value));
+      return;
+    }
+    final nonResetFiltered = filtered.where((o) => !o.isResetOption).toList();
+    if (nonResetFiltered.length == 1) {
+      Navigator.of(context)
+          .pop(_PickerResult<T>.selected(nonResetFiltered.first.value));
+    }
+  }
+
   List<SearchableSelectOption<T>> _buildFilteredOptions(String normQuery) {
     if (normQuery.isEmpty) return _orderedOptions;
     final matchedResets = <SearchableSelectOption<T>>[];
     final matchedNormals = <SearchableSelectOption<T>>[];
+    final seenValues = <T>{};
+
     for (final option in _orderedOptions) {
       if (!_matchesQuery(option, normQuery)) continue;
+      seenValues.add(option.value);
       if (option.isResetOption) {
         matchedResets.add(option);
       } else {
         matchedNormals.add(option);
       }
     }
+
+    for (final remoteOpt in _remoteOptions) {
+      if (seenValues.contains(remoteOpt.value)) continue;
+      if (!_matchesQuery(remoteOpt, normQuery)) continue;
+      seenValues.add(remoteOpt.value);
+      matchedNormals.add(remoteOpt);
+    }
+
     return [...matchedResets, ...matchedNormals];
   }
 
@@ -300,8 +445,6 @@ class _SearchableSelectPickerDialogState<T>
     final isCompactWidth = screen.width < 480;
     final normQuery = normalizeSearchText(_rawQuery);
     final filtered = _buildFilteredOptions(normQuery);
-    final nonResetFiltered =
-        filtered.where((option) => !option.isResetOption).toList();
     final hasExactLabelMatch = normQuery.isNotEmpty &&
         _orderedOptions.any(
           (o) => !o.isResetOption && normalizeSearchText(o.label) == normQuery,
@@ -314,85 +457,84 @@ class _SearchableSelectPickerDialogState<T>
       math.min(280.0, screen.height * 0.48),
     );
 
-    return Dialog(
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: isCompactWidth ? 12 : 24,
-        vertical: screen.height < 520 ? 10 : 24,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 440,
-          maxHeight: math.min(500.0, screen.height * 0.86),
+    return RemoteScannerListener(
+      debugLabel: 'SearchableSelectPickerDialog',
+      onBarcodeScanned: _handleSubmittedOrScanned,
+      child: Dialog(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: isCompactWidth ? 12 : 24,
+          vertical: screen.height < 520 ? 10 : 24,
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 440,
+            maxHeight: math.min(500.0, screen.height * 0.86),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
                       ),
                     ),
-                  ),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.close_rounded, size: 20),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.of(context).pop(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.close_rounded, size: 20),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: (val) => setState(() => _rawQuery = val),
-                onSubmitted: (_) {
-                  final exact = filtered.where(
-                    (o) =>
-                        !o.isResetOption &&
-                        normQuery.isNotEmpty &&
-                        normalizeSearchText(o.label) == normQuery,
-                  );
-                  if (exact.length == 1) {
-                    Navigator.of(context)
-                        .pop(_PickerResult<T>.selected(exact.first.value));
-                    return;
-                  }
-                  if (nonResetFiltered.length == 1) {
-                    Navigator.of(context).pop(
-                      _PickerResult<T>.selected(nonResetFiltered.first.value),
-                    );
-                  }
-                },
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (val) {
+                    setState(() => _rawQuery = val);
+                    _triggerRemoteSearch(val);
+                  },
+                  onSubmitted: _handleSubmittedOrScanned,
                 decoration: InputDecoration(
                   hintText: widget.searchHintText,
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 19),
-                  suffixIcon: _rawQuery.isNotEmpty
-                      ? InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () {
-                            _searchCtrl.clear();
-                            setState(() => _rawQuery = '');
-                          },
-                          child: const Icon(Icons.clear_rounded, size: 17),
+                  suffixIcon: _isSearchingRemote
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         )
-                      : null,
+                      : (_rawQuery.isNotEmpty
+                          ? InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () {
+                                _searchCtrl.clear();
+                                setState(() => _rawQuery = '');
+                                _triggerRemoteSearch('');
+                              },
+                              child: const Icon(Icons.clear_rounded, size: 17),
+                            )
+                          : null),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -410,14 +552,26 @@ class _SearchableSelectPickerDialogState<T>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.search_off_rounded,
-                        size: 28,
-                        color: Colors.blueGrey.shade300,
-                      ),
+                      if (_isSearchingRemote)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      else
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 28,
+                          color: Colors.blueGrey.shade300,
+                        ),
                       const SizedBox(height: 6),
                       Text(
-                        widget.emptySearchText,
+                        _isSearchingRemote
+                            ? 'Buscando en todo el catálogo...'
+                            : widget.emptySearchText,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
@@ -572,6 +726,7 @@ class _SearchableSelectPickerDialogState<T>
             ],
           ),
         ),
+      ),
       ),
     );
   }

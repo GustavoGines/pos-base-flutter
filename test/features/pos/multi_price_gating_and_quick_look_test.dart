@@ -367,9 +367,77 @@ void main() {
       expect(previews[1].price, 125840.0);
       expect(previews[1].isFixedOverride, isTrue);
     });
+
+    test('omits tiers with 0% modifier when no fixed override applies, and preserves fixed override if ignoreFixedPrices=false', () {
+      // Tarjeta 0% y custom 0% ocultos; solo Mayorista (-5%)
+      final onlyWholesale = ProductPricingCalculator.buildMultiPricePreviews(
+        product: auricular,
+        multiPriceEnabled: true,
+        wholesaleFactor: 0.95,
+        cardFactor: 1.0,
+        customTiers: const [
+          {'name': 'Neutro', 'modifier': 0},
+          {'name': 'Jubilados', 'modifier': -5},
+        ],
+        ignoreFixedPrices: true,
+      );
+      expect(onlyWholesale.map((p) => p.label).toList(), ['Mayorista', 'Jubilados']);
+
+      // Con ignoreFixedPrices=true y ambos en 0%, lista vacía
+      final noneActive = ProductPricingCalculator.buildMultiPricePreviews(
+        product: matero,
+        multiPriceEnabled: true,
+        wholesaleFactor: 1.0,
+        cardFactor: 1.0,
+        ignoreFixedPrices: true,
+      );
+      expect(noneActive, isEmpty);
+
+      // Con ignoreFixedPrices=false, producto con precio fijo BD conserva fila (Fijo) aunque % global sea 0
+      final preservedFixed = ProductPricingCalculator.buildMultiPricePreviews(
+        product: matero,
+        multiPriceEnabled: true,
+        wholesaleFactor: 1.0,
+        cardFactor: 1.0,
+        ignoreFixedPrices: false,
+      );
+      expect(preservedFixed.length, 2);
+      expect(preservedFixed[0].isFixedOverride, isTrue);
+      expect(preservedFixed[1].isFixedOverride, isTrue);
+    });
   });
 
   group('Multi-Listas: PosProvider gating & ProductShareHelper', () {
+    test('PosProvider resets active & default tier to base when active tier percentage becomes 0%', () {
+      final pos = _createPosProvider();
+      const activeSettings = BusinessSettings(
+        companyName: 'Test POS',
+        enableAdvancedPriceTiers: true,
+        globalWholesalePercentage: -5.0,
+        globalCardPercentage: 15.0,
+        ignoreProductFixedPrices: true,
+        features: FeatureFlags(fastPos: true, multiplePrices: true),
+      );
+      pos.updateSettings(activeSettings);
+      pos.setDefaultTier('card', null);
+      pos.setPriceTier(PriceTier.card, wholesaleFactor: 0.95, cardFactor: 1.15);
+      expect(pos.activeTier, PriceTier.card);
+
+      // Ahora Tarjeta pasa a 0.0%: debe resetear a Base sin crashear el dropdown
+      const zeroCardSettings = BusinessSettings(
+        companyName: 'Test POS',
+        enableAdvancedPriceTiers: true,
+        globalWholesalePercentage: -5.0,
+        globalCardPercentage: 0.0,
+        ignoreProductFixedPrices: true,
+        features: FeatureFlags(fastPos: true, multiplePrices: true),
+      );
+      pos.updateSettings(zeroCardSettings);
+
+      expect(pos.activeTier, PriceTier.base);
+      pos.clearCart();
+      expect(pos.activeTier, PriceTier.base);
+    });
     test('PosProvider resets active & default tier to base when Multi-Listas transitions ON -> OFF', () {
       final pos = _createPosProvider();
       const enabledSettings = BusinessSettings(
@@ -691,6 +759,82 @@ void main() {
         expect(find.text('\$42.500'), findsOneWidget);
         expect(find.text('Tarjeta'), findsOneWidget);
         expect(find.text('\$57.500'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Opción 2: cuando Tarjeta es 0% oculta Tarjeta en Quick Look y en el selector del carrito (y limpia lockedPriceTier obsoleta); con ambos en 0% oculta toda la fila Lista de Precio',
+      (tester) async {
+        final localTerminal = LocalTerminalProvider();
+        await localTerminal.setLockedPriceTier('card');
+
+        final settingsProv = _TestSettingsProvider(
+          const BusinessSettings(
+            companyName: 'Test POS',
+            enableAdvancedPriceTiers: true,
+            globalWholesalePercentage: -5.0,
+            globalCardPercentage: 0.0,
+            ignoreProductFixedPrices: true,
+            features: FeatureFlags(fastPos: true, multiplePrices: true),
+          ),
+        );
+
+        await pumpPosQuickAccess(
+          tester,
+          settingsProv: settingsProv,
+          localTerminal: localTerminal,
+        );
+
+        // Tarjeta en 0% limpió el pin obsoleto 'card' sin lanzar excepciones de DropdownButton
+        expect(localTerminal.lockedPriceTier, 'none');
+        expect(find.text('Lista de Precio:'), findsOneWidget);
+
+        // El selector del carrito incluye Base y Mayorista, pero NO Tarjeta
+        await tester.tap(find.text('🏪 Minorista (Base)'));
+        await tester.pumpAndSettle();
+        expect(find.text('🏭 Mayorista'), findsOneWidget);
+        expect(find.text('💳 Tarjeta'), findsNothing);
+        // Cerrar el menú tocando Minorista
+        await tester.tap(find.text('🏪 Minorista (Base)').last);
+        await tester.pumpAndSettle();
+
+        // Quick Look en MATERO STANLEY ($116.600) con Tarjeta 0% y Mayorista -5% ($110.770)
+        await tester.tap(
+          find.textContaining('MATERO STANLEY').first,
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Precio Base'), findsOneWidget);
+        expect(find.text('Precio Mayorista'), findsOneWidget);
+        expect(find.text('\$110.770'), findsOneWidget);
+        expect(find.textContaining('Precio Tarjeta'), findsNothing);
+
+        await tester.tap(find.text('Cerrar'));
+        await tester.pumpAndSettle();
+
+        // Pasar ambos a 0%: desaparece la fila Lista de Precio del carrito y Quick Look solo muestra Base
+        settingsProv.setSettings(
+          const BusinessSettings(
+            companyName: 'Test POS',
+            enableAdvancedPriceTiers: true,
+            globalWholesalePercentage: 0.0,
+            globalCardPercentage: 0.0,
+            ignoreProductFixedPrices: true,
+            features: FeatureFlags(fastPos: true, multiplePrices: true),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Lista de Precio:'), findsNothing);
+        await tester.tap(
+          find.textContaining('MATERO STANLEY').first,
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Precio Base'), findsOneWidget);
+        expect(find.textContaining('Precio Mayorista'), findsNothing);
+        expect(find.textContaining('Precio Tarjeta'), findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

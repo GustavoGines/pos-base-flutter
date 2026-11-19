@@ -14,6 +14,9 @@ class InventoryAlertsProvider extends ChangeNotifier {
   List<dynamic> _alerts = [];
   List<dynamic> get alerts => _alerts;
 
+  List<dynamic> _deficitAlerts = [];
+  List<dynamic> get deficitAlerts => _deficitAlerts;
+
   List<dynamic> get reactiveAlerts =>
       _alerts.where((a) => a['alert_type'] == 'out_of_stock' || a['alert_type'] == 'low_stock').toList();
 
@@ -23,7 +26,7 @@ class InventoryAlertsProvider extends ChangeNotifier {
   List<dynamic> get expirationAlerts =>
       _alerts.where((a) => a['alert_type'] == 'expiration').toList();
 
-  int get totalAlertsCount => _alerts.length;
+  int get totalAlertsCount => _alerts.length + _deficitAlerts.length;
 
   /// Retorna el tipo de alerta visual para un producto específico en el POS.
   String? getAlertStatusForProduct(int productId) {
@@ -32,6 +35,7 @@ class InventoryAlertsProvider extends ChangeNotifier {
       return 'out_of_stock';
     }
     if (predictiveCriticalAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'predictive_critical';
+    if (_deficitAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'deficit';
     return null;
   }
 
@@ -40,6 +44,7 @@ class InventoryAlertsProvider extends ChangeNotifier {
     required String action,
     int? days,
     String? expirationDate,
+    int? batchId,
   }) async {
     try {
       await dataSource.snoozeExpirationAlert(
@@ -47,6 +52,7 @@ class InventoryAlertsProvider extends ChangeNotifier {
         action: action,
         days: days,
         expirationDate: expirationDate,
+        batchId: batchId,
       );
       await fetchAlerts();
       return true;
@@ -84,6 +90,8 @@ class InventoryAlertsProvider extends ChangeNotifier {
       final result = await dataSource.getInventoryAlerts(threshold: threshold);
       final stockAlerts = (result['alerts'] as List?) ?? [];
       final expAlerts = (result['expiration_alerts'] as List?) ?? [];
+      final deficits = (result['deficit_alerts'] as List?) ?? [];
+      _deficitAlerts = deficits;
       _alerts = [
         ...stockAlerts,
         ...expAlerts.where(
@@ -95,6 +103,7 @@ class InventoryAlertsProvider extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       _alerts = [];
+      _deficitAlerts = [];
     } finally {
       _isLoading = false;
       notifyListeners();

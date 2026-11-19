@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../widgets/stock_adjustment_dialog.dart';
+import '../widgets/product_batches_dialog.dart';
+import '../widgets/production_orders_dialog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../widgets/catalog_import_dialog.dart';
@@ -377,6 +379,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               ],
                             ),
                           ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            foregroundColor: Colors.deepOrange.shade800,
+                            side: BorderSide(color: Colors.deepOrange.shade300),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          ),
+                          icon: const Icon(Icons.bakery_dining_outlined, size: 18),
+                          label: const Text('Producción'),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => ProductionOrdersDialog(provider: provider),
+                            ).then((_) {
+                              if (mounted) {
+                                context.read<InventoryAlertsProvider>().fetchAlerts();
+                              }
+                            });
+                          },
                         ),
                         const SizedBox(width: 6),
                         FilledButton.icon(
@@ -794,7 +817,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const double wBal = 58;
     const double wActivo = 70;
     const double wVto = 104;
-    const double wAcciones = 138;
+    const double wAcciones = 168;
 
     const int fNombre = 5;
     const int fBarcode = 3;
@@ -1071,6 +1094,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(products: [p])),
                   ),
+                  if (!p.isCombo && !p.isService)
+                    IconButton(
+                      icon: Icon(
+                        Icons.layers_outlined,
+                        size: 18,
+                        color: p.trackBatches ? Colors.deepOrange.shade700 : Colors.blueGrey,
+                      ),
+                      tooltip: p.trackBatches ? 'Lotes y Vencimientos' : 'Administrar Lotes',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (_) => ProductBatchesDialog(provider: provider, product: p),
+                        ).then((_) {
+                          if (mounted) {
+                            context.read<InventoryAlertsProvider>().fetchAlerts();
+                          }
+                        });
+                      },
+                    ),
                   IconButton(
                     icon: const Icon(Icons.warehouse_outlined, size: 18),
                     color: Colors.teal,
@@ -1641,6 +1685,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   bool _isCombo = false;
   bool _isService = false;
   bool _showExpirationSection = false;
+  bool _trackBatches = false;
+  String _lotDeductionPolicy = 'fefo';
+  bool _allowSellExpired = false;
+  bool _hasProductionRecipe = false;
+  late TextEditingController _recipeYieldCtrl;
+  late TextEditingController _initialBatchCodeCtrl;
+  List<Map<String, dynamic>> _recipeIngredients = [];
   List<Map<String, dynamic>> _comboIngredients = [];
   final Map<int, TextEditingController> _comboQtyCtrls = {};
   final Map<int, TextEditingController> _comboCustomPartsCtrls = {};
@@ -1736,7 +1787,22 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     if (p?.expirationDate != null && p!.expirationDate!.isNotEmpty) {
       _expirationDate = DateTime.tryParse(p.expirationDate!);
     }
-    _showExpirationSection = _expirationDate != null || (p?.vencimientoDias != null && p!.vencimientoDias! > 0);
+    _trackBatches = p?.trackBatches ?? false;
+    _lotDeductionPolicy = p?.lotDeductionPolicy ?? 'fefo';
+    _allowSellExpired = p?.allowSellExpired ?? false;
+    _hasProductionRecipe = p?.hasProductionRecipe ?? false;
+    _recipeYieldCtrl = TextEditingController(
+      text: (p?.recipeYieldQuantity ?? 1.0).toQty(),
+    );
+    _initialBatchCodeCtrl = TextEditingController();
+    if (p?.recipeIngredients != null) {
+      _recipeIngredients = p!.recipeIngredients!
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    _showExpirationSection = _trackBatches ||
+        _expirationDate != null ||
+        (p?.vencimientoDias != null && p!.vencimientoDias! > 0);
   }
 
   void _handleFormBarcodeScan(String barcode) {
@@ -1877,6 +1943,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
     _expiryAlertDaysCtrl.dispose();
+    _recipeYieldCtrl.dispose();
+    _initialBatchCodeCtrl.dispose();
     for (final ctrl in _comboQtyCtrls.values) {
       ctrl.dispose();
     }
@@ -2207,6 +2275,29 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'expiry_alert_days': _expiryAlertDaysCtrl.text.trim().isNotEmpty
           ? int.tryParse(_expiryAlertDaysCtrl.text.trim())
           : 15,
+      'track_batches': (_isService || _isCombo) ? false : _trackBatches,
+      'lot_deduction_policy': _lotDeductionPolicy,
+      'allow_sell_expired': _allowSellExpired,
+      'has_production_recipe':
+          (_isService || _isCombo) ? false : _hasProductionRecipe,
+      if (!_isService && !_isCombo && _hasProductionRecipe) ...{
+        'recipe_yield_quantity':
+            double.tryParse(_recipeYieldCtrl.text.replaceAll(',', '.').trim()) ??
+                1.0,
+        'recipe_ingredients': _recipeIngredients
+            .map(
+              (r) => {
+                'ingredient_product_id': r['ingredient_product_id'] ?? r['id'],
+                'quantity':
+                    double.tryParse(r['quantity']?.toString() ?? '1') ?? 1.0,
+                'waste_pct':
+                    double.tryParse((r['waste_pct'] ?? 0).toString()) ?? 0.0,
+              },
+            )
+            .toList(),
+      },
+      if (!_isEditing && _initialBatchCodeCtrl.text.trim().isNotEmpty)
+        'initial_batch_code': _initialBatchCodeCtrl.text.trim(),
     };
 
     bool ok = false;
@@ -3766,10 +3857,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                     },
                                                   ),
                                                 ],
+                                                _buildBatchTrackingSubpanel(),
                                               ],
                                             ),
                                           ),
                                         ),
+                                        _buildProductionRecipeSection(),
                                       ],
                                     ),
                         ),
@@ -3808,6 +3901,412 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         ),
       ],
       ),
+      ),
+    );
+  }
+
+  Widget _buildBatchTrackingSubpanel() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Controlar vencimientos por lotes',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+              ),
+              subtitle: const Text(
+                'Cada compra u horneado crea un lote propio y las ventas descuentan automáticamente por orden.',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: _trackBatches,
+              onChanged: (v) => setState(() {
+                _trackBatches = v;
+                if (v) _showExpirationSection = true;
+              }),
+            ),
+          ),
+          if (_trackBatches) ...[
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, c) {
+                final policyField = DropdownButtonFormField<String>(
+                  initialValue: _lotDeductionPolicy,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Orden de salida en caja',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.sort, size: 18),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'fefo',
+                      child: Text('Vence antes sale primero (recomendado)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'fifo',
+                      child: Text('Más antiguo en stock sale primero'),
+                    ),
+                  ],
+                  onChanged: (val) => setState(() => _lotDeductionPolicy = val ?? 'fefo'),
+                );
+
+                final initialBatchField = !_isEditing
+                    ? TextFormField(
+                        controller: _initialBatchCodeCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Código Lote Inicial (opcional)',
+                          hintText: 'Ej. LOTE-APERTURA',
+                          isDense: true,
+                          prefixIcon: Icon(Icons.qr_code_outlined, size: 18),
+                        ),
+                      )
+                    : Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.layers_outlined, size: 17),
+                          label: const Text('Ver / Administrar Lotes'),
+                          onPressed: () {
+                            if (widget.product == null) return;
+                            showDialog(
+                              context: context,
+                              builder: (_) => ProductBatchesDialog(
+                                provider: widget.provider,
+                                product: widget.product!,
+                              ),
+                            );
+                          },
+                        ),
+                      );
+
+                if (c.maxWidth >= 480) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 6, child: policyField),
+                      const SizedBox(width: 8),
+                      Expanded(flex: 5, child: initialBatchField),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    policyField,
+                    const SizedBox(height: 8),
+                    initialBatchField,
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 4),
+            Material(
+              type: MaterialType.transparency,
+              child: SwitchListTile.adaptive(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Permitir vender lotes vencidos sin PIN de supervisor',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _allowSellExpired,
+                onChanged: (v) => setState(() => _allowSellExpired = v),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  double get _productionRecipeTotalCost => _recipeIngredients.fold<double>(
+        0.0,
+        (acc, ing) {
+          final q = double.tryParse(ing['quantity']?.toString() ?? '0') ?? 0.0;
+          final c = double.tryParse(ing['cost_price']?.toString() ?? '0') ?? 0.0;
+          final w = double.tryParse((ing['waste_pct'] ?? 0).toString()) ?? 0.0;
+          return acc + (q * (1.0 + w / 100.0) * c);
+        },
+      );
+
+  Future<void> _openRecipeIngredientPicker() async {
+    List<Product> remote = const [];
+    try {
+      remote = await widget.provider.fetchAllActiveProductsForProduction();
+    } catch (_) {
+      remote = const [];
+    }
+    if (!mounted) return;
+    final pool = <int, Product>{
+      for (final p in widget.provider.products) p.id: p,
+      for (final p in remote) p.id: p,
+    };
+
+    bool isEligibleIngredient(Product p) =>
+        !p.isCombo &&
+        !p.isService &&
+        p.active &&
+        p.id != widget.product?.id &&
+        !_recipeIngredients.any(
+          (r) => ((r['ingredient_product_id'] as num?)?.toInt() ??
+                  (r['id'] as num?)?.toInt()) ==
+              p.id,
+        );
+
+    SearchableSelectOption<int> buildOption(Product p) => SearchableSelectOption<int>(
+          value: p.id,
+          label: p.name,
+          subtitle: 'Stock: ${p.stock.toQty()} ${p.unitType} • Costo: \$${p.costPrice.toCurrency()}',
+          badgeText: p.hasProductionRecipe
+              ? 'SEMI-ELABORADO'
+              : (p.trackBatches ? 'CON LOTES' : null),
+          searchKeywords: [
+            p.internalCode,
+            if (p.barcode != null && p.barcode!.isNotEmpty) p.barcode!,
+          ],
+        );
+
+    final options = pool.values.where(isEligibleIngredient).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    int? selectedId;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Agregar Insumo / Semi-Elaborado a Receta'),
+        content: SizedBox(
+          width: 440,
+          child: SearchableSelectField<int>(
+            value: selectedId,
+            labelText: 'Materia prima o sub-receta',
+            prefixIcon: Icons.search,
+            searchHintText: 'Buscar por nombre, código o barras...',
+            options: options.map(buildOption).toList(),
+            onRemoteSearch: (q) async {
+              final found = await widget.provider.searchProductsRemote(q, perPage: 80);
+              final matched = <SearchableSelectOption<int>>[];
+              for (final p in found) {
+                pool[p.id] = p;
+                if (isEligibleIngredient(p)) {
+                  matched.add(buildOption(p));
+                }
+              }
+              return matched;
+            },
+            onChanged: (id) {
+              selectedId = id;
+              if (id != null) Navigator.pop(ctx);
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (selectedId != null && mounted) {
+      final p = pool[selectedId!];
+      if (p != null) {
+        setState(() {
+          _recipeIngredients.add({
+            'id': p.id,
+            'ingredient_product_id': p.id,
+            'name': p.name,
+            'quantity': 1.0,
+            'waste_pct': 0.0,
+            'cost_price': p.costPrice,
+            'stock': p.stock,
+            'unit_type': p.unitType,
+            'track_batches': p.trackBatches,
+          });
+        });
+      }
+    }
+  }
+
+  Widget _buildProductionRecipeSection() {
+    final yieldQty = double.tryParse(_recipeYieldCtrl.text.replaceAll(',', '.').trim()) ?? 1.0;
+    final totalCost = _productionRecipeTotalCost;
+    final unitCost = yieldQty > 0 ? totalCost / yieldQty : totalCost;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.deepOrange.shade50.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.deepOrange.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Material(
+              type: MaterialType.transparency,
+              child: SwitchListTile.adaptive(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Row(
+                  children: [
+                    Icon(Icons.bakery_dining_outlined, size: 18, color: Colors.deepOrange.shade800),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Receta de Elaboración Propia (Cocina / Pastelería)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                          color: Colors.deepOrange.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: const Text(
+                  'Mantiene stock físico por lotes al registrar tandas de producción (admite sub-recetas multi-nivel).',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: _hasProductionRecipe,
+                onChanged: (v) => setState(() => _hasProductionRecipe = v),
+              ),
+            ),
+            if (_hasProductionRecipe) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 190,
+                    child: TextFormField(
+                      controller: _recipeYieldCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Rendimiento receta ($_unitType)',
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.scale_outlined, size: 18),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline, size: 17),
+                    label: const Text('Agregar insumo'),
+                    onPressed: _openRecipeIngredientPicker,
+                  ),
+                  if (_recipeIngredients.isNotEmpty)
+                    TextButton.icon(
+                      icon: const Icon(Icons.calculate_outlined, size: 17),
+                      label: Text('Aplicar costo (\$${unitCost.toCurrency()})'),
+                      onPressed: () {
+                        setState(() {
+                          _costCtrl.text = unitCost.toArsInput();
+                        });
+                      },
+                    ),
+                ],
+              ),
+              if (_recipeIngredients.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Aún no agregaste insumos a la receta.',
+                    style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                  ),
+                )
+              else ...[
+                const SizedBox(height: 8),
+                ...List.generate(_recipeIngredients.length, (idx) {
+                  final r = _recipeIngredients[idx];
+                  final qty = double.tryParse(r['quantity']?.toString() ?? '1') ?? 1.0;
+                  final waste = double.tryParse((r['waste_pct'] ?? 0).toString()) ?? 0.0;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                r['name']?.toString() ?? 'Insumo',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                              ),
+                              Text(
+                                'Costo: \$${((r['cost_price'] as num?)?.toDouble() ?? 0).toCurrency()} / ${r['unit_type'] ?? 'un'}',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: 82,
+                          child: TextFormField(
+                            initialValue: qty.toQty(),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: r['unit_type']?.toString() ?? 'un',
+                              isDense: true,
+                            ),
+                            onChanged: (v) {
+                              final parsed = double.tryParse(v.replaceAll(',', '.').trim());
+                              if (parsed != null && parsed > 0) {
+                                setState(() => _recipeIngredients[idx]['quantity'] = parsed);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: 72,
+                          child: TextFormField(
+                            initialValue: waste.toQty(),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: '% Merma',
+                              isDense: true,
+                            ),
+                            onChanged: (v) {
+                              final parsed = double.tryParse(v.replaceAll(',', '.').trim()) ?? 0.0;
+                              setState(() => _recipeIngredients[idx]['waste_pct'] = parsed.clamp(0.0, 100.0));
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Quitar',
+                          icon: const Icon(Icons.close, size: 17),
+                          onPressed: () => setState(() => _recipeIngredients.removeAt(idx)),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ],
+        ),
       ),
     );
   }

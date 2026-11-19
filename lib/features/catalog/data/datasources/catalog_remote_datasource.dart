@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import '../models/product_model.dart';
+import '../models/product_batch_model.dart';
+import '../models/production_order_model.dart';
 import '../models/category_model.dart';
 import '../models/brand_model.dart';
 import '../models/rubro_model.dart';
@@ -80,6 +82,64 @@ abstract class CatalogRemoteDataSource {
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
+  });
+  Future<ProductBatchesResponse> fetchProductBatches(
+    int productId, {
+    bool includeClosed = true,
+  });
+  Future<Map<String, dynamic>> createProductBatch(
+    int productId, {
+    required double quantity,
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> updateProductBatch(
+    int batchId, {
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> writeOffBatch(
+    int batchId, {
+    double? quantity,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> fetchExpiredBatches({bool includeToday = true});
+  Future<Map<String, dynamic>> splitBatch(
+    int batchId, {
+    required double quantity,
+    String? expirationDate,
+    String? batchCode,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> writeOffExpiredBatches({
+    List<Map<String, dynamic>>? items,
+    bool includeToday = true,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> fetchProductionOrders({
+    int page = 1,
+    int? productId,
+    String? status,
+    String? search,
+  });
+  Future<ProductionOrderModel> createProductionOrder(Map<String, dynamic> payload);
+  Future<Map<String, dynamic>> createBatchProductionOrders(Map<String, dynamic> payload);
+  Future<ProductionOrderModel> voidProductionOrder(int orderId);
+  Future<Map<String, dynamic>> fetchWasteReport({
+    String? startDate,
+    String? endDate,
   });
   Future<List<ProductModel>> fetchCriticalAlerts();
   /// Returns [{id: int, stock: double}] for the given product IDs. Ultra-lightweight.
@@ -631,6 +691,12 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
   }) async {
     try {
       final body = <String, dynamic>{
@@ -638,6 +704,14 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         'quantity': quantity,
         if (minStock != null) 'min_stock': minStock,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
+        if (batchId != null) 'batch_id': batchId,
+        if (batchCode != null && batchCode.isNotEmpty) 'batch_code': batchCode,
+        if (expirationDate != null && expirationDate.isNotEmpty)
+          'expiration_date': expirationDate,
+        if (manufacturedAt != null && manufacturedAt.isNotEmpty)
+          'manufactured_at': manufacturedAt,
+        if (unitCost != null) 'unit_cost': unitCost,
+        if (reasonCode != null && reasonCode.isNotEmpty) 'reason_code': reasonCode,
       };
       final response = await client.post(
         Uri.parse('$baseUrl/catalog/products/$productId/adjust-stock'),
@@ -647,11 +721,323 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        final error = json.decode(response.body);
-        throw Exception(error['message'] ?? 'Error al ajustar stock (${response.statusCode})');
+        throw Exception(_parseApiError(
+            response.body, 'Error al ajustar stock (${response.statusCode})'));
       }
     } catch (e) {
       debugPrint('=== API Error en adjustStock: $e ===');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _sendBatchJsonRequest({
+    required String method,
+    required String path,
+    required Map<String, dynamic> body,
+    required String fallbackError,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path');
+    final headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    final encoded = json.encode(body);
+    final http.Response response;
+    if (method == 'PATCH') {
+      response = await client.patch(uri, headers: headers, body: encoded);
+    } else {
+      response = await client.post(uri, headers: headers, body: encoded);
+    }
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_parseApiError(response.body, fallbackError));
+  }
+
+  @override
+  Future<ProductBatchesResponse> fetchProductBatches(
+    int productId, {
+    bool includeClosed = true,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/catalog/products/$productId/batches')
+          .replace(queryParameters: {'include_closed': includeClosed ? '1' : '0'});
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        return ProductBatchesResponse.fromJson(
+          json.decode(response.body) as Map<String, dynamic>,
+        );
+      }
+      throw Exception(_parseApiError(
+          response.body, 'Error al cargar lotes (${response.statusCode})'));
+    } catch (e) {
+      debugPrint('=== API Error en fetchProductBatches: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> createProductBatch(
+    int productId, {
+    required double quantity,
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    try {
+      return await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/catalog/products/$productId/batches',
+        body: {
+          'quantity': quantity,
+          if (batchCode != null && batchCode.isNotEmpty) 'batch_code': batchCode,
+          if (manufacturedAt != null && manufacturedAt.isNotEmpty)
+            'manufactured_at': manufacturedAt,
+          if (expirationDate != null && expirationDate.isNotEmpty)
+            'expiration_date': expirationDate,
+          if (unitCost != null) 'unit_cost': unitCost,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+        },
+        fallbackError: 'Error al registrar lote.',
+      );
+    } catch (e) {
+      debugPrint('=== API Error en createProductBatch: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateProductBatch(
+    int batchId, {
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    try {
+      return await _sendBatchJsonRequest(
+        method: 'PATCH',
+        path: '/batches/$batchId',
+        body: {
+          if (batchCode != null) 'batch_code': batchCode,
+          if (manufacturedAt != null) 'manufactured_at': manufacturedAt,
+          if (expirationDate != null) 'expiration_date': expirationDate,
+          if (unitCost != null) 'unit_cost': unitCost,
+          if (notes != null) 'notes': notes,
+        },
+        fallbackError: 'Error al actualizar lote.',
+      );
+    } catch (e) {
+      debugPrint('=== API Error en updateProductBatch: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> writeOffBatch(
+    int batchId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    try {
+      return await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/batches/$batchId/write-off',
+        body: {
+          if (quantity != null) 'quantity': quantity,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+        },
+        fallbackError: 'Error al registrar merma del lote.',
+      );
+    } catch (e) {
+      debugPrint('=== API Error en writeOffBatch: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchExpiredBatches({bool includeToday = true}) async {
+    try {
+      final uri = Uri.parse('$baseUrl/batches/expired').replace(
+        queryParameters: {'include_today': includeToday ? '1' : '0'},
+      );
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception(_parseApiError(
+          response.body, 'Error al cargar lotes vencidos (${response.statusCode})'));
+    } catch (e) {
+      debugPrint('=== API Error en fetchExpiredBatches: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> splitBatch(
+    int batchId, {
+    required double quantity,
+    String? expirationDate,
+    String? batchCode,
+    String? notes,
+  }) async {
+    try {
+      return await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/batches/$batchId/split',
+        body: {
+          'quantity': quantity,
+          if (expirationDate != null && expirationDate.isNotEmpty)
+            'expiration_date': expirationDate,
+          if (batchCode != null && batchCode.isNotEmpty) 'batch_code': batchCode,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+        },
+        fallbackError: 'Error al dividir lote hacia vitrina.',
+      );
+    } catch (e) {
+      debugPrint('=== API Error en splitBatch: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> writeOffExpiredBatches({
+    List<Map<String, dynamic>>? items,
+    bool includeToday = true,
+    String? notes,
+  }) async {
+    try {
+      return await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/batches/write-off-expired',
+        body: {
+          'include_today': includeToday,
+          if (items != null) 'items': items,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+        },
+        fallbackError: 'Error al realizar barrido masivo de vencidos.',
+      );
+    } catch (e) {
+      debugPrint('=== API Error en writeOffExpiredBatches: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchProductionOrders({
+    int page = 1,
+    int? productId,
+    String? status,
+    String? search,
+  }) async {
+    try {
+      final params = <String, String>{'page': page.toString()};
+      if (productId != null) params['product_id'] = productId.toString();
+      if (status != null && status.isNotEmpty) params['status'] = status;
+      if (search != null && search.isNotEmpty) params['search'] = search;
+      final uri = Uri.parse('$baseUrl/production-orders').replace(queryParameters: params);
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body) as Map<String, dynamic>;
+        final rawData = (decoded['data'] as List?) ?? const [];
+        return {
+          'data': rawData
+              .whereType<Map>()
+              .map((e) => ProductionOrderModel.fromJson(Map<String, dynamic>.from(e)))
+              .toList(),
+          'current_page': (decoded['current_page'] as num?)?.toInt() ?? 1,
+          'last_page': (decoded['last_page'] as num?)?.toInt() ?? 1,
+          'total': (decoded['total'] as num?)?.toInt() ?? rawData.length,
+        };
+      }
+      throw Exception(_parseApiError(
+          response.body, 'Error al cargar órdenes de producción (${response.statusCode})'));
+    } catch (e) {
+      debugPrint('=== API Error en fetchProductionOrders: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<ProductionOrderModel> createProductionOrder(Map<String, dynamic> payload) async {
+    try {
+      final decoded = await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/production-orders',
+        body: payload,
+        fallbackError: 'Error al registrar orden de producción.',
+      );
+      final rawOrder = decoded['order'] ?? decoded;
+      return ProductionOrderModel.fromJson(Map<String, dynamic>.from(rawOrder as Map));
+    } catch (e) {
+      debugPrint('=== API Error en createProductionOrder: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> createBatchProductionOrders(Map<String, dynamic> payload) async {
+    try {
+      final decoded = await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/production-orders/batch',
+        body: payload,
+        fallbackError: 'Error al registrar planilla de producción.',
+      );
+      final rawOrders = (decoded['orders'] as List?) ?? const [];
+      final parsedOrders = rawOrders
+          .whereType<Map>()
+          .map((e) => ProductionOrderModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      return {
+        ...decoded,
+        'orders': parsedOrders,
+      };
+    } catch (e) {
+      debugPrint('=== API Error en createBatchProductionOrders: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<ProductionOrderModel> voidProductionOrder(int orderId) async {
+    try {
+      final decoded = await _sendBatchJsonRequest(
+        method: 'POST',
+        path: '/production-orders/$orderId/void',
+        body: const {},
+        fallbackError: 'Error al anular orden de producción.',
+      );
+      final rawOrder = decoded['order'] ?? decoded;
+      return ProductionOrderModel.fromJson(Map<String, dynamic>.from(rawOrder as Map));
+    } catch (e) {
+      debugPrint('=== API Error en voidProductionOrder: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchWasteReport({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final params = <String, String>{};
+      if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+      if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
+      final uri = Uri.parse('$baseUrl/reports/waste')
+          .replace(queryParameters: params.isEmpty ? null : params);
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception(_parseApiError(
+          response.body, 'Error al cargar reporte de mermas (${response.statusCode})'));
+    } catch (e) {
+      debugPrint('=== API Error en fetchWasteReport: $e ===');
       rethrow;
     }
   }

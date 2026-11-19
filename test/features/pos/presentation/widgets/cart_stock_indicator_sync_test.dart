@@ -152,6 +152,12 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
   }) async {
     _products = _products.map((p) {
       if (p.id != productId) return p;
@@ -167,8 +173,9 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   @override
   List<Product> applyStockUpdatesToProductList(
     List<Product> list,
-    Map<int, double> updatedStockById,
-  ) {
+    Map<int, double> updatedStockById, {
+    Map<int, String?>? updatedExpirationById,
+  }) {
     return list.map((p) {
       final s = updatedStockById[p.id];
       return s != null ? p.copyWith(stock: s) : p;

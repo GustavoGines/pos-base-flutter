@@ -156,4 +156,9 @@ class PosRepositoryImpl implements PosRepository {
   Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'}) async {
     return await remoteDataSource.createDeliveryNoteFromSale(saleId, fulfillmentStatus: fulfillmentStatus);
   }
+
+  @override
+  Future<Map<String, dynamic>> scanBatch(String code) async {
+    return await remoteDataSource.scanBatch(code);
+  }
 }

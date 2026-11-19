@@ -799,9 +799,7 @@ class ReceiptPrinterService {
       } else if (<int>[2, 7, 12].contains(type)) {
         voucherTitle = 'NOTA DE DEBITO';
       }
-      final nro = invoice['formatted_number']?.toString() ??
-          invoice['voucher_number']?.toString() ??
-          (receiptNumber ?? '00001');
+      final nro = _resolveCleanVoucherNumber(invoice, receiptNumber);
       bytes += generator.text(
         '$voucherTitle $letter N° $nro',
         styles: const PosStyles(
@@ -1386,9 +1384,7 @@ class ReceiptPrinterService {
       } else if (<int>[2, 7, 12].contains(type)) {
         voucherTitle = 'NOTA DE DEBITO';
       }
-      final nro = invoice['formatted_number']?.toString() ??
-          invoice['voucher_number']?.toString() ??
-          (receiptNumber ?? '00001');
+      final nro = _resolveCleanVoucherNumber(invoice, receiptNumber);
       bytes += generator.text(
         '$voucherTitle $letter N° $nro',
         styles: const PosStyles(
@@ -2864,6 +2860,26 @@ class ReceiptPrinterService {
   String _formatDate(DateTime dt) {
     final localDt = dt.toLocal();
     return '${localDt.day.toString().padLeft(2, '0')}/${localDt.month.toString().padLeft(2, '0')}/${localDt.year} ${localDt.hour.toString().padLeft(2, '0')}:${localDt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _resolveCleanVoucherNumber(
+    Map<String, dynamic> invoice,
+    String? fallbackReceiptNumber,
+  ) {
+    final rawVoucherNum = invoice['voucher_number']?.toString().trim() ?? '';
+    if (rawVoucherNum.isNotEmpty) {
+      return rawVoucherNum.padLeft(8, '0');
+    }
+    final rawFormatted = invoice['formatted_number']?.toString().trim() ?? '';
+    if (rawFormatted.isNotEmpty) {
+      final lastPart = rawFormatted.contains('-')
+          ? rawFormatted.split('-').last.trim()
+          : rawFormatted;
+      if (lastPart.isNotEmpty) {
+        return lastPart.padLeft(8, '0');
+      }
+    }
+    return (fallbackReceiptNumber ?? '1').trim().padLeft(8, '0');
   }
 
   double _resolveEffectivePerceptionAmount(

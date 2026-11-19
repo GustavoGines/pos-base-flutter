@@ -427,8 +427,22 @@ class PosProvider with ChangeNotifier {
       ),
     );
 
-    // Si Multi-Listas se desactiva desde Configuración, limpiar lista fijada/activa
-    if (wasMultiPrice == true && !isMultiPrice) {
+    // Si Multi-Listas se desactiva desde Configuración, o la lista actual/fijada
+    // quedó en 0% o fue eliminada, limpiar lista fijada/activa hacia Base.
+    final currentActiveKey = _activeTier == PriceTier.custom
+        ? (_customTierLabel != null ? 'custom_${_customTierLabel!}' : 'base')
+        : _activeTier.name;
+    final defaultInvalidated = _defaultTierStr != 'base' &&
+        !settings.isPriceTierKeyAvailable(_defaultTierStr);
+    if (defaultInvalidated) {
+      _defaultTierStr = 'base';
+      _defaultTierLabel = null;
+    }
+
+    if ((wasMultiPrice == true && !isMultiPrice) ||
+        (isMultiPrice &&
+            _activeTier != PriceTier.base &&
+            !settings.isPriceTierKeyAvailable(currentActiveKey))) {
       _defaultTierStr = 'base';
       _defaultTierLabel = null;
       if (_activeTier != PriceTier.base) {
@@ -461,6 +475,16 @@ class PosProvider with ChangeNotifier {
   String? get authorizedDiscountPin => _authorizedDiscountPin;
   void setAuthorizedDiscountPin(String? pin) {
     _authorizedDiscountPin = pin;
+  }
+
+  String? _authorizedExpiredBatchPin;
+  String? get authorizedExpiredBatchPin => _authorizedExpiredBatchPin;
+  void setAuthorizedExpiredBatchPin(String? pin) {
+    _authorizedExpiredBatchPin = pin;
+  }
+
+  Future<Map<String, dynamic>> scanBatch(String code) async {
+    return await repository.scanBatch(code);
   }
 
   PosProvider({
@@ -772,14 +796,31 @@ class PosProvider with ChangeNotifier {
     submitWeighedProductWithPromo(product, weightInKg);
   }
 
-  bool requestAddToCartWithPromo(Product product, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+  bool requestAddToCartWithPromo(
+    Product product, {
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
     if (product.isSoldByWeight) {
       return false;
     }
     if (validateUnitStockConstraint(product, 1.0) != null) {
       return false;
     }
-    _addToCartDirectly(product, 1.0, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
+    _addToCartDirectly(
+      product,
+      1.0,
+      promotionalPrice: promotionalPrice,
+      promotionalLabel: promotionalLabel,
+      promotionalPeriodType: promotionalPeriodType,
+      batchId: batchId,
+      batchCode: batchCode,
+      batchExpirationDate: batchExpirationDate,
+    );
     return true;
   }
 
@@ -905,8 +946,26 @@ class PosProvider with ChangeNotifier {
     return null;
   }
 
-  void submitWeighedProductWithPromo(Product product, double weightInKg, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
-    _addToCartDirectly(product, weightInKg, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
+  void submitWeighedProductWithPromo(
+    Product product,
+    double weightInKg, {
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
+    _addToCartDirectly(
+      product,
+      weightInKg,
+      promotionalPrice: promotionalPrice,
+      promotionalLabel: promotionalLabel,
+      promotionalPeriodType: promotionalPeriodType,
+      batchId: batchId,
+      batchCode: batchCode,
+      batchExpirationDate: batchExpirationDate,
+    );
   }
 
   static int? _extractOfferProductId(dynamic p) {
@@ -938,7 +997,16 @@ class PosProvider with ChangeNotifier {
     return bestOffer;
   }
 
-  void _addToCartDirectly(Product product, double quantity, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+  void _addToCartDirectly(
+    Product product,
+    double quantity, {
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
     double? resolvedPromoPrice = promotionalPrice;
     String? resolvedPromoLabel = promotionalLabel;
     String? resolvedPromoPeriodType = promotionalPeriodType;
@@ -968,12 +1036,16 @@ class PosProvider with ChangeNotifier {
         cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
         discountTierOnOffersMode: _discountTierOnOffersMode,
         ignoreFixedPrices: _ignoreProductFixedPrices,
+        batchId: batchId,
+        batchCode: batchCode,
+        batchExpirationDate: batchExpirationDate,
       ));
     } else {
       final index = _cart.indexWhere(
         (item) =>
             product.id > 0 &&
             item.product.id == product.id &&
+            item.batchId == batchId &&
             !item.product.isSoldByWeight &&
             !item.isTemporary &&
             !item.saveToCatalog &&
@@ -1021,6 +1093,9 @@ class PosProvider with ChangeNotifier {
           cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
           discountTierOnOffersMode: _discountTierOnOffersMode,
           ignoreFixedPrices: _ignoreProductFixedPrices,
+          batchId: batchId,
+          batchCode: batchCode,
+          batchExpirationDate: batchExpirationDate,
         ));
       }
     }
@@ -1379,6 +1454,7 @@ class PosProvider with ChangeNotifier {
     _isShiftClosed = false;
     _pendingFiscalInvoiceData = null;
     _authorizedDiscountPin = null;
+    _authorizedExpiredBatchPin = null;
     // No reseteamos estas variables aquí porque la UI las necesita
     // inmediatamente después de la venta para mostrar el PDF Split.
     // _wasLastSaleDispatched = false;
@@ -1555,6 +1631,7 @@ class PosProvider with ChangeNotifier {
         name: itemMap['product_name']?.toString() ??
             prod['name']?.toString() ??
             'Producto',
+        barcode: prod['barcode']?.toString(),
         internalCode: prod['internal_code']?.toString() ?? '',
         costPrice: double.tryParse(prod['cost_price']?.toString() ?? '0') ?? 0,
         sellingPrice: originalSellingPrice,

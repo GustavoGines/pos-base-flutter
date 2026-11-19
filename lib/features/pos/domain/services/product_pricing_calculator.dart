@@ -167,17 +167,19 @@ class ProductPricingCalculator {
     final hasFixedWholesale = !ignoreFixedPrices &&
         product.priceWholesale != null &&
         product.priceWholesale! > 0;
-    previews.add(
-      ProductPriceTierPreview(
-        label: 'Mayorista',
-        price: wholesaleRes.tierCalculatedUnitPrice,
-        isFixedOverride: hasFixedWholesale &&
-            (wholesaleRes.tierCalculatedUnitPrice -
-                        roundMoney(product.priceWholesale!))
-                    .abs() <
-                0.01,
-      ),
-    );
+    if (hasFixedWholesale || (wholesaleFactor - 1.0).abs() > 0.0001) {
+      previews.add(
+        ProductPriceTierPreview(
+          label: 'Mayorista',
+          price: wholesaleRes.tierCalculatedUnitPrice,
+          isFixedOverride: hasFixedWholesale &&
+              (wholesaleRes.tierCalculatedUnitPrice -
+                          roundMoney(product.priceWholesale!))
+                      .abs() <
+                  0.01,
+        ),
+      );
+    }
 
     final cardRes = calculate(
       product: product,
@@ -192,20 +194,23 @@ class ProductPricingCalculator {
     );
     final hasFixedCard =
         !ignoreFixedPrices && product.priceCard != null && product.priceCard! > 0;
-    previews.add(
-      ProductPriceTierPreview(
-        label: 'Tarjeta',
-        price: cardRes.finalUnitPrice,
-        isFixedOverride: hasFixedCard &&
-            (cardRes.finalUnitPrice - roundMoney(product.priceCard!)).abs() <
-                0.01,
-      ),
-    );
+    if (hasFixedCard || (cardFactor - 1.0).abs() > 0.0001) {
+      previews.add(
+        ProductPriceTierPreview(
+          label: 'Tarjeta',
+          price: cardRes.finalUnitPrice,
+          isFixedOverride: hasFixedCard &&
+              (cardRes.finalUnitPrice - roundMoney(product.priceCard!)).abs() <
+                  0.01,
+        ),
+      );
+    }
 
     for (final tier in customTiers) {
       final rawName = (tier['name'] ?? '').toString().trim();
       if (rawName.isEmpty) continue;
       final mod = double.tryParse(tier['modifier']?.toString() ?? '0') ?? 0.0;
+      if (mod.abs() <= 0.0001) continue;
       final factor = 1.0 + (mod / 100.0);
       final customRes = calculate(
         product: product,

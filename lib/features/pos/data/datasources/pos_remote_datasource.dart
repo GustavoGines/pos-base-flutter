@@ -70,6 +70,8 @@ abstract class PosRemoteDataSource {
   Future<Map<String, dynamic>> issueFiscalInvoice(int saleId, Map<String, dynamic> invoiceData);
   /// Obtiene los datos fiscales de una factura autorizada
   Future<Map<String, dynamic>?> fetchElectronicInvoice(int saleId);
+  /// Resuelve una etiqueta térmica de lote (`L#<id>` o `L#<id>#W#<gramos>`).
+  Future<Map<String, dynamic>> scanBatch(String code);
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -453,6 +455,29 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       }
     } catch (e) {
       debugPrint('=== API Error en fetchElectronicInvoice: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> scanBatch(String code) async {
+    try {
+      final uri = Uri.parse('$baseUrl/pos/batches/scan')
+          .replace(queryParameters: {'code': code});
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      String msg = 'No se pudo consultar el lote (${response.statusCode}).';
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map && decoded['message'] != null) {
+          msg = decoded['message'].toString();
+        }
+      } catch (_) {}
+      throw Exception(msg);
+    } catch (e) {
+      debugPrint('=== API Error en scanBatch: $e ===');
       rethrow;
     }
   }

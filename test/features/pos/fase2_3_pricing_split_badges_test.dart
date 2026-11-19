@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -498,6 +499,37 @@ void main() {
         expect(find.textContaining('Tarj. s/Of.'), findsOneWidget);
         expect(find.text('10.5%'), findsOneWidget);
         expect(find.text('21%'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'PosScreen: escanear código no registrado y presionar F3 abre Producto Rápido con el EAN sin error',
+      (tester) async {
+        await pumpPosScreen(
+          tester,
+          viewport: const Size(1280, 900),
+          initialTier: PriceTier.base,
+          discountMode: DiscountTierOnOffersMode.bestPriceWins,
+          splitRatio: 0.38,
+        );
+
+        final searchField = find.byType(TextField).first;
+        await tester.enterText(searchField, '124111SP');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Código de Barras No Registrado'), findsOneWidget);
+        expect(find.text('EAN escaneado: 124111SP'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Producto Rápido en Mostrador'), findsOneWidget);
+        expect(
+          find.textContaining('Código escaneado: "124111SP"'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
       },
     );

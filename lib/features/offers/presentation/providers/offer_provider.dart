@@ -278,8 +278,10 @@ class OfferProvider with ChangeNotifier {
     required String type,
     double? discountPercentage,
     double? discountAmount,
-    required String periodType, // 'daily', 'weekly', 'monthly'
+    required String periodType, // 'daily', 'weekly', 'monthly', 'custom'
     List<String>? daysOfWeek,
+    DateTime? startDate,
+    DateTime? endDate,
     required List<int> productIds,
   }) async {
     _isLoading = true;
@@ -296,6 +298,8 @@ class OfferProvider with ChangeNotifier {
         discountAmount: discountAmount,
         periodType: periodType,
         daysOfWeek: daysOfWeek,
+        startDate: startDate,
+        endDate: endDate,
         products: productsPayload,
       );
 

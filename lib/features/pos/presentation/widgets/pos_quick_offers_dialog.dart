@@ -1219,29 +1219,37 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            offer.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.purple.shade100,
-                              borderRadius: BorderRadius.circular(4),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                offer.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
                             ),
-                            child: Text(
-                              offer.periodLabel,
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                offer.periodLabel,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1476,40 +1484,52 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         children: [
           // Fila Superior
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    offer.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      borderRadius: BorderRadius.circular(4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      offer.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
-                    child: Text(
-                      offer.statusLabel,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeBg,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            offer.statusLabel,
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            offer.periodLabel,
+                            style: TextStyle(fontSize: 11, color: Colors.purple.shade900),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      offer.periodLabel,
-                      style: TextStyle(fontSize: 11, color: Colors.purple.shade900),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -1569,9 +1589,13 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               const SizedBox(width: 8),
 
               // Botones de acción del historial
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              Flexible(
+                flex: 0,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
                   // Botón Relanzar
                   FilledButton.tonalIcon(
                     style: FilledButton.styleFrom(
@@ -1582,7 +1606,6 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     icon: const Icon(Icons.rocket_launch_rounded, size: 16),
                     label: const Text('Relanzar', style: TextStyle(fontSize: 12)),
                   ),
-                  const SizedBox(width: 6),
 
                   // Botón Plantilla
                   OutlinedButton.icon(
@@ -1594,7 +1617,6 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     icon: const Icon(Icons.copy_rounded, size: 15),
                     label: const Text('Plantilla', style: TextStyle(fontSize: 12)),
                   ),
-                  const SizedBox(width: 4),
 
                   // Pausar / Reanudar (basado en offer.isActive real, no en si hoy toca su día de semana)
                   if (!isExpired)
@@ -1615,6 +1637,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     onPressed: () => _handleDeleteOffer(offer),
                   ),
                 ],
+              ),
               ),
             ],
           ),

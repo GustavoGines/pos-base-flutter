@@ -422,12 +422,27 @@ class ThermalReceiptWidget extends StatelessWidget {
   // COMPONENTES FISCALES AFIP / ARCA
   // ─────────────────────────────────────────────────────────────────────────
 
+  String _resolveCleanVoucherNumber(Map<String, dynamic> invoice) {
+    final rawVoucherNum = invoice['voucher_number']?.toString().trim() ?? '';
+    if (rawVoucherNum.isNotEmpty) {
+      return rawVoucherNum.padLeft(8, '0');
+    }
+    final rawFormatted = invoice['formatted_number']?.toString().trim() ?? '';
+    if (rawFormatted.isNotEmpty) {
+      final lastPart = rawFormatted.contains('-')
+          ? rawFormatted.split('-').last.trim()
+          : rawFormatted;
+      if (lastPart.isNotEmpty) {
+        return lastPart.padLeft(8, '0');
+      }
+    }
+    return (saleNumber ?? '1').trim().padLeft(8, '0');
+  }
+
   Widget _buildFiscalVoucherHeader(double factor) {
     final invoice = electronicInvoice!;
     final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
-    final nro = invoice['formatted_number']?.toString() ??
-        invoice['voucher_number']?.toString() ??
-        (saleNumber ?? '00001');
+    final nro = _resolveCleanVoucherNumber(invoice);
     final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
     final defaultCode = letter == 'A' ? 1 : (letter == 'C' ? 11 : 6);
     final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '') ?? defaultCode;

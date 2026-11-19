@@ -14,6 +14,8 @@ import '../../domain/entities/rubro.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
 import '../../data/models/product_model.dart';
+import '../../data/models/product_batch_model.dart';
+import '../../data/models/production_order_model.dart';
 
 class CatalogProvider with ChangeNotifier {
   final GetProductsUseCase getProductsUseCase;
@@ -351,6 +353,37 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  /// Obtiene todos los productos activos del catálogo paginando de a 500
+  /// para pickers de Producción Propia y Recetas sin alterar la paginación principal.
+  Future<List<Product>> fetchAllActiveProductsForProduction() async {
+    try {
+      final byId = <int, Product>{};
+      int page = 1;
+      int lastPage = 1;
+
+      do {
+        final result = await getProductsUseCase(
+          page: page,
+          sortBy: 'name',
+          sortDirection: 'asc',
+          perPage: 500,
+          active: true,
+        );
+        final pageData = List<Product>.from(result['data'] as List);
+        for (final p in pageData) {
+          if (p.active) byId[p.id] = p;
+        }
+        lastPage = (result['last_page'] as int?) ?? 1;
+        page++;
+      } while (page <= lastPage && page <= 25);
+
+      return byId.values.toList();
+    } catch (e) {
+      debugPrint('Error en fetchAllActiveProductsForProduction: $e');
+      return List<Product>.from(_products);
+    }
+  }
+
   /// Obtiene todos los productos activos pertenecientes a una Categoría, Marca o Proveedor
   /// sin alterar el estado de paginación del catálogo principal.
   Future<List<Product>> fetchProductsByGroup({
@@ -641,15 +674,23 @@ class CatalogProvider with ChangeNotifier {
 
   List<Product> applyStockUpdatesToProductList(
     List<Product> list,
-    Map<int, double> updatedStockById,
-  ) {
+    Map<int, double> updatedStockById, {
+    Map<int, String?>? updatedExpirationById,
+  }) {
     if (updatedStockById.isEmpty || list.isEmpty) return list;
     bool anyChanged = false;
     final updatedList = list.map((p) {
       Product current = p;
       if (updatedStockById.containsKey(current.id)) {
         anyChanged = true;
-        current = current.copyWith(stock: updatedStockById[current.id]!);
+        final hasExpKey =
+            updatedExpirationById != null && updatedExpirationById.containsKey(current.id);
+        final nextExp = hasExpKey ? updatedExpirationById[current.id] : null;
+        current = current.copyWith(
+          stock: updatedStockById[current.id]!,
+          expirationDate: nextExp,
+          clearExpirationDate: hasExpKey && nextExp == null,
+        );
       }
       if (current.isCombo && current.comboIngredients != null && current.comboIngredients!.isNotEmpty) {
         bool comboChanged = false;
@@ -719,6 +760,7 @@ class CatalogProvider with ChangeNotifier {
 
       final updates = await repository.fetchBulkStock(expandedIds.toList());
       final updatedStockById = <int, double>{};
+      final updatedExpirationById = <int, String?>{};
       bool changed = false;
 
       for (final entry in updates) {
@@ -726,12 +768,24 @@ class CatalogProvider with ChangeNotifier {
         final stock = double.tryParse(entry['stock']?.toString() ?? '');
         if (id == null || stock == null) continue;
         updatedStockById[id] = stock;
+        if (entry.containsKey('expiration_date')) {
+          final rawExp = entry['expiration_date'];
+          updatedExpirationById[id] = rawExp != null &&
+                  rawExp.toString() != 'null' &&
+                  rawExp.toString().trim().isNotEmpty
+              ? rawExp.toString().split('T').first
+              : null;
+        }
       }
 
       // FT-01: Replicar la actualización de stock en _products y en todas las
       // colecciones complementarias del Acceso Rápido (categorías, pesables y fijados).
       if (updatedStockById.isNotEmpty) {
-        final updatedMain = applyStockUpdatesToProductList(_products, updatedStockById);
+        final updatedMain = applyStockUpdatesToProductList(
+          _products,
+          updatedStockById,
+          updatedExpirationById: updatedExpirationById,
+        );
         if (!identical(updatedMain, _products)) {
           _products = updatedMain;
           changed = true;
@@ -740,7 +794,11 @@ class CatalogProvider with ChangeNotifier {
         if (_categoryExtraProducts.isNotEmpty) {
           for (final key in _categoryExtraProducts.keys.toList()) {
             final original = _categoryExtraProducts[key]!;
-            final updated = applyStockUpdatesToProductList(original, updatedStockById);
+            final updated = applyStockUpdatesToProductList(
+              original,
+              updatedStockById,
+              updatedExpirationById: updatedExpirationById,
+            );
             if (!identical(original, updated)) {
               _categoryExtraProducts[key] = updated;
               changed = true;
@@ -748,14 +806,22 @@ class CatalogProvider with ChangeNotifier {
           }
         }
         if (_weightOnlyProducts.isNotEmpty) {
-          final updated = applyStockUpdatesToProductList(_weightOnlyProducts, updatedStockById);
+          final updated = applyStockUpdatesToProductList(
+            _weightOnlyProducts,
+            updatedStockById,
+            updatedExpirationById: updatedExpirationById,
+          );
           if (!identical(_weightOnlyProducts, updated)) {
             _weightOnlyProducts = updated;
             changed = true;
           }
         }
         if (_pinnedExtraProducts.isNotEmpty) {
-          final updated = applyStockUpdatesToProductList(_pinnedExtraProducts, updatedStockById);
+          final updated = applyStockUpdatesToProductList(
+            _pinnedExtraProducts,
+            updatedStockById,
+            updatedExpirationById: updatedExpirationById,
+          );
           if (!identical(_pinnedExtraProducts, updated)) {
             _pinnedExtraProducts = updated;
             changed = true;
@@ -1110,12 +1176,56 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  void _syncProductSnapshotInCaches(Product updatedProduct) {
+    _lastUpdatedProduct = updatedProduct;
+    final idx = _products.indexWhere((p) => p.id == updatedProduct.id);
+    if (idx != -1) {
+      _products[idx] = updatedProduct;
+    }
+    final stockMap = <int, double>{updatedProduct.id: updatedProduct.stock};
+    final expMap = <int, String?>{updatedProduct.id: updatedProduct.expirationDate};
+    _products = applyStockUpdatesToProductList(
+      _products,
+      stockMap,
+      updatedExpirationById: expMap,
+    );
+    if (_categoryExtraProducts.isNotEmpty) {
+      for (final key in _categoryExtraProducts.keys.toList()) {
+        _categoryExtraProducts[key] = applyStockUpdatesToProductList(
+          _categoryExtraProducts[key]!,
+          stockMap,
+          updatedExpirationById: expMap,
+        );
+      }
+    }
+    if (_weightOnlyProducts.isNotEmpty) {
+      _weightOnlyProducts = applyStockUpdatesToProductList(
+        _weightOnlyProducts,
+        stockMap,
+        updatedExpirationById: expMap,
+      );
+    }
+    if (_pinnedExtraProducts.isNotEmpty) {
+      _pinnedExtraProducts = applyStockUpdatesToProductList(
+        _pinnedExtraProducts,
+        stockMap,
+        updatedExpirationById: expMap,
+      );
+    }
+  }
+
   Future<bool> adjustStock({
     required int productId,
     required String type,
     required double quantity,
     double? minStock,
     String? notes,
+    int? batchId,
+    String? batchCode,
+    String? expirationDate,
+    String? manufacturedAt,
+    double? unitCost,
+    String? reasonCode,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -1127,42 +1237,22 @@ class CatalogProvider with ChangeNotifier {
         quantity: quantity,
         minStock: minStock,
         notes: notes,
+        batchId: batchId,
+        batchCode: batchCode,
+        expirationDate: expirationDate,
+        manufacturedAt: manufacturedAt,
+        unitCost: unitCost,
+        reasonCode: reasonCode,
       );
-      // Actualizamos el producto completo en la lista y en cachés secundarias si el backend lo devuelve
-      double? resolvedStock;
       if (result.containsKey('product')) {
         final updatedProduct =
             ProductModel.fromJson(result['product'] as Map<String, dynamic>);
-        _lastUpdatedProduct = updatedProduct;
-        resolvedStock = updatedProduct.stock;
-        final idx = _products.indexWhere((p) => p.id == productId);
-        if (idx != -1) _products[idx] = updatedProduct;
+        _syncProductSnapshotInCaches(updatedProduct);
       } else if (result.containsKey('new_stock')) {
-        // Fallback al comportamiento anterior si el backend no envía el objeto completo
         final newStock = double.parse(result['new_stock'].toString());
-        resolvedStock = newStock;
         final idx = _products.indexWhere((p) => p.id == productId);
         if (idx != -1) {
-          _products[idx] = _products[idx].copyWith(stock: newStock);
-          _lastUpdatedProduct = _products[idx];
-        }
-      }
-      if (resolvedStock != null) {
-        final stockMap = <int, double>{productId: resolvedStock};
-        _products = applyStockUpdatesToProductList(_products, stockMap);
-        if (_categoryExtraProducts.isNotEmpty) {
-          for (final key in _categoryExtraProducts.keys.toList()) {
-            _categoryExtraProducts[key] = applyStockUpdatesToProductList(
-                _categoryExtraProducts[key]!, stockMap);
-          }
-        }
-        if (_weightOnlyProducts.isNotEmpty) {
-          _weightOnlyProducts =
-              applyStockUpdatesToProductList(_weightOnlyProducts, stockMap);
-        }
-        if (_pinnedExtraProducts.isNotEmpty) {
-          _pinnedExtraProducts =
-              applyStockUpdatesToProductList(_pinnedExtraProducts, stockMap);
+          _syncProductSnapshotInCaches(_products[idx].copyWith(stock: newStock));
         }
       }
       return true;
@@ -1173,6 +1263,230 @@ class CatalogProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<ProductBatchesResponse> fetchProductBatches(
+    int productId, {
+    bool includeClosed = true,
+  }) async {
+    return await repository.fetchProductBatches(
+      productId,
+      includeClosed: includeClosed,
+    );
+  }
+
+  Future<Map<String, dynamic>?> createProductBatch(
+    int productId, {
+    required double quantity,
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.createProductBatch(
+        productId,
+        quantity: quantity,
+        batchCode: batchCode,
+        manufacturedAt: manufacturedAt,
+        expirationDate: expirationDate,
+        unitCost: unitCost,
+        notes: notes,
+      );
+      if (res['product'] is Map) {
+        _syncProductSnapshotInCaches(
+          ProductModel.fromJson(Map<String, dynamic>.from(res['product'] as Map)),
+        );
+        notifyListeners();
+      }
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> updateProductBatch(
+    int batchId, {
+    String? batchCode,
+    String? manufacturedAt,
+    String? expirationDate,
+    double? unitCost,
+    String? notes,
+  }) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.updateProductBatch(
+        batchId,
+        batchCode: batchCode,
+        manufacturedAt: manufacturedAt,
+        expirationDate: expirationDate,
+        unitCost: unitCost,
+        notes: notes,
+      );
+      if (res['product'] is Map) {
+        _syncProductSnapshotInCaches(
+          ProductModel.fromJson(Map<String, dynamic>.from(res['product'] as Map)),
+        );
+        notifyListeners();
+      }
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> writeOffBatch(
+    int batchId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.writeOffBatch(
+        batchId,
+        quantity: quantity,
+        notes: notes,
+      );
+      if (res['product'] is Map) {
+        _syncProductSnapshotInCaches(
+          ProductModel.fromJson(Map<String, dynamic>.from(res['product'] as Map)),
+        );
+        notifyListeners();
+      }
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchExpiredBatches({bool includeToday = true}) async {
+    return await repository.fetchExpiredBatches(includeToday: includeToday);
+  }
+
+  Future<Map<String, dynamic>?> splitBatch(
+    int batchId, {
+    required double quantity,
+    String? expirationDate,
+    String? batchCode,
+    String? notes,
+  }) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.splitBatch(
+        batchId,
+        quantity: quantity,
+        expirationDate: expirationDate,
+        batchCode: batchCode,
+        notes: notes,
+      );
+      if (res['product'] is Map) {
+        _syncProductSnapshotInCaches(
+          ProductModel.fromJson(Map<String, dynamic>.from(res['product'] as Map)),
+        );
+        notifyListeners();
+      }
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> writeOffExpiredBatches({
+    List<Map<String, dynamic>>? items,
+    bool includeToday = true,
+    String? notes,
+  }) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.writeOffExpiredBatches(
+        items: items,
+        includeToday: includeToday,
+        notes: notes,
+      );
+      await loadProducts(page: _currentPage);
+      invalidateQuickAccessExtraCaches();
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchProductionOrders({
+    int page = 1,
+    int? productId,
+    String? status,
+    String? search,
+  }) async {
+    return await repository.fetchProductionOrders(
+      page: page,
+      productId: productId,
+      status: status,
+      search: search,
+    );
+  }
+
+  Future<ProductionOrderModel?> createProductionOrder(Map<String, dynamic> payload) async {
+    _errorMessage = null;
+    try {
+      final order = await repository.createProductionOrder(payload);
+      await loadProducts(page: _currentPage);
+      invalidateQuickAccessExtraCaches();
+      return order;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> createBatchProductionOrders(Map<String, dynamic> payload) async {
+    _errorMessage = null;
+    try {
+      final res = await repository.createBatchProductionOrders(payload);
+      await loadProducts(page: _currentPage);
+      invalidateQuickAccessExtraCaches();
+      return res;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<ProductionOrderModel?> voidProductionOrder(int orderId) async {
+    _errorMessage = null;
+    try {
+      final order = await repository.voidProductionOrder(orderId);
+      await loadProducts(page: _currentPage);
+      invalidateQuickAccessExtraCaches();
+      return order;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchWasteReport({
+    String? startDate,
+    String? endDate,
+  }) async {
+    return await repository.fetchWasteReport(
+      startDate: startDate,
+      endDate: endDate,
+    );
   }
 
   // ───────────────────────────────────────────────────────

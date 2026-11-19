@@ -17,7 +17,6 @@ class StockAlertBell extends StatefulWidget {
 class _StockAlertBellState extends State<StockAlertBell> {
   Timer? _refreshTimer;
   final _overlayController = OverlayPortalController();
-  final _link = LayerLink();
 
   @override
   void initState() {
@@ -51,12 +50,10 @@ class _StockAlertBellState extends State<StockAlertBell> {
   Widget build(BuildContext context) {
     return TapRegion(
       groupId: 'stock_alert_overlay',
-      child: CompositedTransformTarget(
-        link: _link,
-        child: OverlayPortal(
-          controller: _overlayController,
-          overlayChildBuilder: (context) => _buildOverlayContent(),
-          child: Consumer<CatalogProvider>(
+      child: OverlayPortal.overlayChildLayoutBuilder(
+        controller: _overlayController,
+        overlayChildBuilder: (context, info) => _buildOverlayContent(info),
+        child: Consumer<CatalogProvider>(
             builder: (context, provider, _) {
               final alerts = provider.criticalAlerts;
               final count = alerts.length;
@@ -104,7 +101,6 @@ class _StockAlertBellState extends State<StockAlertBell> {
             },
           ),
         ),
-      ),
     );
   }
 
@@ -142,38 +138,40 @@ class _StockAlertBellState extends State<StockAlertBell> {
     );
   }
 
-  Widget _buildOverlayContent() {
-    return TapRegion(
-      groupId: 'stock_alert_overlay',
-      onTapOutside: (_) => _overlayController.hide(),
-      child: CompositedTransformFollower(
-        link: _link,
-        showWhenUnlinked: false,
-        targetAnchor: Alignment.bottomRight,
-        followerAnchor: Alignment.topRight,
-        offset: const Offset(0, 8),
-        child: Align(
-          alignment: Alignment.topRight,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
-            child: Material(
-              elevation: 16,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              shadowColor: Colors.black.withValues(alpha: 0.3),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(),
-                    const Divider(height: 1),
-                    Flexible(child: _buildAlertList()),
-                  ],
-                ),
+  Widget _buildOverlayContent(OverlayChildLayoutInfo info) {
+    final Offset targetBottomRight = MatrixUtils.transformPoint(
+      info.childPaintTransform,
+      Offset(info.childSize.width, info.childSize.height),
+    );
+    final double top = targetBottomRight.dy + 8.0;
+    final double rawRight = info.overlaySize.width - targetBottomRight.dx;
+    final double right = rawRight < 8.0 ? 8.0 : rawRight;
+
+    return Positioned(
+      top: top,
+      right: right,
+      child: TapRegion(
+        groupId: 'stock_alert_overlay',
+        onTapOutside: (_) => _overlayController.hide(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
+          child: Material(
+            elevation: 16,
+            borderRadius: BorderRadius.circular(20),
+            clipBehavior: Clip.antiAlias,
+            shadowColor: Colors.black.withValues(alpha: 0.3),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(),
+                  const Divider(height: 1),
+                  Flexible(child: _buildAlertList()),
+                ],
               ),
             ),
           ),

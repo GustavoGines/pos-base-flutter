@@ -156,6 +156,7 @@ class SaleRecord {
   final String? cashRegisterName;
   final double? iibbPerceptionAmount;
   final double? iibbPerceptionRate;
+  final String paymentStatus;
   final String invoiceStatus;
   final String? voidReason;
   final Map<String, dynamic>? electronicInvoice;
@@ -166,6 +167,8 @@ class SaleRecord {
   final String? customerDocumentNumber;
   final String? customerTaxCondition;
   final String? customerAddress;
+  final bool? customerAppliesIibbPerception;
+  final double? customerIibbPerceptionRate;
 
   const SaleRecord({
     required this.id,
@@ -187,6 +190,7 @@ class SaleRecord {
     this.cashRegisterName,
     this.iibbPerceptionAmount,
     this.iibbPerceptionRate,
+    this.paymentStatus = 'paid',
     this.invoiceStatus = 'none',
     this.voidReason,
     this.electronicInvoice,
@@ -197,6 +201,8 @@ class SaleRecord {
     this.customerDocumentNumber,
     this.customerTaxCondition,
     this.customerAddress,
+    this.customerAppliesIibbPerception,
+    this.customerIibbPerceptionRate,
   });
 
   bool get isVoided => status == 'voided';
@@ -264,6 +270,16 @@ class SaleRecord {
     final cashRegister = cashShift?['cash_register'] as Map<String, dynamic>?;
     final rawShiftId = json['cash_shift_id'] ?? cashShift?['id'];
     final rawRegId = cashShift?['cash_register_id'] ?? cashRegister?['id'];
+    final customerMap = json['customer'] as Map<String, dynamic>?;
+    final rawAppliesIibb = customerMap?['applies_iibb_perception'];
+    final bool? customerAppliesIibb = customerMap != null &&
+            customerMap.containsKey('applies_iibb_perception')
+        ? (rawAppliesIibb == true || rawAppliesIibb == 1 || rawAppliesIibb == '1')
+        : null;
+    final rawCustIibbRate = customerMap?['iibb_perception_rate'];
+    final double? customerIibbRate = rawCustIibbRate != null
+        ? double.tryParse(rawCustIibbRate.toString().replaceAll(',', '.'))
+        : null;
 
     return SaleRecord(
       id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
@@ -293,23 +309,26 @@ class SaleRecord {
       iibbPerceptionRate: json['iibb_perception_rate'] != null
           ? double.tryParse(json['iibb_perception_rate'].toString())
           : null,
+      paymentStatus: json['payment_status']?.toString() ?? 'paid',
       invoiceStatus: json['invoice_status'] as String? ?? 'none',
       voidReason: json['void_reason']?.toString(),
       electronicInvoice: json['electronic_invoice'] as Map<String, dynamic>? ??
           json['electronicInvoice'] as Map<String, dynamic>?,
       deliveryNote: json['delivery_note'] as Map<String, dynamic>? ??
           json['deliveryNote'] as Map<String, dynamic>?,
-      customerId: json['customer_id'] as int? ?? json['customer']?['id'] as int?,
-      customerName: json['customer']?['name'] as String? ?? json['customer_name'] as String?,
-      customerDocumentType: json['customer']?['document_type'] != null
-          ? int.tryParse(json['customer']['document_type'].toString())
+      customerId: json['customer_id'] as int? ?? customerMap?['id'] as int?,
+      customerName: customerMap?['name'] as String? ?? json['customer_name'] as String?,
+      customerDocumentType: customerMap?['document_type'] != null
+          ? int.tryParse(customerMap!['document_type'].toString())
           : null,
-      customerDocumentNumber: json['customer']?['document_number'] as String? ?? json['customer_document_number'] as String?,
-      customerTaxCondition: json['customer']?['tax_condition'] as String?,
-      customerAddress: (json['customer']?['fiscal_address'] ??
-              json['customer']?['delivery_address'] ??
+      customerDocumentNumber: customerMap?['document_number'] as String? ?? json['customer_document_number'] as String?,
+      customerTaxCondition: customerMap?['tax_condition'] as String?,
+      customerAddress: (customerMap?['fiscal_address'] ??
+              customerMap?['delivery_address'] ??
               json['delivery_address'])
           ?.toString(),
+      customerAppliesIibbPerception: customerAppliesIibb,
+      customerIibbPerceptionRate: customerIibbRate,
     );
   }
 }

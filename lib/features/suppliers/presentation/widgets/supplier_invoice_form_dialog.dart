@@ -31,10 +31,14 @@ class _InvoiceItemModel {
   bool updatePrice;
   double vatRate; // 21.0 | 10.5 | 27.0 | 0.0
   String priceAnchor = 'cost'; // 'cost' | 'selling'
+  int? batchId;
+  DateTime? expirationDate;
+  bool showLotFields = false;
   late final TextEditingController qtyCtrl;
   late final TextEditingController costCtrl;
   late final TextEditingController marginCtrl;
   late final TextEditingController pvpCtrl;
+  late final TextEditingController batchCodeCtrl;
 
   _InvoiceItemModel({
     required this.product,
@@ -43,6 +47,10 @@ class _InvoiceItemModel {
     required this.manualPrice,
     this.updatePrice = true,
     this.vatRate = 21.0,
+    this.batchId,
+    String? batchCode,
+    this.expirationDate,
+    bool autoDefaultExpiry = false,
   }) {
     priceAnchor = newCost > 0 ? 'cost' : 'selling';
     final qtyStr = product.isSoldByWeight || product.unitType == 'kg'
@@ -61,6 +69,17 @@ class _InvoiceItemModel {
     marginCtrl = TextEditingController(
       text: initialMargin > 0 ? initialMargin.toCleanMargin() : '',
     );
+    batchCodeCtrl = TextEditingController(text: batchCode ?? '');
+    if (autoDefaultExpiry &&
+        expirationDate == null &&
+        product.vencimientoDias != null &&
+        product.vencimientoDias! > 0) {
+      expirationDate =
+          DateTime.now().add(Duration(days: product.vencimientoDias!));
+    }
+    showLotFields = product.trackBatches ||
+        (batchCode != null && batchCode.isNotEmpty) ||
+        expirationDate != null;
   }
 
   void dispose() {
@@ -68,6 +87,7 @@ class _InvoiceItemModel {
     costCtrl.dispose();
     marginCtrl.dispose();
     pvpCtrl.dispose();
+    batchCodeCtrl.dispose();
   }
 
   double get subtotal => quantity * newCost;
@@ -299,6 +319,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             // salvo que el usuario modifique el PVP o marque la casilla explícitamente.
             updatePrice: false,
             vatRate: defaultExistingVatRate,
+            batchId: (map['batch_id'] as num?)?.toInt(),
+            batchCode: map['batch_code']?.toString(),
+            expirationDate: map['expiration_date'] != null &&
+                    map['expiration_date'].toString() != 'null' &&
+                    map['expiration_date'].toString().trim().isNotEmpty
+                ? DateTime.tryParse(map['expiration_date'].toString().split('T').first)
+                : null,
           ),
         );
       }
@@ -447,6 +474,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             product: product,
             newCost: product.costPrice,
             manualPrice: product.sellingPrice,
+            autoDefaultExpiry: true,
           ),
         );
         _autoRecalculateFiscalIfNeeded();
@@ -1118,6 +1146,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   'subtotal': i.quantity * i.newCost,
                   'update_price': i.updatePrice,
                   'new_selling_price': i.updatePrice ? i.manualPrice : null,
+                  if (i.batchId != null) 'batch_id': i.batchId,
+                  if (i.batchCodeCtrl.text.trim().isNotEmpty)
+                    'batch_code': i.batchCodeCtrl.text.trim(),
+                  if (i.expirationDate != null)
+                    'expiration_date':
+                        DateFormat('yyyy-MM-dd').format(i.expirationDate!),
                 })
             .toList();
 
@@ -2211,6 +2245,104 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 ),
               ),
             ),
+          if (!item.product.isCombo && !item.product.isService) ...[
+            if (!item.showLotFields)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.layers_outlined, size: 15),
+                    label: const Text(
+                      '+ Asignar Lote / Vencimiento de este ingreso',
+                      style: TextStyle(fontSize: 11.5),
+                    ),
+                    onPressed: () => setState(() => item.showLotFields = true),
+                  ),
+                ),
+              )
+            else
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: item.product.trackBatches
+                        ? Colors.orange.shade300
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: TextFormField(
+                        controller: item.batchCodeCtrl,
+                        decoration: InputDecoration(
+                          labelText: item.product.trackBatches
+                              ? 'Código de Lote (opc. auto)'
+                              : 'Código de Lote (control por lotes)',
+                          hintText: 'Ej. FAC-00123',
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.qr_code_outlined, size: 16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 12),
+                        ),
+                        icon: Icon(
+                          Icons.event_available_outlined,
+                          size: 16,
+                          color: item.expirationDate != null
+                              ? Colors.deepOrange
+                              : null,
+                        ),
+                        label: Text(
+                          item.expirationDate != null
+                              ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
+                              : 'Fecha de Vencimiento',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () async {
+                          final picked = await showCompactDatePicker(
+                            context: context,
+                            initialDate: item.expirationDate ??
+                                DateTime.now().add(const Duration(days: 7)),
+                            helpText:
+                                'Vencimiento del lote (${item.product.name})',
+                          );
+                          if (picked != null) {
+                            setState(() => item.expirationDate = picked);
+                          }
+                        },
+                      ),
+                    ),
+                    if (item.expirationDate != null)
+                      IconButton(
+                        tooltip: 'Limpiar vencimiento',
+                        icon: const Icon(Icons.clear, size: 17),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () =>
+                            setState(() => item.expirationDate = null),
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );

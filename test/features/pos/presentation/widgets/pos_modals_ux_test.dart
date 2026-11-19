@@ -300,7 +300,22 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('Cód. consultado: 7791112223334'), findsOneWidget);
+        expect(
+          find.textContaining('Código escaneado: "7791112223334"'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.widgetWithText(
+                  TextFormField,
+                  'Notas adicionales para Factura / Ticket (Opcional)',
+                ),
+              )
+              .controller
+              ?.text,
+          isEmpty,
+        );
         expect(find.byIcon(Icons.attach_money_rounded), findsNothing);
         expect(
           tester
@@ -345,6 +360,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.textContaining('Cód. consultado:'), findsNothing);
+        expect(find.textContaining('Código escaneado:'), findsNothing);
         expect(find.widgetWithText(TextFormField, 'Tornillo drywall'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
@@ -874,6 +890,72 @@ void main() {
         expect(capturedResult!.item.saveToCatalog, isFalse);
         expect(capturedResult!.item.isTemporary, isTrue);
         expect(capturedResult!.item.product.comboIngredients?.first['quantity'], 0.0625);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'PosQuickItemDialog: conserva código de barras escaneado (initialQuery) en Product y toSalePayload()',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final posProv = _FakePosProvider();
+        final catProv = _FakeCatalogProvider();
+        PosQuickItemResult? capturedResult;
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<PosProvider>.value(value: posProv),
+              ChangeNotifierProvider<CatalogProvider>.value(value: catProv),
+              ChangeNotifierProvider<OfferProvider>.value(
+                  value: _FakeOfferProvider()),
+              ChangeNotifierProvider<SettingsProvider>.value(
+                  value: _FakeSettingsProvider()),
+              ChangeNotifierProvider<SupplierProvider>.value(
+                  value: _FakeSupplierProvider()),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (ctx) => ElevatedButton(
+                    onPressed: () async {
+                      capturedResult = await PosQuickItemDialog.show(
+                        ctx,
+                        initialQuery: '7798765432109',
+                      );
+                    },
+                    child: const Text('Crear Desde Escaneo'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Crear Desde Escaneo'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Descripción del Producto *'),
+          'Galletitas Escaneadas',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Precio Venta Unit. *'),
+          '1800',
+        );
+        await tester.tap(find.text('Agregar al Carrito (Enter)'));
+        await tester.pumpAndSettle();
+
+        expect(capturedResult, isNotNull);
+        expect(capturedResult!.item.saveToCatalog, isTrue);
+        expect(capturedResult!.item.product.barcode, '7798765432109');
+        expect(capturedResult!.item.customDetails, isNull);
+        final payload = capturedResult!.item.toSalePayload();
+        expect(payload['save_to_catalog'], isTrue);
+        expect(payload['barcode'], '7798765432109');
         expect(tester.takeException(), isNull);
       },
     );

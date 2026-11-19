@@ -170,8 +170,9 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   @override
   List<Product> applyStockUpdatesToProductList(
     List<Product> list,
-    Map<int, double> updatedStockById,
-  ) => list;
+    Map<int, double> updatedStockById, {
+    Map<int, String?>? updatedExpirationById,
+  }) => list;
 
   @override
   Future<void> loadProducts({

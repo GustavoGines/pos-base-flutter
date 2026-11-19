@@ -32,7 +32,10 @@ class CartItem {
   double? manualCostPrice; // Precio de costo unitario sobrescrito manualmente para esta venta
   double? manualSubtotal; // Subtotal final pactado por lote (ej. "3 por $10.000") para evitar pérdida de centavos por división
   bool hasManualIvaOverride; // Alícuota IVA modificada manualmente en el carrito para esta venta
-  
+  int? batchId; // Lote explícito escaneado en mostrador (ej. etiqueta térmica L#<id>)
+  String? batchCode; // Código legible del lote escaneado
+  String? batchExpirationDate; // Vencimiento YYYY-MM-DD del lote escaneado
+
   CartItem({
     required this.product,
     this.quantity = 1.0,
@@ -56,6 +59,9 @@ class CartItem {
     this.manualCostPrice,
     this.manualSubtotal,
     this.hasManualIvaOverride = false,
+    this.batchId,
+    this.batchCode,
+    this.batchExpirationDate,
   });
 
   /// Costo unitario efectivo en esta venta (respeta override manual si existe)
@@ -94,6 +100,7 @@ class CartItem {
     final isUnregisteredProduct = product.id <= 0;
     final cleanDesc = customDescription?.trim();
     final cleanDetails = customDetails?.trim();
+    final cleanBarcode = product.barcode?.trim();
     return {
       'product_id': (isTemporary || isUnregisteredProduct) ? null : product.id,
       'product_name': effectiveDisplayName,
@@ -101,6 +108,11 @@ class CartItem {
       'custom_details': (cleanDetails != null && cleanDetails.isNotEmpty) ? cleanDetails : null,
       'is_temporary': isTemporary && !saveToCatalog,
       'save_to_catalog': saveToCatalog,
+      if (saveToCatalog &&
+          !product.isService &&
+          cleanBarcode != null &&
+          cleanBarcode.isNotEmpty)
+        'barcode': cleanBarcode,
       'cost_price': effectiveCostPrice,
       if (manualCostPrice != null && !isTemporary && !isUnregisteredProduct)
         'custom_cost_price': manualCostPrice,
@@ -123,6 +135,7 @@ class CartItem {
       'quantity': quantity,
       'unit_price': unitPrice,
       'subtotal': subtotal,
+      if (batchId != null) 'batch_id': batchId,
     };
   }
 

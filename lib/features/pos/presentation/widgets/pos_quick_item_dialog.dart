@@ -173,7 +173,6 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
         _nameController.text = rawInitial;
       } else {
         _scannedReferenceCode = rawInitial;
-        _detailsController.text = 'Cód. consultado: $rawInitial';
       }
     }
 
@@ -600,10 +599,18 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
       _comboSearchCtrl.text = clean;
       _comboSearchCtrl.selection = TextSelection.collapsed(offset: clean.length);
       _onComboSearchSubmitted(clean);
-    } else {
+    } else if (_isServiceMode) {
       SnackBarService.warning(
         context,
-        'Cambiá a la pestaña "Combo / Fracción" para escanear ingredientes.',
+        'Los servicios u honorarios no llevan código de barras.',
+      );
+    } else {
+      setState(() {
+        _scannedReferenceCode = clean;
+      });
+      SnackBarService.success(
+        context,
+        '🔫 Código $clean capturado para el Producto Rápido.',
       );
     }
   }
@@ -812,9 +819,16 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
           }).toList()
         : null;
 
+    final cleanBarcode = (!_isServiceMode &&
+            _scannedReferenceCode != null &&
+            _scannedReferenceCode!.trim().isNotEmpty)
+        ? _scannedReferenceCode!.trim()
+        : null;
+
     final product = Product(
       id: 0, // ID 0 identifica producto temporal o alta on-the-fly pendiente de persistir
       name: name,
+      barcode: cleanBarcode,
       internalCode: _isComboMode
           ? 'COMBO-POS'
           : (_isServiceMode ? 'SERV-POS' : 'TEMP-POS'),
@@ -1910,7 +1924,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Código consultado en F5: "$_scannedReferenceCode". Escribí la descripción e importe para cobrarlo.',
+                                      'Código escaneado: "$_scannedReferenceCode"${_saveToCatalog && !_isServiceMode ? " (se guardará como EAN en el Catálogo)" : ""}. Escribí la descripción e importe para cobrarlo.',
                                       style: TextStyle(
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w600,

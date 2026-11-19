@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/features/catalog/data/models/product_batch_model.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 
@@ -20,12 +25,35 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
   final _quantityCtrl = TextEditingController();
   final _minStockCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _batchCodeCtrl = TextEditingController();
   String _selectedType = 'in'; // 'in' = Ingreso, 'out' = Egreso
+  DateTime? _batchExpDate;
+  bool _isWaste = false;
+  int? _selectedOutBatchId;
+  List<ProductBatchModel> _activeBatches = const [];
 
   @override
   void initState() {
     super.initState();
     _minStockCtrl.text = widget.product.minStock?.toStringAsFixed(0) ?? '';
+    if (widget.product.vencimientoDias != null &&
+        widget.product.vencimientoDias! > 0) {
+      _batchExpDate =
+          DateTime.now().add(Duration(days: widget.product.vencimientoDias!));
+    }
+    if (!widget.product.isCombo && !widget.product.isService) {
+      _loadActiveBatches();
+    }
+  }
+
+  Future<void> _loadActiveBatches() async {
+    try {
+      final res = await widget.provider
+          .fetchProductBatches(widget.product.id, includeClosed: false);
+      if (mounted) {
+        setState(() => _activeBatches = res.batches.where((b) => b.isActive).toList());
+      }
+    } catch (_) {}
   }
 
   @override
@@ -33,6 +61,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     _quantityCtrl.dispose();
     _minStockCtrl.dispose();
     _notesCtrl.dispose();
+    _batchCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -107,6 +136,14 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
       quantity: qty ?? 0,
       minStock: minStockVal,
       notes: _notesCtrl.text.trim().isNotEmpty ? _notesCtrl.text.trim() : null,
+      batchId: _selectedType == 'out' ? _selectedOutBatchId : null,
+      batchCode: _selectedType == 'in' && _batchCodeCtrl.text.trim().isNotEmpty
+          ? _batchCodeCtrl.text.trim()
+          : null,
+      expirationDate: _selectedType == 'in' && _batchExpDate != null
+          ? DateFormat('yyyy-MM-dd').format(_batchExpDate!)
+          : null,
+      reasonCode: _selectedType == 'out' && _isWaste ? 'waste' : null,
     );
 
     if (mounted) {
@@ -164,41 +201,63 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
       ),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Info del producto
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.inventory_2_outlined,
-                      size: 20, color: Colors.blueGrey),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(product.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        Text(
-                          'Stock actual: ${product.stock.toStringAsFixed(product.isSoldByWeight ? 3 : 0)} $unitLabel',
-                          style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 13),
-                        ),
-                      ],
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Info del producto
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.inventory_2_outlined,
+                        size: 20, color: Colors.blueGrey),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(product.name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            'Stock actual: ${product.stock.toStringAsFixed(product.isSoldByWeight ? 3 : 0)} $unitLabel',
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    if (!product.isCombo && !product.isService)
+                      TextButton.icon(
+                        icon: const Icon(Icons.layers_outlined, size: 17),
+                        label: Text(
+                          _activeBatches.isNotEmpty
+                              ? 'Lotes (${_activeBatches.length})'
+                              : 'Ver Lotes',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => ProductBatchesDialog(
+                              provider: widget.provider,
+                              product: product,
+                            ),
+                          ).then((_) {
+                            if (mounted) _loadActiveBatches();
+                          });
+                        },
+                      ),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 16),
 
             // Selector de tipo: Ingreso / Egreso
@@ -249,6 +308,104 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
               ),
             ),
             const SizedBox(height: 12),
+            if (!product.isCombo &&
+                !product.isService &&
+                _selectedType == 'in') ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _batchCodeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Código de Lote (opc.)',
+                        hintText: 'Auto si vacío',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.qr_code_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 14),
+                      ),
+                      icon: Icon(
+                        Icons.event_available_outlined,
+                        size: 17,
+                        color: _batchExpDate != null ? Colors.deepOrange : null,
+                      ),
+                      label: Text(
+                        _batchExpDate != null
+                            ? 'Vto: ${DateFormat('dd/MM/yy').format(_batchExpDate!)}'
+                            : 'Vencimiento (opc)',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                      onPressed: () async {
+                        final picked = await showCompactDatePicker(
+                          context: context,
+                          initialDate: _batchExpDate ??
+                              DateTime.now().add(const Duration(days: 7)),
+                          helpText: 'Vencimiento del Lote Entrante',
+                        );
+                        if (picked != null) {
+                          setState(() => _batchExpDate = picked);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (!product.isCombo &&
+                !product.isService &&
+                _selectedType == 'out') ...[
+              if (_activeBatches.isNotEmpty) ...[
+                DropdownButtonFormField<int?>(
+                  initialValue: _selectedOutBatchId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Lote a descontar',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.layers_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Automático (lo que vence antes sale primero)'),
+                    ),
+                    ..._activeBatches.map(
+                      (b) => DropdownMenuItem<int?>(
+                        value: b.id,
+                        child: Text(
+                          '${b.batchCode} (${b.remainingQuantity.toQty()} disp.${b.expirationDate != null ? ' • Vto ${b.expirationDate}' : ''})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) =>
+                      setState(() => _selectedOutBatchId = val),
+                ),
+                const SizedBox(height: 8),
+              ],
+              SwitchListTile.adaptive(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Registrar como Merma / Descarte (pérdida por vencimiento o rotura)',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+                value: _isWaste,
+                onChanged: (v) => setState(() => _isWaste = v),
+              ),
+              const SizedBox(height: 6),
+            ],
             // Stock Mínimo (Configuración rápida)
             TextField(
               controller: _minStockCtrl,
@@ -275,6 +432,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
             ),
             const SizedBox(height: 16),
           ],
+        ),
         ),
       ),
       actions: [

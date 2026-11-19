@@ -166,6 +166,54 @@ class BusinessSettings extends Equatable {
   /// Factor multiplicador global para Lista Tarjeta (ej: +15% -> 1.15).
   double get cardPriceFactor => 1.0 + (globalCardPercentage.abs() / 100.0);
 
+  /// True si la lista Mayorista tiene efecto (% != 0 o permite overrides fijos por producto).
+  bool get isWholesaleTierAvailable =>
+      hasMultiPriceEnabled &&
+      (!ignoreProductFixedPrices || globalWholesalePercentage.abs() > 0.0001);
+
+  /// True si la lista Tarjeta tiene efecto (% != 0 o permite overrides fijos por producto).
+  bool get isCardTierAvailable =>
+      hasMultiPriceEnabled &&
+      (!ignoreProductFixedPrices || globalCardPercentage.abs() > 0.0001);
+
+  /// Listas personalizadas activas con nombre válido y modificador != 0%.
+  List<Map<String, dynamic>> get activeCustomPriceTiers {
+    if (!hasMultiPriceEnabled) return const [];
+    return customPriceTiers.where((t) {
+      final name = (t['name'] ?? '').toString().trim();
+      if (name.isEmpty) return false;
+      final mod = double.tryParse(t['modifier']?.toString() ?? '0') ?? 0.0;
+      return mod.abs() > 0.0001;
+    }).toList();
+  }
+
+  /// True si existe al menos una lista alternativa utilizable además de Base.
+  bool get hasAnyAlternativePriceTier =>
+      isWholesaleTierAvailable ||
+      isCardTierAvailable ||
+      activeCustomPriceTiers.isNotEmpty;
+
+  /// Verifica si una clave de lista (`base`, `wholesale`, `card`, `custom_<nombre>`) está activa y tiene efecto.
+  bool isPriceTierKeyAvailable(String tierKey) {
+    if (!hasMultiPriceEnabled) return tierKey == 'base';
+    switch (tierKey) {
+      case 'base':
+        return true;
+      case 'wholesale':
+        return isWholesaleTierAvailable;
+      case 'card':
+        return isCardTierAvailable;
+      default:
+        if (tierKey.startsWith('custom_')) {
+          final label = tierKey.substring(7).trim();
+          return activeCustomPriceTiers.any(
+            (t) => (t['name'] ?? '').toString().trim() == label,
+          );
+        }
+        return false;
+    }
+  }
+
   final String? logoPath;
   final String? logoUrl;
 

@@ -9,6 +9,7 @@ import 'package:frontend_desktop/features/catalog/data/models/product_model.dart
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/pos/utils/batch_barcode_helper.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/pos_provider.dart';
@@ -65,7 +66,6 @@ class _PosScreenState extends State<PosScreen> {
 
   // Controladores para el Popover de Órdenes en Espera
   final _pendingOrdersPortalController = OverlayPortalController();
-  final _pendingOrdersLayerLink = LayerLink();
   bool _isPendingPinned = false; // Modo Híbrido
   bool _onlyCurrentRegisterPending = false; // MC-03: Filtro de órdenes en espera por caja activa
 
@@ -81,6 +81,13 @@ class _PosScreenState extends State<PosScreen> {
   bool _isCheckingOut = false;
 
   StreamSubscription<int>? _printLabelSub;
+  ModalRoute<dynamic>? _posRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _posRoute = ModalRoute.of(context);
+  }
 
   @override
   void initState() {
@@ -105,23 +112,14 @@ class _PosScreenState extends State<PosScreen> {
 
       if (localTerminal.lockedPriceTier != 'none') {
         final lockedTier = localTerminal.lockedPriceTier;
-        
-        if (!isMultiPriceEnabled) {
-          localTerminal.setLockedPriceTier('none');
-        } else if (lockedTier.startsWith('custom_')) {
-          final tierName = lockedTier.replaceFirst('custom_', '');
-          final exists = settings!.customPriceTiers.any((t) => t['name'] == tierName);
-          
-          if (exists) {
-            initialTier = lockedTier;
-            initialLabel = localTerminal.lockedPriceTierLabel;
-          } else {
-            // Limpiar la lista fijada porque ya no es válida o fue eliminada
-            localTerminal.setLockedPriceTier('none');
-          }
-        } else {
+
+        if (isMultiPriceEnabled &&
+            settings!.isPriceTierKeyAvailable(lockedTier)) {
           initialTier = lockedTier;
           initialLabel = localTerminal.lockedPriceTierLabel;
+        } else {
+          // Limpiar la lista fijada porque Multi-Listas está desactivada, fue eliminada o tiene 0%
+          localTerminal.setLockedPriceTier('none');
         }
       }
 
@@ -263,6 +261,13 @@ class _PosScreenState extends State<PosScreen> {
 
     final posProvider = Provider.of<PosProvider>(context, listen: false);
 
+    // 0a. Interceptar Etiquetas Térmicas de Lote (L#<batch_id> o L#<batch_id>#W#<gramos>)
+    final parsedBatch = BatchBarcodeHelper.parse(cleanQuery);
+    if (parsedBatch != null) {
+      await _handleBatchBarcodeScan(cleanQuery, posProvider);
+      return;
+    }
+
     // 0. Interceptar Presupuestos (Código de barras PRES-)
     if (cleanQuery.startsWith('PRES-')) {
       setState(() => _isSearching = true);
@@ -375,6 +380,25 @@ class _PosScreenState extends State<PosScreen> {
     if (!mounted) return;
 
     if (results.isEmpty) {
+      final existingQuickItem = posProvider.cart.cast<CartItem?>().firstWhere(
+        (it) =>
+            it != null &&
+            it.product.barcode != null &&
+            it.product.barcode!.trim().toUpperCase() == cleanQuery &&
+            !it.product.isSoldByWeight,
+        orElse: () => null,
+      );
+      if (existingQuickItem != null) {
+        posProvider.updateQuantity(
+          existingQuickItem,
+          existingQuickItem.quantity + 1,
+        );
+        if (mounted) {
+          _searchFocusNode.requestFocus();
+        }
+        return;
+      }
+
       SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
       if (RegExp(r'^(?=.*\d)[A-Za-z0-9\-_]{5,32}$').hasMatch(cleanQuery)) {
         await _showUnrecognizedBarcodeDialog(cleanQuery);
@@ -481,7 +505,145 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  void _handleProductSelection(Product product) {
+  Future<void> _handleBatchBarcodeScan(
+    String rawCode,
+    PosProvider posProvider,
+  ) async {
+    setState(() => _isSearching = true);
+    try {
+      final res = await posProvider.scanBatch(rawCode);
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+
+      final isWrittenOff = res['is_written_off'] == true;
+      final isExpired = res['is_expired'] == true;
+      final canSell = res['can_sell'] == true;
+      final isExhausted = res['is_exhausted'] == true;
+      final blockReason = res['block_reason']?.toString();
+      final batchMap = res['batch'] is Map
+          ? Map<String, dynamic>.from(res['batch'] as Map)
+          : <String, dynamic>{};
+      final batchId = (batchMap['id'] as num?)?.toInt();
+      final batchCode = batchMap['batch_code']?.toString();
+      final batchExpirationDate = batchMap['expiration_date']?.toString();
+
+      if (isWrittenOff) {
+        SnackBarService.error(
+          context,
+          blockReason ??
+              'Lote ${batchCode ?? ''} dado de baja. Retire la bandeja del exhibidor.',
+        );
+        _searchFocusNode.requestFocus();
+        return;
+      }
+
+      if (isExpired && !canSell) {
+        final authorize = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.red),
+                SizedBox(width: 8),
+                Flexible(child: Text('Lote Vencido')),
+              ],
+            ),
+            content: Text(
+              '${blockReason ?? 'El lote ${batchCode ?? ''} se encuentra vencido.'}\n\nPara continuar igualmente con la venta se requiere autorización de Supervisor.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Retirar / Cancelar'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Autorizar Venta'),
+              ),
+            ],
+          ),
+        );
+        if (authorize != true || !mounted) {
+          _searchFocusNode.requestFocus();
+          return;
+        }
+        final pinResult = await AdminPinDialog.verifyAndGetPin(
+          context,
+          action: 'Vender bandeja vencida (${batchCode ?? rawCode})',
+        );
+        if (pinResult == null || !mounted) {
+          _searchFocusNode.requestFocus();
+          return;
+        }
+        if (pinResult != 'ALREADY_AUTHORIZED') {
+          posProvider.setAuthorizedExpiredBatchPin(pinResult);
+        }
+      } else if (isExpired && canSell) {
+        SnackBarService.warning(
+          context,
+          'Aviso: lote ${batchCode ?? ''} vencido (venta autorizada).',
+        );
+      } else if (isExhausted) {
+        SnackBarService.warning(
+          context,
+          'Aviso: el lote ${batchCode ?? ''} figura sin saldo disponible en sistema.',
+        );
+      }
+
+      final productMap = Map<String, dynamic>.from(res['product'] as Map);
+      final product = ProductModel.fromJson(productMap);
+      final weightKg = (res['weight_kg'] as num?)?.toDouble();
+
+      if (weightKg != null && weightKg > 0) {
+        final offerProvider = Provider.of<OfferProvider>(context, listen: false);
+        final promoPrice = offerProvider.getDiscountedPrice(product);
+        final promoOffer = offerProvider.getActiveOfferForProduct(
+          product.id,
+          basePrice: product.sellingPrice,
+        );
+        posProvider.submitWeighedProductWithPromo(
+          product,
+          weightKg,
+          promotionalPrice: promoPrice,
+          promotionalLabel: promoOffer?.name,
+          promotionalPeriodType: promoOffer?.periodType,
+          batchId: batchId,
+          batchCode: batchCode,
+          batchExpirationDate: batchExpirationDate,
+        );
+        SnackBarService.success(
+          context,
+          '${product.name} (${weightKg.toStringAsFixed(3)} kg • Lote ${batchCode ?? '#$batchId'}) agregado.',
+        );
+        _searchFocusNode.requestFocus();
+        return;
+      }
+
+      _handleProductSelection(
+        product,
+        batchId: batchId,
+        batchCode: batchCode,
+        batchExpirationDate: batchExpirationDate,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSearching = false);
+        SnackBarService.error(
+          context,
+          e.toString().replaceFirst('Exception: ', ''),
+        );
+        _searchFocusNode.requestFocus();
+      }
+    }
+  }
+
+  void _handleProductSelection(
+    Product product, {
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     if (!product.isSoldByWeight) {
       final catalogProducts =
@@ -506,6 +668,9 @@ class _PosScreenState extends State<PosScreen> {
       promotionalPrice: promoPrice,
       promotionalLabel: promoOffer?.name,
       promotionalPeriodType: promoOffer?.periodType,
+      batchId: batchId,
+      batchCode: batchCode,
+      batchExpirationDate: batchExpirationDate,
     );
     if (success) {
       _searchFocusNode.requestFocus();
@@ -517,6 +682,9 @@ class _PosScreenState extends State<PosScreen> {
         promotionalPrice: promoPrice,
         promotionalLabel: promoOffer?.name,
         promotionalPeriodType: promoOffer?.periodType,
+        batchId: batchId,
+        batchCode: batchCode,
+        batchExpirationDate: batchExpirationDate,
       );
     }
   }
@@ -1564,8 +1732,16 @@ class _PosScreenState extends State<PosScreen> {
       ),
     );
   }
-  void _showWeightModal(Product product, PosProvider provider,
-      {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+  void _showWeightModal(
+    Product product,
+    PosProvider provider, {
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
     showDialog(
         context: context,
         barrierDismissible: true,
@@ -1603,10 +1779,18 @@ class _PosScreenState extends State<PosScreen> {
                           ),
                           onSubmitted: (val) {
                             if (isValid) {
-                              _processWeight(val, product, provider, context,
-                                  promotionalPrice: promotionalPrice,
-                                  promotionalLabel: promotionalLabel,
-                                  promotionalPeriodType: promotionalPeriodType);
+                              _processWeight(
+                                val,
+                                product,
+                                provider,
+                                context,
+                                promotionalPrice: promotionalPrice,
+                                promotionalLabel: promotionalLabel,
+                                promotionalPeriodType: promotionalPeriodType,
+                                batchId: batchId,
+                                batchCode: batchCode,
+                                batchExpirationDate: batchExpirationDate,
+                              );
                             }
                           },
                         ),
@@ -1655,11 +1839,18 @@ class _PosScreenState extends State<PosScreen> {
                         FilledButton(
                           onPressed: isValid
                               ? () {
-                                  _processWeight(weightController.text, product,
-                                      provider, context,
-                                      promotionalPrice: promotionalPrice,
-                                      promotionalLabel: promotionalLabel,
-                                      promotionalPeriodType: promotionalPeriodType);
+                                  _processWeight(
+                                    weightController.text,
+                                    product,
+                                    provider,
+                                    context,
+                                    promotionalPrice: promotionalPrice,
+                                    promotionalLabel: promotionalLabel,
+                                    promotionalPeriodType: promotionalPeriodType,
+                                    batchId: batchId,
+                                    batchCode: batchCode,
+                                    batchExpirationDate: batchExpirationDate,
+                                  );
                                 }
                               : null,
                           style: FilledButton.styleFrom(
@@ -1726,19 +1917,34 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  void _processWeight(String value, Product product, PosProvider provider,
-      BuildContext dialogContext,
-      {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+  void _processWeight(
+    String value,
+    Product product,
+    PosProvider provider,
+    BuildContext dialogContext, {
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    int? batchId,
+    String? batchCode,
+    String? batchExpirationDate,
+  }) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
     String sanitizedValue = value.trim().replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
 
     // Validación alineada con ProcessSaleRequest (min:0.001) en v1.8.5 y tope anti-código de barras (<1000Kg)
     if (weight != null && weight >= 0.001 && weight < 1000) {
-      provider.submitWeighedProductWithPromo(product, weight,
-          promotionalPrice: promotionalPrice,
-          promotionalLabel: promotionalLabel,
-          promotionalPeriodType: promotionalPeriodType);
+      provider.submitWeighedProductWithPromo(
+        product,
+        weight,
+        promotionalPrice: promotionalPrice,
+        promotionalLabel: promotionalLabel,
+        promotionalPeriodType: promotionalPeriodType,
+        batchId: batchId,
+        batchCode: batchCode,
+        batchExpirationDate: batchExpirationDate,
+      );
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
@@ -2536,22 +2742,28 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  Widget _buildPendingOrdersOverlay(PosProvider posProvider) {
-    return StatefulBuilder(
-      builder: (context, setOverlayState) {
-        final pendingSales = posProvider.pendingSales;
+  Widget _buildPendingOrdersOverlay(
+    PosProvider posProvider,
+    OverlayChildLayoutInfo info,
+  ) {
+    final Offset targetBottomRight = MatrixUtils.transformPoint(
+      info.childPaintTransform,
+      Offset(info.childSize.width, info.childSize.height),
+    );
+    final double top = targetBottomRight.dy + 8.0;
+    final double rawRight = info.overlaySize.width - targetBottomRight.dx;
+    final double right = rawRight < 8.0 ? 8.0 : rawRight;
 
-        Widget content = CompositedTransformFollower(
-          link: _pendingOrdersLayerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.bottomRight,
-          followerAnchor: Alignment.topRight,
-          offset: const Offset(0, 8),
-          child: Align(
-            alignment: Alignment.topRight,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-              child: Material(
+    return Positioned(
+      top: top,
+      right: right,
+      child: StatefulBuilder(
+        builder: (context, setOverlayState) {
+          final pendingSales = posProvider.pendingSales;
+
+          Widget content = ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+            child: Material(
                 key: const ValueKey('pending_orders_overlay_material'),
                 elevation: 16,
                 borderRadius: BorderRadius.circular(20),
@@ -2684,19 +2896,18 @@ class _PosScreenState extends State<PosScreen> {
                   ),
                 ),
               ),
-            ),
-          ),
-        );
-
-        if (!_isPendingPinned) {
-          return TapRegion(
-            groupId: 'pending_orders_overlay',
-            onTapOutside: (_) => _pendingOrdersPortalController.hide(),
-            child: content,
           );
-        }
-        return content;
-      },
+
+          if (!_isPendingPinned) {
+            return TapRegion(
+              groupId: 'pending_orders_overlay',
+              onTapOutside: (_) => _pendingOrdersPortalController.hide(),
+              child: content,
+            );
+          }
+          return content;
+        },
+      ),
     );
   }
 
@@ -2918,13 +3129,11 @@ class _PosScreenState extends State<PosScreen> {
                 final count = pos.pendingCount;
                 return TapRegion(
                   groupId: 'pending_orders_overlay',
-                  child: CompositedTransformTarget(
-                    link: _pendingOrdersLayerLink,
-                    child: OverlayPortal(
-                      controller: _pendingOrdersPortalController,
-                      overlayChildBuilder: (context) =>
-                          _buildPendingOrdersOverlay(pos),
-                      child: Padding(
+                  child: OverlayPortal.overlayChildLayoutBuilder(
+                    controller: _pendingOrdersPortalController,
+                    overlayChildBuilder: (context, info) =>
+                        _buildPendingOrdersOverlay(pos, info),
+                    child: Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: TweenAnimationBuilder<double>(
                           key: ValueKey(count > 0),
@@ -2970,7 +3179,6 @@ class _PosScreenState extends State<PosScreen> {
                         ),
                       ),
                     ),
-                  ),
                 );
               },
             ),
@@ -3513,25 +3721,30 @@ class _PosScreenState extends State<PosScreen> {
                             ));
                           }
 
+                          final Widget? quickOriginChip =
+                              (item.isTemporary && !item.saveToCatalog)
+                                  ? _buildCartMicroChip(
+                                      label: item.product.isCombo
+                                          ? '⚡ Combo Temp.'
+                                          : '⚡ Temporal',
+                                      bgColor: Colors.amber.shade50,
+                                      borderColor: Colors.amber.shade300,
+                                      textColor: Colors.amber.shade900,
+                                      tooltip:
+                                          'Ítem temporal solo para esta venta (no descuenta stock propio)',
+                                    )
+                                  : (item.saveToCatalog
+                                      ? _buildCartMicroChip(
+                                          label: '🆕 A catálogo',
+                                          bgColor: Colors.blue.shade50,
+                                          borderColor: Colors.blue.shade300,
+                                          textColor: Colors.blue.shade900,
+                                          tooltip:
+                                              'Se creará automáticamente en el catálogo al cobrar',
+                                        )
+                                      : null);
+
                           final trailingBadges = <Widget>[
-                            if (item.isTemporary && !item.saveToCatalog)
-                              _buildCartMicroChip(
-                                label: item.product.isCombo
-                                    ? '⚡ Combo Temp.'
-                                    : '⚡ Temporal',
-                                bgColor: Colors.amber.shade50,
-                                borderColor: Colors.amber.shade300,
-                                textColor: Colors.amber.shade900,
-                                tooltip: 'Ítem temporal solo para esta venta (no descuenta stock propio)',
-                              ),
-                            if (item.saveToCatalog)
-                              _buildCartMicroChip(
-                                label: '🆕 A catálogo',
-                                bgColor: Colors.blue.shade50,
-                                borderColor: Colors.blue.shade300,
-                                textColor: Colors.blue.shade900,
-                                tooltip: 'Se creará automáticamente en el catálogo al cobrar',
-                              ),
                             if (item.isRenamed)
                               _buildCartMicroChip(
                                 label: '✏️ Alias',
@@ -3548,6 +3761,15 @@ class _PosScreenState extends State<PosScreen> {
                                 textColor: Colors.teal.shade800,
                                 tooltip:
                                     'Costo ajustado para esta venta: \$${item.effectiveCostPrice.toCurrency()}',
+                              ),
+                            if (item.batchId != null)
+                              _buildCartMicroChip(
+                                label: '🏷️ ${item.batchCode ?? 'Lote #${item.batchId}'}',
+                                bgColor: Colors.deepPurple.shade50,
+                                borderColor: Colors.deepPurple.shade200,
+                                textColor: Colors.deepPurple.shade800,
+                                tooltip:
+                                    'Lote específico escaneado${item.batchExpirationDate != null ? ' • Vence: ${item.batchExpirationDate}' : ''}',
                               ),
                           ];
 
@@ -3705,6 +3927,8 @@ class _PosScreenState extends State<PosScreen> {
                                               ),
                                             ),
                                             if (ivaChip != null) ivaChip,
+                                            if (quickOriginChip != null)
+                                              quickOriginChip,
                                             if (inlineStrategyInPriceRow)
                                               ...leadingBadges,
                                           ],
@@ -3876,19 +4100,46 @@ class _PosScreenState extends State<PosScreen> {
                 if (context
                         .watch<SettingsProvider>()
                         .settings
-                        ?.hasMultiPriceEnabled ==
+                        ?.hasAnyAlternativePriceTier ==
                     true)
                   Builder(builder: (_) {
-                    final settings = context.read<SettingsProvider>().settings;
-                    final customTiers = settings?.customPriceTiers ?? [];
+                    final settings = context.read<SettingsProvider>().settings!;
+                    final customTiers = settings.activeCustomPriceTiers;
 
-                    // Valor a mostrar en el dropdown: si es custom, usamos el label
-                    // Si es custom pero sin label (inconsistencia), caemos a base
-                    final currentValue = pos.activeTier == PriceTier.custom
+                    final dropdownItems = <DropdownMenuItem<String>>[
+                      const DropdownMenuItem(
+                          value: 'base', child: Text('🏪 Minorista (Base)')),
+                      if (settings.isWholesaleTierAvailable)
+                        const DropdownMenuItem(
+                            value: 'wholesale', child: Text('🏭 Mayorista')),
+                      if (settings.isCardTierAvailable)
+                        const DropdownMenuItem(
+                            value: 'card', child: Text('💳 Tarjeta')),
+                      // Listas personalizadas dinámicas del backend (con modificador != 0)
+                      ...customTiers.map((t) {
+                        final name = t['name']?.toString().trim() ?? 'Custom';
+                        final mod = (t['modifier'] as num?)?.toDouble() ?? 0.0;
+                        final sign = mod >= 0 ? '+' : '';
+                        return DropdownMenuItem(
+                          value: 'custom_$name',
+                          child: Text(
+                              '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
+                        );
+                      }),
+                    ];
+
+                    // Valor seguro para evitar excepciones si una lista quedó en 0% o fue quitada
+                    final rawCurrentValue = pos.activeTier == PriceTier.custom
                         ? (pos.customTierLabel != null
                             ? 'custom_${pos.customTierLabel}'
                             : 'base')
                         : pos.activeTier.name;
+                    final availableValues =
+                        dropdownItems.map((item) => item.value).toSet();
+                    final currentValue =
+                        availableValues.contains(rawCurrentValue)
+                            ? rawCurrentValue
+                            : 'base';
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6.0),
@@ -3921,30 +4172,7 @@ class _PosScreenState extends State<PosScreen> {
                                             fontSize: 12.5,
                                             color: Colors.black87,
                                             fontWeight: FontWeight.bold),
-                                        items: [
-                                          const DropdownMenuItem(
-                                              value: 'base',
-                                              child: Text('🏪 Minorista (Base)')),
-                                          const DropdownMenuItem(
-                                              value: 'wholesale',
-                                              child: Text('🏭 Mayorista')),
-                                          const DropdownMenuItem(
-                                              value: 'card', child: Text('💳 Tarjeta')),
-                                          // Listas personalizadas dinámicas del backend
-                                          ...customTiers.map((t) {
-                                            final name =
-                                                t['name']?.toString() ?? 'Custom';
-                                            final mod =
-                                                (t['modifier'] as num?)?.toDouble() ??
-                                                    0.0;
-                                            final sign = mod >= 0 ? '+' : '';
-                                            return DropdownMenuItem(
-                                              value: 'custom_$name',
-                                              child: Text(
-                                                  '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
-                                            );
-                                          }),
-                                        ],
+                                        items: dropdownItems,
                                         onChanged: (String? val) {
                                           if (val == null) return;
                                           if (val == 'base') {
@@ -3953,17 +4181,17 @@ class _PosScreenState extends State<PosScreen> {
                                             pos.setPriceTier(
                                               PriceTier.wholesale,
                                               wholesaleFactor:
-                                                  settings?.wholesalePriceFactor,
+                                                  settings.wholesalePriceFactor,
                                               cardFactor:
-                                                  settings?.cardPriceFactor,
+                                                  settings.cardPriceFactor,
                                             );
                                           } else if (val == 'card') {
                                             pos.setPriceTier(
                                               PriceTier.card,
                                               wholesaleFactor:
-                                                  settings?.wholesalePriceFactor,
+                                                  settings.wholesalePriceFactor,
                                               cardFactor:
-                                                  settings?.cardPriceFactor,
+                                                  settings.cardPriceFactor,
                                             );
                                           } else if (val.startsWith('custom_')) {
                                             final label =
@@ -4316,7 +4544,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   bool _handlePosHardwareKey(KeyEvent event) {
-    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (!mounted || _posRoute?.isCurrent != true) return false;
     if (event is! KeyDownEvent) return false;
 
     // F1 → Guía rápida de teclado (es ayuda contextual, no una operación de caja:
@@ -4825,10 +5053,6 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
 
-    final searchCtrl = TextEditingController();
-    List<Product> candidateProducts = [];
-    bool isSearchingCatalog = false;
-
     Future<void> assignBarcodeToProduct(
       BuildContext dialogCtx,
       Product targetProduct, {
@@ -4890,246 +5114,19 @@ class _PosScreenState extends State<PosScreen> {
       );
     }
 
-    await showDialog<void>(
+    final action = await showDialog<String>(
       context: context,
-      builder: (dialogCtx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            return RemoteScannerListener(
-              debugLabel: 'UnrecognizedBarcodeDialog',
-              onBarcodeScanned: (barcode) async {
-                final clean = barcode.trim();
-                if (clean.isEmpty || !ctx.mounted) return;
-                if (clean.toUpperCase() == scannedBarcode.trim().toUpperCase()) {
-                  SnackBarService.info(
-                    ctx,
-                    'Ese es el mismo código nuevo ($scannedBarcode). Elegí el producto abajo o escaneá un código existente.',
-                  );
-                  return;
-                }
-                searchCtrl.text = clean;
-                searchCtrl.selection =
-                    TextSelection.collapsed(offset: clean.length);
-                setModalState(() => isSearchingCatalog = true);
-                final found = await posProvider.search(clean);
-                if (!ctx.mounted || searchCtrl.text.trim() != clean) return;
-                setModalState(() {
-                  candidateProducts =
-                      found.where((p) => !p.isCombo).take(8).toList();
-                  isSearchingCatalog = false;
-                });
-              },
-              child: AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.qr_code_scanner_rounded,
-                      color: Colors.amber.shade900,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Código de Barras No Registrado',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          'EAN escaneado: $scannedBarcode',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 480,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (lastCatalogCartItem != null) ...[
-                      InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => assignBarcodeToProduct(
-                          dialogCtx,
-                          lastCatalogCartItem!.product,
-                          addToCartAfter: false,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFF93C5FD)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.bolt_rounded,
-                                color: Color(0xFF1D4ED8),
-                                size: 22,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Asociar en 1 clic al último ítem del carrito:',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: Color(0xFF1E40AF),
-                                      ),
-                                    ),
-                                    Text(
-                                      lastCatalogCartItem.product.name,
-                                      style: const TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF1E3A8A),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: 15,
-                                color: Color(0xFF1D4ED8),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextField(
-                      controller: searchCtrl,
-                      autofocus: lastCatalogCartItem == null,
-                      decoration: InputDecoration(
-                        labelText:
-                            'Buscar producto en catálogo para asociarle este código...',
-                        hintText: 'Escribí el nombre del producto...',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        isDense: true,
-                      ),
-                      onChanged: (val) async {
-                        final q = val.trim();
-                        if (q.length < 2) {
-                          setModalState(() {
-                            candidateProducts = [];
-                            isSearchingCatalog = false;
-                          });
-                          return;
-                        }
-                        setModalState(() => isSearchingCatalog = true);
-                        final found = await posProvider.search(q);
-                        if (!ctx.mounted) return;
-                        setModalState(() {
-                          candidateProducts =
-                              found.where((p) => !p.isCombo).take(8).toList();
-                          isSearchingCatalog = false;
-                        });
-                      },
-                    ),
-                    if (isSearchingCatalog)
-                      const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Center(
-                          child: SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      ),
-                    if (candidateProducts.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: candidateProducts.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, idx) {
-                            final p = candidateProducts[idx];
-                            return ListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              title: Text(
-                                p.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 13),
-                              ),
-                              subtitle: Text(
-                                '\$${p.sellingPrice.toCurrency()} · ${p.barcode != null && p.barcode!.isNotEmpty ? "EAN actual: ${p.barcode}" : "Sin EAN"}',
-                                style: const TextStyle(fontSize: 11.5),
-                              ),
-                              trailing: FilledButton.tonalIcon(
-                                onPressed: () => assignBarcodeToProduct(
-                                  dialogCtx,
-                                  p,
-                                  addToCartAfter: true,
-                                ),
-                                icon: const Icon(Icons.link_rounded, size: 16),
-                                label: const Text(
-                                  'Asociar y Agregar',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(dialogCtx).pop();
-                    _openQuickItemDialog();
-                  },
-                  icon: const Icon(Icons.flash_on_rounded, size: 17),
-                  label: const Text('Crear Ítem Rápido (F3)'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('Cerrar (Esc)'),
-                ),
-              ],
-            ),
-            );
-          },
-        );
-      },
+      builder: (_) => _UnrecognizedBarcodeDialog(
+        scannedBarcode: scannedBarcode,
+        lastCatalogCartItem: lastCatalogCartItem,
+        onSearchCatalog: (q) => posProvider.search(q),
+        onAssignBarcode: assignBarcodeToProduct,
+      ),
     );
-    searchCtrl.dispose();
+
+    if (action == 'quick_create' && mounted) {
+      await _openQuickItemDialog(initialQuery: scannedBarcode);
+    }
   }
 
   Widget _buildRightPanel() {
@@ -6881,6 +6878,312 @@ class _ManagedControllerScopeState extends State<_ManagedControllerScope> {
       context,
       _controller,
       () => mounted && !_isDisposed,
+    );
+  }
+}
+
+/// Diálogo de código de barras no reconocido con ciclo de vida propio para
+/// el `TextEditingController`, la dependencia de `ModalRoute` y el atajo `F3`.
+class _UnrecognizedBarcodeDialog extends StatefulWidget {
+  final String scannedBarcode;
+  final CartItem? lastCatalogCartItem;
+  final Future<List<Product>> Function(String query) onSearchCatalog;
+  final Future<void> Function(
+    BuildContext dialogCtx,
+    Product targetProduct, {
+    required bool addToCartAfter,
+  }) onAssignBarcode;
+
+  const _UnrecognizedBarcodeDialog({
+    required this.scannedBarcode,
+    required this.lastCatalogCartItem,
+    required this.onSearchCatalog,
+    required this.onAssignBarcode,
+  });
+
+  @override
+  State<_UnrecognizedBarcodeDialog> createState() =>
+      _UnrecognizedBarcodeDialogState();
+}
+
+class _UnrecognizedBarcodeDialogState
+    extends State<_UnrecognizedBarcodeDialog> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  List<Product> _candidateProducts = [];
+  bool _isSearchingCatalog = false;
+  bool _isClosing = false;
+  ModalRoute<dynamic>? _route;
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKey);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _handleKey(KeyEvent event) {
+    if (!mounted || _isClosing || event is! KeyDownEvent) return false;
+    if (_route?.isCurrent != true) return false;
+    if (event.logicalKey == LogicalKeyboardKey.f3) {
+      _triggerQuickCreate();
+      return true;
+    }
+    return false;
+  }
+
+  void _triggerQuickCreate() {
+    if (!mounted || _isClosing) return;
+    _isClosing = true;
+    Navigator.of(context).pop('quick_create');
+  }
+
+  void _close() {
+    if (!mounted || _isClosing) return;
+    _isClosing = true;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lastItem = widget.lastCatalogCartItem;
+    return RemoteScannerListener(
+      debugLabel: 'UnrecognizedBarcodeDialog',
+      onBarcodeScanned: (barcode) async {
+        final clean = barcode.trim();
+        if (clean.isEmpty || !mounted) return;
+        if (clean.toUpperCase() ==
+            widget.scannedBarcode.trim().toUpperCase()) {
+          SnackBarService.info(
+            context,
+            'Ese es el mismo código nuevo (${widget.scannedBarcode}). Elegí el producto abajo o escaneá un código existente.',
+          );
+          return;
+        }
+        _searchCtrl.text = clean;
+        _searchCtrl.selection = TextSelection.collapsed(offset: clean.length);
+        setState(() => _isSearchingCatalog = true);
+        final found = await widget.onSearchCatalog(clean);
+        if (!mounted || _searchCtrl.text.trim() != clean) return;
+        setState(() {
+          _candidateProducts =
+              found.where((p) => !p.isCombo).take(8).toList();
+          _isSearchingCatalog = false;
+        });
+      },
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.qr_code_scanner_rounded,
+                color: Colors.amber.shade900,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Código de Barras No Registrado',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    'EAN escaneado: ${widget.scannedBarcode}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (lastItem != null) ...[
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => widget.onAssignBarcode(
+                    context,
+                    lastItem.product,
+                    addToCartAfter: false,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF93C5FD)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.bolt_rounded,
+                          color: Color(0xFF1D4ED8),
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Asociar en 1 clic al último ítem del carrito:',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF1E40AF),
+                                ),
+                              ),
+                              Text(
+                                lastItem.product.name,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E3A8A),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 15,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: _searchCtrl,
+                autofocus: lastItem == null,
+                decoration: InputDecoration(
+                  labelText:
+                      'Buscar producto en catálogo para asociarle este código...',
+                  hintText: 'Escribí el nombre del producto...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  isDense: true,
+                ),
+                onChanged: (val) async {
+                  final q = val.trim();
+                  if (q.length < 2) {
+                    setState(() {
+                      _candidateProducts = [];
+                      _isSearchingCatalog = false;
+                    });
+                    return;
+                  }
+                  setState(() => _isSearchingCatalog = true);
+                  final found = await widget.onSearchCatalog(q);
+                  if (!mounted || _searchCtrl.text.trim() != q) return;
+                  setState(() {
+                    _candidateProducts =
+                        found.where((p) => !p.isCombo).take(8).toList();
+                    _isSearchingCatalog = false;
+                  });
+                },
+              ),
+              if (_isSearchingCatalog)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              if (_candidateProducts.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _candidateProducts.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, idx) {
+                      final p = _candidateProducts[idx];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        title: Text(
+                          p.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          '\$${p.sellingPrice.toCurrency()} · ${p.barcode != null && p.barcode!.isNotEmpty ? "EAN actual: ${p.barcode}" : "Sin EAN"}',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                        trailing: FilledButton.tonalIcon(
+                          onPressed: () => widget.onAssignBarcode(
+                            context,
+                            p,
+                            addToCartAfter: true,
+                          ),
+                          icon: const Icon(Icons.link_rounded, size: 16),
+                          label: const Text(
+                            'Asociar y Agregar',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: _triggerQuickCreate,
+            icon: const Icon(Icons.flash_on_rounded, size: 17),
+            label: const Text('Crear Ítem Rápido (F3)'),
+          ),
+          TextButton(
+            onPressed: _close,
+            child: const Text('Cerrar (Esc)'),
+          ),
+        ],
+      ),
     );
   }
 }
