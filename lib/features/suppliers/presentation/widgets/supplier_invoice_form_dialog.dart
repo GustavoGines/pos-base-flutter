@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
@@ -40,6 +41,7 @@ class _InvoiceItemModel {
   late final TextEditingController marginCtrl;
   late final TextEditingController pvpCtrl;
   late final TextEditingController batchCodeCtrl;
+  late final TextEditingController validityDaysCtrl;
 
   _InvoiceItemModel({
     required this.product,
@@ -78,6 +80,21 @@ class _InvoiceItemModel {
       expirationDate =
           DateTime.now().add(Duration(days: product.vencimientoDias!));
     }
+    if (expirationDate != null) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final expDay = DateTime(
+        expirationDate!.year,
+        expirationDate!.month,
+        expirationDate!.day,
+      );
+      final diff = expDay.difference(today).inDays;
+      validityDaysCtrl = TextEditingController(
+        text: (diff >= 1 && diff <= 3650) ? diff.toString() : '',
+      );
+    } else {
+      validityDaysCtrl = TextEditingController();
+    }
     showLotFields = product.trackBatches ||
         (batchCode != null && batchCode.isNotEmpty) ||
         expirationDate != null;
@@ -89,6 +106,7 @@ class _InvoiceItemModel {
     marginCtrl.dispose();
     pvpCtrl.dispose();
     batchCodeCtrl.dispose();
+    validityDaysCtrl.dispose();
   }
 
   double get subtotal => quantity * newCost;
@@ -462,7 +480,18 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     });
   }
 
+  bool get _canUseBatches {
+    try {
+      final s = context.read<SettingsProvider?>();
+      if (s != null) {
+        return s.features.batchExpiration || s.features.production;
+      }
+    } catch (_) {}
+    return true;
+  }
+
   void _addProduct(Product product) {
+    final canUseBatches = _canUseBatches;
     final existingIndex = _items.indexWhere((i) => i.product.id == product.id);
     if (existingIndex >= 0) {
       setState(() {
@@ -481,7 +510,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             product: product,
             newCost: product.costPrice,
             manualPrice: product.sellingPrice,
-            autoDefaultExpiry: true,
+            autoDefaultExpiry: canUseBatches,
           ),
         );
         _autoRecalculateFiscalIfNeeded();
@@ -1164,6 +1193,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       setState(() => _isLoading = true);
 
       try {
+        final canUseBatches = _canUseBatches;
         final itemsData = _items
             .map((i) => {
                   'product_id': i.product.id,
@@ -1172,10 +1202,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   'subtotal': i.quantity * i.newCost,
                   'update_price': i.updatePrice,
                   'new_selling_price': i.updatePrice ? i.manualPrice : null,
-                  if (i.batchId != null) 'batch_id': i.batchId,
-                  if (i.batchCodeCtrl.text.trim().isNotEmpty)
+                  if (canUseBatches && i.batchId != null) 'batch_id': i.batchId,
+                  if (canUseBatches && i.batchCodeCtrl.text.trim().isNotEmpty)
                     'batch_code': i.batchCodeCtrl.text.trim(),
-                  if (i.expirationDate != null)
+                  if (canUseBatches && i.expirationDate != null)
                     'expiration_date':
                         DateFormat('yyyy-MM-dd').format(i.expirationDate!),
                 })
@@ -2288,7 +2318,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 ),
               ),
             ),
-          if (!item.product.isCombo && !item.product.isService) ...[
+          if (_canUseBatches && !item.product.isCombo && !item.product.isService) ...[
             if (!item.showLotFields)
               Align(
                 alignment: Alignment.centerLeft,
@@ -2364,66 +2394,139 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                           ),
                         ),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: TextFormField(
-                            controller: item.batchCodeCtrl,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Código de Lote (opc. auto)',
-                              hintText: 'Ej. FAC-00123',
-                              isDense: true,
-                              prefixIcon: Icon(Icons.qr_code_outlined, size: 16),
+                    LayoutBuilder(
+                      builder: (context, lotConstraints) {
+                        final batchCodeField = TextFormField(
+                          controller: item.batchCodeCtrl,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Código de Lote (opc. auto)',
+                            hintText: 'Ej. FAC-00123',
+                            isDense: true,
+                            prefixIcon: Icon(Icons.qr_code_outlined, size: 16),
+                          ),
+                        );
+
+                        final validityField = TextFormField(
+                          controller: item.validityDaysCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          decoration: const InputDecoration(
+                            labelText: 'Validez',
+                            suffixText: 'd',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 10,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 5,
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 12),
+                          onChanged: (val) {
+                            final trimmed = val.trim();
+                            if (trimmed.isEmpty) {
+                              setState(() => item.expirationDate = null);
+                              return;
+                            }
+                            final n = int.tryParse(trimmed);
+                            if (n != null && n >= 1 && n <= 3650) {
+                              setState(() {
+                                item.expirationDate =
+                                    DateTime.now().add(Duration(days: n));
+                              });
+                            }
+                          },
+                        );
+
+                        final dateBtn = OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 12,
                             ),
-                            icon: Icon(
-                              Icons.event_available_outlined,
-                              size: 16,
-                              color: item.expirationDate != null
-                                  ? Colors.deepOrange
-                                  : null,
-                            ),
-                            label: Text(
-                              item.expirationDate != null
-                                  ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
-                                  : 'Fecha de Vencimiento',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            onPressed: () async {
-                              final picked = await showCompactDatePicker(
-                                context: context,
-                                initialDate: item.expirationDate ??
-                                    DateTime.now().add(const Duration(days: 7)),
-                                helpText:
-                                    'Vencimiento del lote (${item.product.name})',
+                          ),
+                          icon: Icon(
+                            Icons.event_available_outlined,
+                            size: 16,
+                            color: item.expirationDate != null
+                                ? Colors.deepOrange
+                                : null,
+                          ),
+                          label: Text(
+                            item.expirationDate != null
+                                ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
+                                : 'Fecha de Vencimiento',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onPressed: () async {
+                            final picked = await showCompactDatePicker(
+                              context: context,
+                              initialDate: item.expirationDate ??
+                                  DateTime.now().add(const Duration(days: 7)),
+                              helpText:
+                                  'Vencimiento del lote (${item.product.name})',
+                            );
+                            if (picked != null) {
+                              final now = DateTime.now();
+                              final today = DateTime(now.year, now.month, now.day);
+                              final expDay = DateTime(
+                                picked.year,
+                                picked.month,
+                                picked.day,
                               );
-                              if (picked != null) {
-                                setState(() => item.expirationDate = picked);
-                              }
-                            },
-                          ),
-                        ),
-                        if (item.expirationDate != null)
-                          IconButton(
-                            tooltip: 'Limpiar vencimiento',
-                            icon: const Icon(Icons.clear, size: 17),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () =>
-                                setState(() => item.expirationDate = null),
-                          ),
-                      ],
+                              final diff = expDay.difference(today).inDays;
+                              setState(() {
+                                item.expirationDate = picked;
+                                item.validityDaysCtrl.text =
+                                    (diff >= 1 && diff <= 3650)
+                                        ? diff.toString()
+                                        : '';
+                              });
+                            }
+                          },
+                        );
+
+                        final Widget? clearBtn = (item.expirationDate != null ||
+                                item.validityDaysCtrl.text.isNotEmpty)
+                            ? IconButton(
+                                tooltip: 'Limpiar vencimiento',
+                                icon: const Icon(Icons.clear, size: 17),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => setState(() {
+                                  item.expirationDate = null;
+                                  item.validityDaysCtrl.clear();
+                                }),
+                              )
+                            : null;
+
+                        if (lotConstraints.maxWidth >= 460) {
+                          return Row(
+                            children: [
+                              Expanded(flex: 4, child: batchCodeField),
+                              const SizedBox(width: 6),
+                              SizedBox(width: 86, child: validityField),
+                              const SizedBox(width: 6),
+                              Expanded(flex: 5, child: dateBtn),
+                              if (clearBtn != null) clearBtn,
+                            ],
+                          );
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            batchCodeField,
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                SizedBox(width: 96, child: validityField),
+                                const SizedBox(width: 8),
+                                Expanded(child: dateBtn),
+                                if (clearBtn != null) clearBtn,
+                              ],
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     if (!item.product.trackBatches &&
                         (item.batchCodeCtrl.text.trim().isNotEmpty ||

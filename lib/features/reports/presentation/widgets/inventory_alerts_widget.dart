@@ -287,13 +287,21 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
-              final expAlerts = _safeExpirationAlerts(provider);
-              final deficitAlerts = _safeDeficitAlerts(provider);
-              final count = hasPredictive
-                  ? provider.totalAlertsCount
-                  : (provider.reactiveAlerts.length +
-                      expAlerts.length +
-                      deficitAlerts.length);
+              final canUseBatches =
+                  settings.features.batchExpiration || settings.features.production;
+              final expAlerts = canUseBatches
+                  ? _safeExpirationAlerts(provider)
+                  : const <dynamic>[];
+              final deficitAlerts = canUseBatches
+                  ? _safeDeficitAlerts(provider)
+                  : const <dynamic>[];
+              final nonExpAlertsCount = hasPredictive
+                  ? provider.alerts
+                      .where((a) => a is! Map || a['alert_type'] != 'expiration')
+                      .length
+                  : provider.reactiveAlerts.length;
+              final count =
+                  nonExpAlertsCount + expAlerts.length + deficitAlerts.length;
               final hasCritical = provider.reactiveAlerts.isNotEmpty ||
                   expAlerts.any((a) => a['alert_level'] == 'critical') ||
                   (hasPredictive &&
@@ -582,8 +590,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        final expAlerts = _safeExpirationAlerts(provider);
-        final deficitAlerts = _safeDeficitAlerts(provider);
+        final canUseBatches =
+            settings.features.batchExpiration || settings.features.production;
+        final expAlerts = canUseBatches
+            ? _safeExpirationAlerts(provider)
+            : const <dynamic>[];
+        final deficitAlerts = canUseBatches
+            ? _safeDeficitAlerts(provider)
+            : const <dynamic>[];
 
         if (provider.isLoading) {
           return const Padding(
@@ -592,7 +606,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           );
         }
 
-        if ((hasPredictive && provider.alerts.isEmpty && deficitAlerts.isEmpty) ||
+        final nonExpPredictiveCount = hasPredictive
+            ? provider.alerts
+                .where((a) => a is! Map || a['alert_type'] != 'expiration')
+                .length
+            : 0;
+        if ((hasPredictive &&
+                nonExpPredictiveCount == 0 &&
+                expAlerts.isEmpty &&
+                deficitAlerts.isEmpty) ||
             (!hasPredictive &&
                 provider.reactiveAlerts.isEmpty &&
                 expAlerts.isEmpty &&
@@ -1030,6 +1052,11 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                         ? 'Silenciar hasta aviso crítico (3 días)'
                         : 'Silenciar hasta el día del vencimiento');
               }
+              bool canUseProduction = false;
+              try {
+                canUseProduction =
+                    context.read<SettingsProvider?>()?.features.production ?? false;
+              } catch (_) {}
               return [
                 PopupMenuItem(
                   value: 'write_off',
@@ -1043,7 +1070,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (batchId != null)
+                if (batchId != null && canUseProduction)
                   PopupMenuItem(
                     value: 'transform',
                     height: 36,

@@ -74,6 +74,16 @@ class BusinessSettingsModel extends BusinessSettings {
         .trim()
         .toLowerCase();
     final isPremiumPlan = rawPlan == 'pro' || rawPlan == 'premium';
+    final isHardwareStore =
+        (json['license_business_type'] ?? 'retail').toString().trim().toLowerCase() ==
+            'hardware_store';
+    final hasProduction =
+        featuresMap['production'] == true || featuresMap['production'] == 1;
+    final hasBatchExpiration = featuresMap.containsKey('batch_expiration')
+        ? (featuresMap['batch_expiration'] == true ||
+            featuresMap['batch_expiration'] == 1 ||
+            hasProduction)
+        : (!isHardwareStore || hasProduction);
 
     final featureFlags = FeatureFlags(
       fastPos: featuresMap['fast_pos'] == true || featuresMap['fast_pos'] == 1,
@@ -124,6 +134,8 @@ class BusinessSettingsModel extends BusinessSettings {
       ecommerceSync: featuresMap['ecommerce_sync'] == true ||
           featuresMap['ecommerce_sync'] == 1 ||
           isPremiumPlan,
+      batchExpiration: hasBatchExpiration,
+      production: hasProduction,
     );
 
     return BusinessSettingsModel(

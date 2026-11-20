@@ -116,7 +116,10 @@ void main() {
 
       final settingsProv = _FakeSettingsProvider(
         const BusinessSettings(
-          features: FeatureFlags(predictiveAlerts: true),
+          features: FeatureFlags(
+            predictiveAlerts: true,
+            batchExpiration: true,
+          ),
         ),
       );
 

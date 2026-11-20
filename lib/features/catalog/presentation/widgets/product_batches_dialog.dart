@@ -14,6 +14,7 @@ import '../../domain/entities/product.dart';
 import '../providers/catalog_provider.dart';
 import 'print_labels_dialog.dart';
 import 'production_orders_dialog.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 
 /// Gestión granular de lotes FEFO/FIFO por producto:
 /// listar lotes activos/déficit/cerrados, registrar nuevo lote, editar vencimiento,
@@ -85,6 +86,14 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     return DateFormat('dd/MM/yyyy').format(parsed);
   }
 
+  bool _canUseProduction(BuildContext context) {
+    try {
+      final s = context.read<SettingsProvider?>();
+      if (s != null) return s.features.production;
+    } catch (_) {}
+    return true;
+  }
+
   String _formatIso(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
   String _sourceLabel(String source) {
@@ -108,11 +117,20 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     final costCtrl = TextEditingController(
       text: widget.product.costPrice > 0 ? widget.product.costPrice.toArsInput() : '',
     );
+    final validityCtrl = TextEditingController(
+      text: (widget.product.vencimientoDias != null && widget.product.vencimientoDias! > 0)
+          ? widget.product.vencimientoDias!.toString()
+          : '',
+    );
     final notesCtrl = TextEditingController();
 
     DateTime manufacturedAt = DateTime.now();
     DateTime? expirationDate = widget.product.vencimientoDias != null && widget.product.vencimientoDias! > 0
-        ? DateTime.now().add(Duration(days: widget.product.vencimientoDias!))
+        ? DateTime(
+            manufacturedAt.year,
+            manufacturedAt.month,
+            manufacturedAt.day + widget.product.vencimientoDias!,
+          )
         : null;
 
     final confirmed = await showDialog<bool>(
@@ -191,7 +209,27 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                               helpText: 'Fecha de Elaboración / Ingreso',
                             );
                             if (picked != null) {
-                              setModalState(() => manufacturedAt = picked);
+                              setModalState(() {
+                                manufacturedAt = picked;
+                                final n = int.tryParse(validityCtrl.text.trim());
+                                if (n != null && n >= 1 && n <= 3650) {
+                                  expirationDate = DateTime(
+                                    picked.year,
+                                    picked.month,
+                                    picked.day + n,
+                                  );
+                                } else if (expirationDate != null) {
+                                  final elabDay = DateTime(picked.year, picked.month, picked.day);
+                                  final expDay = DateTime(
+                                    expirationDate!.year,
+                                    expirationDate!.month,
+                                    expirationDate!.day,
+                                  );
+                                  final diff = expDay.difference(elabDay).inDays;
+                                  validityCtrl.text =
+                                      (diff >= 1 && diff <= 3650) ? diff.toString() : '';
+                                }
+                              });
                             }
                           },
                         ),
@@ -219,12 +257,63 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                               helpText: 'Fecha de Vencimiento del Lote',
                             );
                             if (picked != null) {
-                              setModalState(() => expirationDate = picked);
+                              final elabDay = DateTime(
+                                manufacturedAt.year,
+                                manufacturedAt.month,
+                                manufacturedAt.day,
+                              );
+                              final expDay = DateTime(picked.year, picked.month, picked.day);
+                              final diff = expDay.difference(elabDay).inDays;
+                              setModalState(() {
+                                expirationDate = picked;
+                                validityCtrl.text =
+                                    (diff >= 1 && diff <= 3650) ? diff.toString() : '';
+                              });
                             }
                           },
                         ),
                       ),
+                      if (expirationDate != null || validityCtrl.text.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Quitar vencimiento',
+                          icon: const Icon(Icons.clear, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => setModalState(() {
+                            expirationDate = null;
+                            validityCtrl.clear();
+                          }),
+                        ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: validityCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Validez del lote (días desde elaboración)',
+                      hintText: 'Ej. 5, 30, 180',
+                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                      suffixText: 'días',
+                      isDense: true,
+                    ),
+                    onChanged: (val) {
+                      final trimmed = val.trim();
+                      if (trimmed.isEmpty) {
+                        setModalState(() => expirationDate = null);
+                        return;
+                      }
+                      final n = int.tryParse(trimmed);
+                      if (n != null && n >= 1 && n <= 3650) {
+                        setModalState(() {
+                          expirationDate = DateTime(
+                            manufacturedAt.year,
+                            manufacturedAt.month,
+                            manufacturedAt.day + n,
+                          );
+                        });
+                      }
+                    },
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -280,6 +369,7 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
       qtyCtrl.dispose();
       codeCtrl.dispose();
       costCtrl.dispose();
+      validityCtrl.dispose();
       notesCtrl.dispose();
       return;
     }
@@ -292,6 +382,7 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     qtyCtrl.dispose();
     codeCtrl.dispose();
     costCtrl.dispose();
+    validityCtrl.dispose();
     notesCtrl.dispose();
 
     setState(() => _submitting = true);
@@ -335,6 +426,20 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     DateTime? expirationDate = batch.expirationDate != null
         ? DateTime.tryParse(batch.expirationDate!)
         : null;
+    final rawBaseDate =
+        (batch.manufacturedAt != null ? DateTime.tryParse(batch.manufacturedAt!) : null) ??
+            DateTime.now();
+    final baseDay = DateTime(rawBaseDate.year, rawBaseDate.month, rawBaseDate.day);
+    final initialDiff = expirationDate != null
+        ? DateTime(expirationDate.year, expirationDate.month, expirationDate.day)
+            .difference(baseDay)
+            .inDays
+        : 0;
+    final validityCtrl = TextEditingController(
+      text: (expirationDate != null && initialDiff >= 1 && initialDiff <= 3650)
+          ? initialDiff.toString()
+          : '',
+    );
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -373,20 +478,59 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                               helpText: 'Fecha de Vencimiento',
                             );
                             if (picked != null) {
-                              setModalState(() => expirationDate = picked);
+                              final expDay = DateTime(picked.year, picked.month, picked.day);
+                              final diff = expDay.difference(baseDay).inDays;
+                              setModalState(() {
+                                expirationDate = picked;
+                                validityCtrl.text =
+                                    (diff >= 1 && diff <= 3650) ? diff.toString() : '';
+                              });
                             }
                           },
                         ),
                       ),
-                      if (expirationDate != null) ...[
+                      if (expirationDate != null || validityCtrl.text.isNotEmpty) ...[
                         const SizedBox(width: 4),
                         IconButton(
                           tooltip: 'Quitar vencimiento',
                           icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setModalState(() => expirationDate = null),
+                          onPressed: () => setModalState(() {
+                            expirationDate = null;
+                            validityCtrl.clear();
+                          }),
                         ),
                       ],
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: validityCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Validez (días)',
+                      hintText: 'Ej. 5, 30, 180',
+                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                      suffixText: 'días',
+                      isDense: true,
+                    ),
+                    onChanged: (val) {
+                      final trimmed = val.trim();
+                      if (trimmed.isEmpty) {
+                        setModalState(() => expirationDate = null);
+                        return;
+                      }
+                      final n = int.tryParse(trimmed);
+                      if (n != null && n >= 1 && n <= 3650) {
+                        setModalState(() {
+                          expirationDate = DateTime(
+                            baseDay.year,
+                            baseDay.month,
+                            baseDay.day + n,
+                          );
+                        });
+                      }
+                    },
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -418,6 +562,7 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     final newCode = codeCtrl.text.trim();
     final newNotes = notesCtrl.text.trim();
     codeCtrl.dispose();
+    validityCtrl.dispose();
     notesCtrl.dispose();
 
     if (confirmed != true || !mounted) return;
@@ -1126,7 +1271,9 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                                                       ? null
                                                       : () => _openSplitBatchDialog(b),
                                                 ),
-                                              if (!b.isWrittenOff && b.availableToSell > 0.0005)
+                                              if (_canUseProduction(context) &&
+                                                  !b.isWrittenOff &&
+                                                  b.availableToSell > 0.0005)
                                                 IconButton(
                                                   tooltip: 'Transformar en otra receta',
                                                   icon: const Icon(Icons.bakery_dining_outlined, size: 19),

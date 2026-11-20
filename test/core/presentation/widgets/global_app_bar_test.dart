@@ -303,5 +303,44 @@ void main() {
       expect(find.text('Configuración del Sistema'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('SharedUserMenu omite cabecera redundante en escritorio (1280x800) y la muestra en vista compacta (380x600)', (tester) async {
+      // 1. Escritorio (1280x800): nombre visible en la barra, sin repetir en el dropdown
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final settingsProv = FakeSettingsProvider(
+        settings: const BusinessSettings(companyName: 'Dev4U'),
+      );
+
+      await tester.pumpWidget(buildTestAppBar(settingsProv: settingsProv));
+      await tester.pump();
+
+      await tester.tap(find.text('Admin Test'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Personal y Accesos'), findsOneWidget);
+      expect(find.text('SESIÓN ACTIVA'), findsNothing);
+      expect(find.text('Admin Test'), findsOneWidget); // Solo en el botón de la barra
+
+      // Cerrar menú
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      // 2. Vista compacta (380x600): botón solo con ícono -> muestra cabecera dentro del dropdown
+      tester.view.physicalSize = const Size(380, 600);
+      await tester.pumpWidget(buildTestAppBar(settingsProv: settingsProv));
+      await tester.pump();
+
+      expect(find.text('Admin Test'), findsNothing);
+      await tester.tap(find.byIcon(Icons.person_outline));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Personal y Accesos'), findsOneWidget);
+      expect(find.text('Admin Test'), findsOneWidget);
+      expect(find.text('SESIÓN ACTIVA'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

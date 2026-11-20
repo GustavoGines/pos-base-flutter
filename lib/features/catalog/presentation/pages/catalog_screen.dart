@@ -381,27 +381,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            foregroundColor: Colors.deepOrange.shade800,
-                            side: BorderSide(color: Colors.deepOrange.shade300),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        if (context.watch<SettingsProvider?>()?.features.production ?? false) ...[
+                          const SizedBox(width: 6),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: Colors.deepOrange.shade800,
+                              side: BorderSide(color: Colors.deepOrange.shade300),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                            icon: const Icon(Icons.bakery_dining_outlined, size: 18),
+                            label: const Text('Producción'),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => ProductionOrdersDialog(provider: provider),
+                              ).then((_) {
+                                if (mounted) {
+                                  context.read<InventoryAlertsProvider>().fetchAlerts();
+                                }
+                              });
+                            },
                           ),
-                          icon: const Icon(Icons.bakery_dining_outlined, size: 18),
-                          label: const Text('Producción'),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => ProductionOrdersDialog(provider: provider),
-                            ).then((_) {
-                              if (mounted) {
-                                context.read<InventoryAlertsProvider>().fetchAlerts();
-                              }
-                            });
-                          },
-                        ),
+                        ],
                         const SizedBox(width: 6),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
@@ -950,7 +952,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
+    final sp = context.watch<SettingsProvider?>();
+    final canSeeSupplier = sp?.features.suppliers ?? false;
+    final canUseBatches = sp == null
+        ? true
+        : (sp.features.batchExpiration || sp.features.production);
 
     // Anchos fijos calibrados para columnas cortas/fechas y flex equilibrado para texto/precios
     const double wCheck = 38;
@@ -959,7 +965,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const double wBal = 58;
     const double wActivo = 70;
     const double wVto = 116;
-    const double wAcciones = 168;
+    final double wAcciones = canUseBatches ? 168 : 136;
 
     const int fNombre = 5;
     const int fBarcode = 3;
@@ -1093,13 +1099,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 sortKey: 'active',
                 tooltip: 'Estado activo en POS',
               ),
-              sortHeader(
-                width: wVto,
-                label: 'VTO.',
-                sortKey: 'expiration_date',
-                initialDirection: 'desc',
-                tooltip: vtoTooltip,
-              ),
+              if (canUseBatches)
+                sortHeader(
+                  width: wVto,
+                  label: 'VTO.',
+                  sortKey: 'expiration_date',
+                  initialDirection: 'desc',
+                  tooltip: vtoTooltip,
+                ),
               tableCell(
                 width: wAcciones,
                 child: Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis),
@@ -1223,7 +1230,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               tableCell(width: wActivo, child: Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
-              tableCell(width: wVto, child: _buildExpiryCell(p, provider)),
+              if (canUseBatches) tableCell(width: wVto, child: _buildExpiryCell(p, provider)),
               tableCell(width: wAcciones, child: Wrap(
                 spacing: 4,
                 runSpacing: 4,
@@ -1236,7 +1243,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(products: [p])),
                   ),
-                  if (!p.isCombo && !p.isService)
+                  if (canUseBatches && !p.isCombo && !p.isService)
                     IconButton(
                       icon: Icon(
                         Icons.layers_outlined,
@@ -3812,190 +3819,227 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                             ],
                                           ),
                                         // ── Control de Vencimiento y Alertas ──
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 8),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.orange.shade50.withValues(alpha: 0.45),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.orange.shade200),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                        Builder(
+                                          builder: (ctx) {
+                                            SettingsProvider? sp;
+                                            try {
+                                              sp = ctx.watch<SettingsProvider?>();
+                                            } catch (_) {}
+                                            final canUseBatches = sp == null
+                                                ? true
+                                                : (sp.features.batchExpiration || sp.features.production);
+                                            final canUseProduction =
+                                                sp == null ? true : sp.features.production;
+                                            final showExpBox = canUseBatches ||
+                                                _trackBatches ||
+                                                _expirationDate != null ||
+                                                _expiryCtrl.text.trim().isNotEmpty;
+                                            final showProdBox = canUseProduction || _hasProductionRecipe;
+
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
                                               children: [
-                                                Wrap(
-                                                  alignment: WrapAlignment.spaceBetween,
-                                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                                  spacing: 6,
-                                                  runSpacing: 4,
-                                                  children: [
-                                                    Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Flexible(
-                                                          child: Text(
-                                                            'Control de Vencimiento y Alertas (Opcional)',
-                                                            style: TextStyle(
-                                                              fontWeight: FontWeight.bold,
-                                                              fontSize: 12.5,
-                                                              color: Colors.orange.shade900,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 4),
-                                                        Tooltip(
-                                                          message:
-                                                              'Cascada de Pre-Alerta: Pre -> 7d -> 3d -> Vto.\n'
-                                                              'Vida útil: ej. 90 calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
-                                                          child: Icon(
-                                                            Icons.info_outline_rounded,
-                                                            size: 15,
-                                                            color: Colors.orange.shade800,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    TextButton.icon(
-                                                      style: TextButton.styleFrom(
-                                                        visualDensity: VisualDensity.compact,
-                                                        foregroundColor: Colors.orange.shade900,
+                                                if (showExpBox)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 8),
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.orange.shade50.withValues(alpha: 0.45),
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        border: Border.all(color: Colors.orange.shade200),
                                                       ),
-                                                      onPressed: () => setState(() => _showExpirationSection = !_showExpirationSection),
-                                                      icon: Icon(
-                                                        _showExpirationSection ? Icons.expand_less_rounded : Icons.add_rounded,
-                                                        size: 17,
-                                                      ),
-                                                      label: Text(
-                                                        _showExpirationSection ? 'Ocultar' : 'Configurar vencimiento',
-                                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                if (_showExpirationSection) ...[
-                                                  const SizedBox(height: 8),
-                                                  LayoutBuilder(
-                                                    builder: (context, expConstraints) {
-                                                      final Widget dateField = InkWell(
-                                                        onTap: () async {
-                                                          final picked = await showCompactDatePicker(
-                                                            context: context,
-                                                            initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
-                                                            firstDate: DateTime(2020),
-                                                            lastDate: DateTime(2100),
-                                                            helpText: 'Fecha de Vencimiento del Lote',
-                                                          );
-                                                          if (!mounted) return;
-                                                          if (picked != null) {
-                                                            setState(() => _expirationDate = picked);
-                                                          }
-                                                        },
-                                                        child: InputDecorator(
-                                                          decoration: InputDecoration(
-                                                            labelText: 'Fecha de Vencimiento (Lote)',
-                                                            prefixIcon: const Icon(Icons.calendar_today_outlined, size: 17),
-                                                            border: const OutlineInputBorder(),
-                                                            isDense: true,
-                                                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                            suffixIcon: _expirationDate != null
-                                                                ? IconButton(
-                                                                    tooltip: 'Quitar fecha de vencimiento',
-                                                                    icon: const Icon(Icons.clear, size: 16),
-                                                                    onPressed: () => setState(() => _expirationDate = null),
-                                                                  )
-                                                                : null,
-                                                          ),
-                                                          child: Text(
-                                                            _expirationDate != null
-                                                                ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
-                                                                : 'Sin fecha fija',
-                                                            overflow: TextOverflow.ellipsis,
-                                                            style: TextStyle(
-                                                              fontSize: 12.5,
-                                                              fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
-                                                              color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      );
-
-                                                      final Widget preAlertField = TextFormField(
-                                                        controller: _expiryAlertDaysCtrl,
-                                                        decoration: const InputDecoration(
-                                                          labelText: 'Pre-Alerta',
-                                                          suffixText: 'días',
-                                                          border: OutlineInputBorder(),
-                                                          isDense: true,
-                                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                        ),
-                                                        keyboardType: TextInputType.number,
-                                                      );
-
-                                                      final Widget shelfLifeField = TextFormField(
-                                                        controller: _expiryCtrl,
-                                                        decoration: const InputDecoration(
-                                                          labelText: 'Vida útil / envasado',
-                                                          prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 17),
-                                                          suffixText: 'días',
-                                                          border: OutlineInputBorder(),
-                                                          isDense: true,
-                                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                                        ),
-                                                        keyboardType: TextInputType.number,
-                                                        onChanged: (v) {
-                                                          final n = int.tryParse(v.trim());
-                                                          if (n != null && n > 0 && n <= 3650) {
-                                                            setState(() {
-                                                              _expirationDate = DateTime.now().add(Duration(days: n));
-                                                            });
-                                                          }
-                                                        },
-                                                        validator: (v) {
-                                                          if (v == null || v.trim().isEmpty) return null;
-                                                          final n = int.tryParse(v.trim());
-                                                          if (n == null || n < 1 || n > 3650) {
-                                                            return 'Ingresá un número entre 1 y 3650';
-                                                          }
-                                                          return null;
-                                                        },
-                                                      );
-
-                                                      if (expConstraints.maxWidth >= 480) {
-                                                        return Row(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Expanded(flex: 5, child: dateField),
-                                                            const SizedBox(width: 8),
-                                                            Expanded(flex: 3, child: preAlertField),
-                                                            const SizedBox(width: 8),
-                                                            Expanded(flex: 3, child: shelfLifeField),
-                                                          ],
-                                                        );
-                                                      }
-                                                      return Column(
+                                                      child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
                                                         children: [
-                                                          dateField,
-                                                          const SizedBox(height: 8),
-                                                          Row(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                                          Wrap(
+                                                            alignment: WrapAlignment.spaceBetween,
+                                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                                            spacing: 6,
+                                                            runSpacing: 4,
                                                             children: [
-                                                              Expanded(child: preAlertField),
-                                                              const SizedBox(width: 8),
-                                                              Expanded(child: shelfLifeField),
+                                                              Row(
+                                                                mainAxisSize: MainAxisSize.min,
+                                                                children: [
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      'Control de Vencimiento y Alertas (Opcional)',
+                                                                      style: TextStyle(
+                                                                        fontWeight: FontWeight.bold,
+                                                                        fontSize: 12.5,
+                                                                        color: Colors.orange.shade900,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(width: 4),
+                                                                  Tooltip(
+                                                                    message:
+                                                                        'Cascada de Pre-Alerta: Pre -> 7d -> 3d -> Vto.\n'
+                                                                        'Vida útil: ej. 90 calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
+                                                                    child: Icon(
+                                                                      Icons.info_outline_rounded,
+                                                                      size: 15,
+                                                                      color: Colors.orange.shade800,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                              TextButton.icon(
+                                                                style: TextButton.styleFrom(
+                                                                  visualDensity: VisualDensity.compact,
+                                                                  foregroundColor: Colors.orange.shade900,
+                                                                ),
+                                                                onPressed: () => setState(() => _showExpirationSection = !_showExpirationSection),
+                                                                icon: Icon(
+                                                                  _showExpirationSection ? Icons.expand_less_rounded : Icons.add_rounded,
+                                                                  size: 17,
+                                                                ),
+                                                                label: Text(
+                                                                  _showExpirationSection ? 'Ocultar' : 'Configurar vencimiento',
+                                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                                                ),
+                                                              ),
                                                             ],
                                                           ),
+                                                          if (_showExpirationSection) ...[
+                                                            const SizedBox(height: 8),
+                                                            LayoutBuilder(
+                                                              builder: (context, expConstraints) {
+                                                                final Widget dateField = InkWell(
+                                                                  onTap: () async {
+                                                                    final picked = await showCompactDatePicker(
+                                                                      context: context,
+                                                                      initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
+                                                                      firstDate: DateTime(2020),
+                                                                      lastDate: DateTime(2100),
+                                                                      helpText: 'Fecha de Vencimiento del Lote',
+                                                                    );
+                                                                    if (!mounted) return;
+                                                                    if (picked != null) {
+                                                                      setState(() {
+                                                                        _expirationDate = picked;
+                                                                        if (_expiryCtrl.text.trim().isEmpty) {
+                                                                          final now = DateTime.now();
+                                                                          final today = DateTime(now.year, now.month, now.day);
+                                                                          final expDay = DateTime(picked.year, picked.month, picked.day);
+                                                                          final diff = expDay.difference(today).inDays;
+                                                                          if (diff >= 1 && diff <= 3650) {
+                                                                            _expiryCtrl.text = diff.toString();
+                                                                          }
+                                                                        }
+                                                                      });
+                                                                    }
+                                                                  },
+                                                                  child: InputDecorator(
+                                                                    decoration: InputDecoration(
+                                                                      labelText: 'Fecha de Vencimiento (Lote)',
+                                                                      prefixIcon: const Icon(Icons.calendar_today_outlined, size: 17),
+                                                                      border: const OutlineInputBorder(),
+                                                                      isDense: true,
+                                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                                      suffixIcon: _expirationDate != null
+                                                                          ? IconButton(
+                                                                              tooltip: 'Quitar fecha de vencimiento',
+                                                                              icon: const Icon(Icons.clear, size: 16),
+                                                                              onPressed: () => setState(() => _expirationDate = null),
+                                                                            )
+                                                                          : null,
+                                                                    ),
+                                                                    child: Text(
+                                                                      _expirationDate != null
+                                                                          ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
+                                                                          : 'Sin fecha fija',
+                                                                      overflow: TextOverflow.ellipsis,
+                                                                      style: TextStyle(
+                                                                        fontSize: 12.5,
+                                                                        fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
+                                                                        color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                );
+
+                                                                final Widget preAlertField = TextFormField(
+                                                                  controller: _expiryAlertDaysCtrl,
+                                                                  decoration: const InputDecoration(
+                                                                    labelText: 'Pre-Alerta',
+                                                                    suffixText: 'días',
+                                                                    border: OutlineInputBorder(),
+                                                                    isDense: true,
+                                                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                                  ),
+                                                                  keyboardType: TextInputType.number,
+                                                                );
+
+                                                                final Widget shelfLifeField = TextFormField(
+                                                                  controller: _expiryCtrl,
+                                                                  decoration: const InputDecoration(
+                                                                    labelText: 'Validez',
+                                                                    prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 17),
+                                                                    suffixText: 'días',
+                                                                    border: OutlineInputBorder(),
+                                                                    isDense: true,
+                                                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                                  ),
+                                                                  keyboardType: TextInputType.number,
+                                                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                                                  onChanged: (v) {
+                                                                    final n = int.tryParse(v.trim());
+                                                                    if (n != null && n > 0 && n <= 3650) {
+                                                                      setState(() {
+                                                                        _expirationDate = DateTime.now().add(Duration(days: n));
+                                                                      });
+                                                                    }
+                                                                  },
+                                                                  validator: (v) {
+                                                                    if (v == null || v.trim().isEmpty) return null;
+                                                                    final n = int.tryParse(v.trim());
+                                                                    if (n == null || n < 1 || n > 3650) {
+                                                                      return 'Ingresá un número entre 1 y 3650';
+                                                                    }
+                                                                    return null;
+                                                                  },
+                                                                );
+
+                                                                if (expConstraints.maxWidth >= 480) {
+                                                                  return Row(
+                                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                                    children: [
+                                                                      Expanded(flex: 5, child: dateField),
+                                                                      const SizedBox(width: 8),
+                                                                      Expanded(flex: 3, child: preAlertField),
+                                                                      const SizedBox(width: 8),
+                                                                      Expanded(flex: 3, child: shelfLifeField),
+                                                                    ],
+                                                                  );
+                                                                }
+                                                                return Column(
+                                                                  children: [
+                                                                    dateField,
+                                                                    const SizedBox(height: 8),
+                                                                    Row(
+                                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                                      children: [
+                                                                        Expanded(child: preAlertField),
+                                                                        const SizedBox(width: 8),
+                                                                        Expanded(child: shelfLifeField),
+                                                                      ],
+                                                                    ),
+                                                                  ],
+                                                                );
+                                                              },
+                                                            ),
+                                                          ],
+                                                          _buildBatchTrackingSubpanel(),
                                                         ],
-                                                      );
-                                                    },
+                                                      ),
+                                                    ),
                                                   ),
-                                                ],
-                                                _buildBatchTrackingSubpanel(),
+                                                if (showProdBox) _buildProductionRecipeSection(),
                                               ],
-                                            ),
-                                          ),
+                                            );
+                                          },
                                         ),
-                                        _buildProductionRecipeSection(),
                                       ],
                                     ),
                         ),

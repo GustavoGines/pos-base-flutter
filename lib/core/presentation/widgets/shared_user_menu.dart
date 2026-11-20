@@ -159,57 +159,59 @@ class SharedUserMenu extends StatelessWidget {
               final hasZReports = settings.features.zReports;
 
               return <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  enabled: false,
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF10B981),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Text(
-                          userName,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                if (isCompact) ...[
+                  PopupMenuItem<String>(
+                    enabled: false,
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF10B981),
+                            shape: BoxShape.circle,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: const Text(
-                          'SESIÓN ACTIVA',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF059669),
-                            letterSpacing: 0.4,
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            userName,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: const Text(
+                            'SESIÓN ACTIVA',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF059669),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const PopupMenuDivider(height: 8),
+                  const PopupMenuDivider(height: 8),
+                ],
                 if (hasZReports)
                   _buildMenuItem(
                     value: 'shift_audit',
@@ -270,12 +272,15 @@ class SharedUserMenu extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: color),
           const SizedBox(width: 12),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: isDanger ? FontWeight.bold : FontWeight.w500,
-              color: isDanger ? Colors.redAccent : Colors.black87,
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: isDanger ? FontWeight.bold : FontWeight.w500,
+                color: isDanger ? Colors.redAccent : Colors.black87,
+              ),
             ),
           ),
         ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
@@ -10,6 +11,7 @@ import 'package:frontend_desktop/features/catalog/presentation/widgets/product_b
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 class StockAdjustmentDialog extends StatefulWidget {
   final CatalogProvider provider;
@@ -27,22 +29,37 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
   final _minStockCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _batchCodeCtrl = TextEditingController();
+  final _validityDaysCtrl = TextEditingController();
   String _selectedType = 'in'; // 'in' = Ingreso, 'out' = Egreso
   DateTime? _batchExpDate;
   bool _isWaste = false;
   int? _selectedOutBatchId;
   List<ProductBatchModel> _activeBatches = const [];
+  bool _canUseBatches = true;
+
+  bool _resolveCanUseBatches() {
+    try {
+      final s = Provider.of<SettingsProvider?>(context, listen: false);
+      if (s != null) {
+        return s.features.batchExpiration || s.features.production;
+      }
+    } catch (_) {}
+    return true;
+  }
 
   @override
   void initState() {
     super.initState();
     _minStockCtrl.text = widget.product.minStock?.toStringAsFixed(0) ?? '';
-    if (widget.product.vencimientoDias != null &&
+    _canUseBatches = _resolveCanUseBatches();
+    if (_canUseBatches &&
+        widget.product.vencimientoDias != null &&
         widget.product.vencimientoDias! > 0) {
       _batchExpDate =
           DateTime.now().add(Duration(days: widget.product.vencimientoDias!));
+      _validityDaysCtrl.text = widget.product.vencimientoDias!.toString();
     }
-    if (!widget.product.isCombo && !widget.product.isService) {
+    if (_canUseBatches && !widget.product.isCombo && !widget.product.isService) {
       _loadActiveBatches();
     }
   }
@@ -63,6 +80,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     _minStockCtrl.dispose();
     _notesCtrl.dispose();
     _batchCodeCtrl.dispose();
+    _validityDaysCtrl.dispose();
     super.dispose();
   }
 
@@ -137,11 +155,15 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
       quantity: qty ?? 0,
       minStock: minStockVal,
       notes: _notesCtrl.text.trim().isNotEmpty ? _notesCtrl.text.trim() : null,
-      batchId: _selectedType == 'out' ? _selectedOutBatchId : null,
-      batchCode: _selectedType == 'in' && _batchCodeCtrl.text.trim().isNotEmpty
+      batchId: _canUseBatches && _selectedType == 'out' ? _selectedOutBatchId : null,
+      batchCode: _canUseBatches &&
+              _selectedType == 'in' &&
+              _batchCodeCtrl.text.trim().isNotEmpty
           ? _batchCodeCtrl.text.trim()
           : null,
-      expirationDate: _selectedType == 'in' && _batchExpDate != null
+      expirationDate: _canUseBatches &&
+              _selectedType == 'in' &&
+              _batchExpDate != null
           ? DateFormat('yyyy-MM-dd').format(_batchExpDate!)
           : null,
       reasonCode: _selectedType == 'out' && _isWaste ? 'waste' : null,
@@ -240,7 +262,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                         ],
                       ),
                     ),
-                    if (!product.isCombo && !product.isService)
+                    if (_canUseBatches && !product.isCombo && !product.isService)
                       TextButton.icon(
                         icon: const Icon(Icons.layers_outlined, size: 17),
                         label: Text(
@@ -314,22 +336,51 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            if (!product.isCombo &&
+            if (_canUseBatches &&
+                !product.isCombo &&
                 !product.isService &&
                 _selectedType == 'in') ...[
+              TextField(
+                controller: _batchCodeCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Código de Lote (opc.)',
+                  hintText: 'Auto si vacío',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.qr_code_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(
+                  SizedBox(
+                    width: 118,
                     child: TextField(
-                      controller: _batchCodeCtrl,
-                      onChanged: (_) => setState(() {}),
+                      controller: _validityDaysCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: const InputDecoration(
-                        labelText: 'Código de Lote (opc.)',
-                        hintText: 'Auto si vacío',
+                        labelText: 'Validez',
+                        suffixText: 'd',
                         isDense: true,
-                        prefixIcon: Icon(Icons.qr_code_outlined),
+                        prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 17),
                         border: OutlineInputBorder(),
                       ),
+                      onChanged: (val) {
+                        final trimmed = val.trim();
+                        if (trimmed.isEmpty) {
+                          setState(() => _batchExpDate = null);
+                          return;
+                        }
+                        final n = int.tryParse(trimmed);
+                        if (n != null && n >= 1 && n <= 3650) {
+                          setState(() {
+                            _batchExpDate =
+                                DateTime.now().add(Duration(days: n));
+                          });
+                        }
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -359,17 +410,35 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                           helpText: 'Vencimiento del Lote Entrante',
                         );
                         if (picked != null) {
-                          setState(() => _batchExpDate = picked);
+                          final now = DateTime.now();
+                          final today = DateTime(now.year, now.month, now.day);
+                          final expDay = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                          );
+                          final diff = expDay.difference(today).inDays;
+                          setState(() {
+                            _batchExpDate = picked;
+                            _validityDaysCtrl.text =
+                                (diff >= 1 && diff <= 3650)
+                                    ? diff.toString()
+                                    : '';
+                          });
                         }
                       },
                     ),
                   ),
-                  if (_batchExpDate != null)
+                  if (_batchExpDate != null ||
+                      _validityDaysCtrl.text.isNotEmpty)
                     IconButton(
                       tooltip: 'Quitar vencimiento',
                       icon: const Icon(Icons.clear, size: 18),
                       visualDensity: VisualDensity.compact,
-                      onPressed: () => setState(() => _batchExpDate = null),
+                      onPressed: () => setState(() {
+                        _batchExpDate = null;
+                        _validityDaysCtrl.clear();
+                      }),
                     ),
                 ],
               ),
@@ -408,7 +477,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
             if (!product.isCombo &&
                 !product.isService &&
                 _selectedType == 'out') ...[
-              if (_activeBatches.isNotEmpty) ...[
+              if (_canUseBatches && _activeBatches.isNotEmpty) ...[
                 DropdownButtonFormField<int?>(
                   initialValue: _selectedOutBatchId,
                   isExpanded: true,

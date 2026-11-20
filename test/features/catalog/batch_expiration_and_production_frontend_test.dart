@@ -1606,21 +1606,88 @@ void main() {
           findsOneWidget,
         );
         expect(find.byTooltip('Quitar vencimiento'), findsOneWidget);
+        expect(
+          tester.widget<TextField>(find.widgetWithText(TextField, 'Validez')).controller?.text,
+          '90',
+        );
 
         await tester.tap(find.byTooltip('Quitar vencimiento'));
         await tester.pumpAndSettle();
         expect(find.text('Vencimiento (opc)'), findsOneWidget);
         expect(find.textContaining('activará el control por lotes'), findsNothing);
+        expect(
+          tester.widget<TextField>(find.widgetWithText(TextField, 'Validez')).controller?.text,
+          '',
+        );
 
         await tester.enterText(
-          find.widgetWithText(TextField, 'Código de Lote (opc.)'),
-          'LED-2026',
+          find.widgetWithText(TextField, 'Validez'),
+          '15',
         );
         await tester.pumpAndSettle();
+        final expectedVto15 = DateFormat('dd/MM/yy').format(
+          DateTime.now().add(const Duration(days: 15)),
+        );
+        expect(find.text('Vto: $expectedVto15'), findsOneWidget);
         expect(
           find.textContaining('activará el control por lotes automáticamente'),
           findsOneWidget,
         );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'ProductBatchesDialog Nuevo Lote sincroniza Validez del lote (días) con fecha Vto sin overflow',
+      (tester) async {
+        tester.view.physicalSize = const Size(980, 740);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final ricota = Product(
+          id: 902,
+          name: 'Ricota Fresca Tambo x Kg',
+          internalCode: '81202',
+          costPrice: 1800,
+          sellingPrice: 3200,
+          stock: 2,
+          active: true,
+          isSoldByWeight: true,
+          unitType: 'kg',
+          trackBatches: true,
+          vencimientoDias: null,
+        );
+        final fakeProvider = _FakeBatchCatalogProvider(ricota);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ChangeNotifierProvider<CatalogProvider>.value(
+                value: fakeProvider,
+                child: ProductBatchesDialog(
+                  provider: fakeProvider,
+                  product: ricota,
+                  initialOpenCreate: true,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Ingresar Nuevo Lote'), findsOneWidget);
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Validez del lote (días desde elaboración)'),
+          '12',
+        );
+        await tester.pumpAndSettle();
+
+        final now = DateTime.now();
+        final expectedVto = DateFormat('dd/MM/yy').format(
+          DateTime(now.year, now.month, now.day + 12),
+        );
+        expect(find.text('Vto: $expectedVto'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
@@ -1816,11 +1883,21 @@ class _FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
   BusinessSettings? get settings => const BusinessSettings(
         companyName: 'Test POS',
-        features: FeatureFlags(fastPos: true, predictiveAlerts: false),
+        features: FeatureFlags(
+          fastPos: true,
+          predictiveAlerts: false,
+          batchExpiration: true,
+          production: true,
+        ),
       );
 
   @override
-  FeatureFlags get features => const FeatureFlags(fastPos: true, predictiveAlerts: false);
+  FeatureFlags get features => const FeatureFlags(
+        fastPos: true,
+        predictiveAlerts: false,
+        batchExpiration: true,
+        production: true,
+      );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

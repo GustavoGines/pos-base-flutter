@@ -43,6 +43,10 @@ class SettingsProvider with ChangeNotifier {
   /// Lista de features modulares activos según el Servidor de Licencias.
   FeatureFlags get features => _settings?.features ?? const FeatureFlags();
 
+  bool get canUseBatchExpiration =>
+      _settings?.canUseBatchExpiration ?? !isHardwareStore;
+  bool get canUseProduction => _settings?.canUseProduction ?? false;
+
   /// @deprecated Preferir el uso de `features.<nombre>` para mayor seguridad de tipos.
   bool hasFeature(String featureName) {
     return _settings?.hasFeature(featureName) ?? false;

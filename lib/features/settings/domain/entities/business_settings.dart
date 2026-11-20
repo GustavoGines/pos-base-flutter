@@ -20,6 +20,8 @@ class FeatureFlags extends Equatable {
   final bool mercadopagoQr;
   final bool arcaAfip;
   final bool ecommerceSync;
+  final bool batchExpiration;
+  final bool production;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -40,6 +42,8 @@ class FeatureFlags extends Equatable {
     this.mercadopagoQr = false,
     this.arcaAfip = false,
     this.ecommerceSync = false,
+    this.batchExpiration = false,
+    this.production = false,
   });
 
   @override
@@ -62,6 +66,8 @@ class FeatureFlags extends Equatable {
         mercadopagoQr,
         arcaAfip,
         ecommerceSync,
+        batchExpiration,
+        production,
       ];
 }
 
@@ -141,8 +147,13 @@ class BusinessSettings extends Equatable {
     if (features.mercadopagoQr) list.add('mercadopago_qr');
     if (features.arcaAfip) list.add('arca_afip');
     if (features.ecommerceSync) list.add('ecommerce_sync');
+    if (features.batchExpiration) list.add('batch_expiration');
+    if (features.production) list.add('production');
     return list;
   }
+
+  bool get canUseBatchExpiration => features.batchExpiration || features.production;
+  bool get canUseProduction => features.production;
 
   /// Alias legado — mantenido para retrocompatibilidad durante la transición.
   bool get isHardwareStore => businessType == 'hardware_store';

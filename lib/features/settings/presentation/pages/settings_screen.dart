@@ -2024,6 +2024,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'mercadopago_point': '💳 Posnet Mercado Pago Point',
       'arca_afip': '🧾 Facturación Electrónica ARCA (AFIP)',
       'ecommerce_sync': '🌐 Sincronización E-Commerce',
+      'batch_expiration': '📅 Vencimientos y Control por Lotes',
+      'production': '🥐 Producción Propia y Recetas',
     };
     final key = featureCode.toLowerCase().trim();
     return dictionary[key] ?? featureCode.toUpperCase();

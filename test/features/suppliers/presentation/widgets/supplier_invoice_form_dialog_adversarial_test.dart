@@ -1,22 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/suppliers/presentation/widgets/supplier_invoice_form_dialog.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   bool _isRI = true;
+  bool _batchExpiration = true;
   @override
   bool get isResponsableInscripto => _isRI;
 
+  @override
+  FeatureFlags get features =>
+      FeatureFlags(suppliers: true, batchExpiration: _batchExpiration);
+
   void setIsRI(bool val) {
     _isRI = val;
+    notifyListeners();
+  }
+
+  void setBatchExpiration(bool val) {
+    _batchExpiration = val;
     notifyListeners();
   }
 
@@ -551,6 +563,57 @@ void main() {
         expect(find.text('Lote 1/2'), findsOneWidget);
         expect(find.text('Lote 2/2'), findsOneWidget);
         expect(find.text('Otro lote de este producto (distinto vencimiento)'), findsNWidgets(2));
+
+        // Escribir '10' en Validez del primer lote calcula la fecha de vencimiento a +10 días sin overflow
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Validez').first,
+          '10',
+        );
+        await tester.pumpAndSettle();
+        final expectedVence = DateFormat('dd/MM/yyyy').format(
+          DateTime.now().add(const Duration(days: 10)),
+        );
+        expect(find.text('Vence: $expectedVence'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Opción 1A: En Ferretería (batchExpiration: false) se ocultan campos de lote y botón + Otro lote',
+      (tester) async {
+        tester.view.physicalSize = const Size(1024, 768);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        fakeSettings.setBatchExpiration(false);
+
+        final hardwareInvoice = {
+          'id': 96,
+          'type': 'delivery_note',
+          'voucher_letter': 'S/D',
+          'affects_vat_book': false,
+          'amount': 8500.0,
+          'items': [
+            {
+              'product_id': 81301,
+              'product_name': 'Amoladora Angular 115mm',
+              'quantity': 1,
+              'unit_cost': 8500.0,
+              'previous_cost': 8000.0,
+              'current_selling_price': 12500.0,
+            },
+          ],
+        };
+
+        await tester.pumpWidget(buildTestDialog(initialInvoice: hardwareInvoice));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Amoladora Angular 115mm'), findsOneWidget);
+        expect(find.text('+ Asignar Lote / Vencimiento de este ingreso'), findsNothing);
+        expect(find.text('+ Otro lote (distinto vto.)'), findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

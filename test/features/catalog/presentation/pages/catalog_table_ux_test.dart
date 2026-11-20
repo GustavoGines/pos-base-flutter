@@ -90,13 +90,28 @@ class _StatefulFakeCatalogProvider extends ChangeNotifier
 }
 
 class _FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  final FeatureFlags _features;
+  final String _businessType;
+
+  _FakeSettingsProvider({
+    FeatureFlags features = const FeatureFlags(
+      quotes: true,
+      suppliers: true,
+      multiRubro: true,
+      batchExpiration: true,
+    ),
+    String businessType = 'retail',
+  })  : _features = features,
+        _businessType = businessType;
+
   @override
   int get assignedRegisterId => 1;
 
   @override
-  BusinessSettings? get settings => const BusinessSettings(
+  BusinessSettings? get settings => BusinessSettings(
         licensePlanType: 'premium',
-        features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true),
+        businessType: _businessType,
+        features: _features,
       );
 
   @override
@@ -109,8 +124,7 @@ class _FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   String get currentPlan => 'premium';
 
   @override
-  FeatureFlags get features =>
-      const FeatureFlags(quotes: true, suppliers: true, multiRubro: true);
+  FeatureFlags get features => _features;
 
   @override
   bool hasFeature(String featureName) => true;
@@ -284,12 +298,13 @@ void main() {
   Widget wrapCatalog({
     required _StatefulFakeCatalogProvider catalogProvider,
     required Size viewport,
+    _FakeSettingsProvider? settingsProvider,
   }) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<CatalogProvider>.value(value: catalogProvider),
         ChangeNotifierProvider<SettingsProvider>.value(
-          value: _FakeSettingsProvider(),
+          value: settingsProvider ?? _FakeSettingsProvider(),
         ),
         ChangeNotifierProvider<SupplierProvider>.value(
           value: _FakeSupplierProvider(),
@@ -364,11 +379,11 @@ void main() {
 
       // Tooltips corregidos para vence hoy y vencido.
       expect(
-        find.byTooltip('¡Vence HOY! (${_displayDate(today)})'),
+        find.byTooltip('¡Vence HOY! (${_displayDate(today)}) • Clic para ver/administrar lotes'),
         findsOneWidget,
       );
       expect(
-        find.byTooltip('Vencido hace 2 días (${_displayDate(overdue2d)})'),
+        find.byTooltip('Vencido hace 2 días (${_displayDate(overdue2d)}) • Clic para ver/administrar lotes'),
         findsOneWidget,
       );
 
@@ -430,6 +445,45 @@ void main() {
         );
       }
       await tester.binding.setSurfaceSize(null);
+    },
+  );
+
+  testWidgets(
+    'Opción 1A: En Ferretería (batchExpiration: false, production: false) se ocultan VTO., ícono de Lotes y botón Producción',
+    (tester) async {
+      const viewport = Size(1280, 800);
+      await tester.binding.setSurfaceSize(viewport);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final catalogProv = _StatefulFakeCatalogProvider(
+        products: buildProducts(),
+      );
+      final hardwareSettings = _FakeSettingsProvider(
+        businessType: 'hardware_store',
+        features: const FeatureFlags(
+          quotes: true,
+          logistics: true,
+          suppliers: true,
+          batchExpiration: false,
+          production: false,
+        ),
+      );
+
+      await tester.pumpWidget(
+        wrapCatalog(
+          catalogProvider: catalogProv,
+          viewport: viewport,
+          settingsProvider: hardwareSettings,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Acciones'), findsOneWidget);
+      expect(find.text('VTO.'), findsNothing);
+      expect(find.byIcon(Icons.layers_outlined), findsNothing);
+      expect(find.text('Producción'), findsNothing);
+      expect(find.byIcon(Icons.bakery_dining_outlined), findsNothing);
+      expect(tester.takeException(), isNull);
     },
   );
 }

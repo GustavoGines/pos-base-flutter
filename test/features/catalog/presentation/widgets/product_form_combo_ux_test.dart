@@ -57,7 +57,7 @@ class _ComboFakeCatalogProvider extends ChangeNotifier implements CatalogProvide
 class _ComboFakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   final BusinessSettings _settings = const BusinessSettings(
     licensePlanType: 'basic',
-    features: FeatureFlags(suppliers: true),
+    features: FeatureFlags(suppliers: true, batchExpiration: true),
   );
 
   @override
@@ -278,7 +278,7 @@ void main() {
       expect(find.text('Ocultar'), findsOneWidget);
       expect(find.text('Fecha de Vencimiento (Lote)'), findsOneWidget);
       expect(find.text('Pre-Alerta'), findsOneWidget);
-      expect(find.text('Vida útil / envasado'), findsOneWidget);
+      expect(find.text('Validez'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
