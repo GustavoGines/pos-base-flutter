@@ -2742,6 +2742,53 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  Widget _buildPendingFilterPill({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF10B981).withValues(alpha: 0.20)
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF34D399).withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.14),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              const Icon(
+                Icons.check_circle_rounded,
+                size: 13,
+                color: Color(0xFF34D399),
+              ),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? Colors.white : const Color(0xFFCBD5E1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPendingOrdersOverlay(
     PosProvider posProvider,
     OverlayChildLayoutInfo info,
@@ -2777,34 +2824,87 @@ class _PosScreenState extends State<PosScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Header con controles internos
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
+                      // Header Dual-Tone Caja4U con controles internos
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF121C33), Color(0xFF16233F)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Color(0xFF1E2D4A),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.pending_actions_rounded,
-                                    color: Colors.orange.shade700, size: 24),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B)
+                                        .withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: const Color(0xFFF59E0B)
+                                          .withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.pending_actions_rounded,
+                                    color: Color(0xFFFBBF24),
+                                    size: 19,
+                                  ),
+                                ),
                                 const SizedBox(width: 12),
                                 const Expanded(
-                                  child: Text('Órdenes en Espera',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18)),
+                                  child: Text(
+                                    'Órdenes en Espera',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15.5,
+                                      color: Colors.white,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
                                 ),
                                 // PIN con setOverlayState para no romper el layout global
                                 IconButton(
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: _isPendingPinned
+                                        ? const Color(0xFF10B981)
+                                            .withValues(alpha: 0.22)
+                                        : Colors.white.withValues(alpha: 0.08),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: _isPendingPinned
+                                            ? const Color(0xFF34D399)
+                                                .withValues(alpha: 0.55)
+                                            : Colors.white
+                                                .withValues(alpha: 0.14),
+                                      ),
+                                    ),
+                                  ),
                                   icon: Icon(
                                     _isPendingPinned
                                         ? Icons.push_pin
                                         : Icons.push_pin_outlined,
-                                    size: 20,
+                                    size: 18,
                                     color: _isPendingPinned
-                                        ? Colors.blueAccent
-                                        : Colors.grey,
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFFCBD5E1),
                                   ),
                                   tooltip:
                                       null, // Parche: eliminamos el tooltip que causa el crash
@@ -2815,9 +2915,29 @@ class _PosScreenState extends State<PosScreen> {
                                     setState(() {});
                                   },
                                 ),
+                                const SizedBox(width: 6),
                                 IconButton(
-                                  icon: const Icon(Icons.refresh,
-                                      size: 20, color: Colors.blueGrey),
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  style: IconButton.styleFrom(
+                                    backgroundColor:
+                                        Colors.white.withValues(alpha: 0.08),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.14),
+                                      ),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.refresh,
+                                    size: 18,
+                                    color: Color(0xFFCBD5E1),
+                                  ),
                                   tooltip:
                                       null, // Parche: eliminamos el tooltip que causa el crash
                                   onPressed: () async {
@@ -2825,36 +2945,53 @@ class _PosScreenState extends State<PosScreen> {
                                     if (context.mounted) setOverlayState(() {});
                                   },
                                 ),
+                                const SizedBox(width: 6),
                                 IconButton(
-                                  icon: const Icon(Icons.close, size: 20),
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  style: IconButton.styleFrom(
+                                    backgroundColor:
+                                        Colors.white.withValues(alpha: 0.08),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.14),
+                                      ),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: Color(0xFFCBD5E1),
+                                  ),
                                   tooltip: null,
                                   onPressed: () =>
                                       _pendingOrdersPortalController.hide(),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             // MC-03: Selector rápido Todas las cajas vs Solo esta caja
                             Row(
                               children: [
-                                ChoiceChip(
-                                  label: const Text('Todas las cajas', style: TextStyle(fontSize: 11)),
+                                _buildPendingFilterPill(
+                                  label: 'Todas las cajas',
                                   selected: !_onlyCurrentRegisterPending,
-                                  visualDensity: VisualDensity.compact,
-                                  selectedColor: Colors.orange.shade100,
-                                  onSelected: (_) {
+                                  onTap: () {
                                     setOverlayState(() {
                                       _onlyCurrentRegisterPending = false;
                                     });
                                   },
                                 ),
                                 const SizedBox(width: 8),
-                                ChoiceChip(
-                                  label: const Text('Solo esta caja', style: TextStyle(fontSize: 11)),
+                                _buildPendingFilterPill(
+                                  label: 'Solo esta caja',
                                   selected: _onlyCurrentRegisterPending,
-                                  visualDensity: VisualDensity.compact,
-                                  selectedColor: Colors.orange.shade100,
-                                  onSelected: (_) {
+                                  onTap: () {
                                     setOverlayState(() {
                                       _onlyCurrentRegisterPending = true;
                                     });
@@ -2865,7 +3002,6 @@ class _PosScreenState extends State<PosScreen> {
                           ],
                         ),
                       ),
-                      const Divider(height: 1),
                       Flexible(
                         child: Builder(
                           builder: (ctx) {
@@ -3111,19 +3247,25 @@ class _PosScreenState extends State<PosScreen> {
                     builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
                   );
                 },
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
+                    color: Colors.white.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
                   ),
-                  child: const Icon(Icons.account_balance_wallet_outlined, size: 22, color: Color(0xFF1E88E5)),
+                  child: const Icon(
+                    Icons.account_balance_wallet_outlined,
+                    size: 19,
+                    color: Color(0xFF38BDF8),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 6),
             Consumer<PosProvider>(
               builder: (ctx, pos, _) {
                 final count = pos.pendingCount;
@@ -3133,52 +3275,65 @@ class _PosScreenState extends State<PosScreen> {
                     controller: _pendingOrdersPortalController,
                     overlayChildBuilder: (context, info) =>
                         _buildPendingOrdersOverlay(pos, info),
-                    child: Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: TweenAnimationBuilder<double>(
-                          key: ValueKey(count > 0),
-                          tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-                          duration: const Duration(milliseconds: 1500),
-                          curve: Curves.elasticOut,
-                          builder: (context, value, child) {
-                            return Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Transform.rotate(
-                                  angle: count > 0
-                                      ? (0.15 *
-                                          (1.0 - value) *
-                                          (DateTime.now().second % 5 == 0
-                                              ? 1
-                                              : 0))
-                                      : 0,
-                                  child: IconButton(
-                                    tooltip: 'Órdenes en Espera',
-                                    icon: Icon(
-                                      Icons.pending_actions_rounded,
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(count > 0),
+                      tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                      duration: const Duration(milliseconds: 1500),
+                      curve: Curves.elasticOut,
+                      builder: (context, value, child) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            Transform.rotate(
+                              angle: count > 0
+                                  ? (0.15 *
+                                      (1.0 - value) *
+                                      (DateTime.now().second % 5 == 0
+                                          ? 1
+                                          : 0))
+                                  : 0,
+                              child: IconButton(
+                                tooltip: 'Órdenes en Espera',
+                                constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                                padding: EdgeInsets.zero,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: count > 0
+                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
+                                      : Colors.white.withValues(alpha: 0.07),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    side: BorderSide(
                                       color: count > 0
-                                          ? Colors.orange.shade700
-                                          : Colors.blueGrey,
-                                      size: 28,
+                                          ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
+                                          : Colors.white.withValues(alpha: 0.14),
                                     ),
-                                    onPressed: () =>
-                                        _pendingOrdersPortalController.toggle(),
                                   ),
                                 ),
-                                if (count > 0)
-                                  Positioned(
-                                    right: 2,
-                                    top: 2,
-                                    child: IgnorePointer(
-                                      child: _buildPendingBadge(count),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
+                                icon: Icon(
+                                  Icons.pending_actions_rounded,
+                                  color: count > 0
+                                      ? const Color(0xFFFBBF24)
+                                      : const Color(0xFFCBD5E1),
+                                  size: 19,
+                                ),
+                                onPressed: () =>
+                                    _pendingOrdersPortalController.toggle(),
+                              ),
+                            ),
+                            if (count > 0)
+                              Positioned(
+                                right: -4,
+                                top: -4,
+                                child: IgnorePointer(
+                                  child: _buildPendingBadge(count),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
+                  ),
                 );
               },
             ),

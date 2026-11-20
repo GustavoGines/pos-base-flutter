@@ -1176,14 +1176,60 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  Product _mergeProductSnapshot(Product existing, Product incoming) {
+    return Product(
+      id: incoming.id,
+      name: incoming.name,
+      barcode: incoming.barcode ?? existing.barcode,
+      internalCode: incoming.internalCode,
+      costPrice: incoming.costPrice,
+      sellingPrice: incoming.sellingPrice,
+      priceWholesale: incoming.priceWholesale,
+      priceCard: incoming.priceCard,
+      stock: incoming.stock,
+      minStock: incoming.minStock,
+      active: incoming.active,
+      isSoldByWeight: incoming.isSoldByWeight,
+      isCombo: incoming.isCombo,
+      isService: incoming.isService,
+      comboIngredients: incoming.comboIngredients ?? existing.comboIngredients,
+      priceTiers: incoming.priceTiers ?? existing.priceTiers,
+      salesCount: incoming.salesCount != 0 ? incoming.salesCount : existing.salesCount,
+      vencimientoDias: incoming.vencimientoDias ?? existing.vencimientoDias,
+      expirationDate: incoming.expirationDate,
+      expiryAlertDays: incoming.expiryAlertDays ?? existing.expiryAlertDays,
+      trackBatches: incoming.trackBatches,
+      lotDeductionPolicy: incoming.lotDeductionPolicy,
+      allowSellExpired: incoming.allowSellExpired,
+      hasProductionRecipe: incoming.hasProductionRecipe,
+      recipeYieldQuantity: incoming.recipeYieldQuantity,
+      recipeIngredients: incoming.recipeIngredients ?? existing.recipeIngredients,
+      unitType: incoming.unitType,
+      ivaRate: incoming.ivaRate,
+      needsCatalogReview: incoming.needsCatalogReview,
+      imageUrl: incoming.imageUrl ?? existing.imageUrl,
+      category: incoming.category ?? existing.category,
+      categories: incoming.categories ?? existing.categories,
+      brand: incoming.brand ?? existing.brand,
+      supplier: incoming.supplier ?? existing.supplier,
+    );
+  }
+
+  void syncProductSnapshot(Product updatedProduct) {
+    _syncProductSnapshotInCaches(updatedProduct);
+    notifyListeners();
+  }
+
   void _syncProductSnapshotInCaches(Product updatedProduct) {
-    _lastUpdatedProduct = updatedProduct;
+    Product merged = updatedProduct;
     final idx = _products.indexWhere((p) => p.id == updatedProduct.id);
     if (idx != -1) {
-      _products[idx] = updatedProduct;
+      merged = _mergeProductSnapshot(_products[idx], updatedProduct);
+      _products[idx] = merged;
     }
-    final stockMap = <int, double>{updatedProduct.id: updatedProduct.stock};
-    final expMap = <int, String?>{updatedProduct.id: updatedProduct.expirationDate};
+    _lastUpdatedProduct = merged;
+    final stockMap = <int, double>{merged.id: merged.stock};
+    final expMap = <int, String?>{merged.id: merged.expirationDate};
     _products = applyStockUpdatesToProductList(
       _products,
       stockMap,

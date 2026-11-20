@@ -8,6 +8,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 
 class StockAdjustmentDialog extends StatefulWidget {
@@ -159,6 +160,11 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                 : widget.provider.products
                     .where((p) => p.id == widget.product.id)
                     .firstOrNull;
+        if (updatedFromProvider != null) {
+          try {
+            context.read<PosProvider>().syncUpdatedCatalogProduct(updatedFromProvider);
+          } catch (_) {}
+        }
         final double computedFallback = _selectedType == 'in'
             ? widget.product.stock + (qty ?? 0)
             : widget.product.stock - (qty ?? 0);
@@ -316,6 +322,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                   Expanded(
                     child: TextField(
                       controller: _batchCodeCtrl,
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
                         labelText: 'Código de Lote (opc.)',
                         hintText: 'Auto si vacío',
@@ -357,8 +364,45 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                       },
                     ),
                   ),
+                  if (_batchExpDate != null)
+                    IconButton(
+                      tooltip: 'Quitar vencimiento',
+                      icon: const Icon(Icons.clear, size: 18),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(() => _batchExpDate = null),
+                    ),
                 ],
               ),
+              if (!product.trackBatches &&
+                  (_batchCodeCtrl.text.trim().isNotEmpty ||
+                      _batchExpDate != null)) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.teal.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 16, color: Colors.teal.shade800),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Al guardar con lote o vencimiento, este producto activará el control por lotes automáticamente (el stock previo queda resguardado por separado).',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.teal.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
             ],
             if (!product.isCombo &&

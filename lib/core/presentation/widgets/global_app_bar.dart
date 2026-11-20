@@ -20,6 +20,14 @@ import 'package:frontend_desktop/core/config/app_config.dart';
 
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
+  static const Color kNavBgStart = Color(0xFF121C33);
+  static const Color kNavBgMid = Color(0xFF16233F);
+  static const Color kNavBorderBottom = Color(0xFF1E2D4A);
+  static const Color kBrandEmerald = Color(0xFF10B981);
+  static const Color kBrandMint = Color(0xFF34D399);
+  static const Color kBrandAmber = Color(0xFFF59E0B);
+  static const Color kBrandAmberLight = Color(0xFFFBBF24);
+
   final String currentRoute;
   final String title;
   final Widget? extraAction;
@@ -50,21 +58,29 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     final hideCompanyName = screenWidth < 900;
 
     return Material(
-      elevation: 2,
-      color: Theme.of(context).colorScheme.surface,
+      elevation: 3,
+      shadowColor: Colors.black.withValues(alpha: 0.28),
+      color: kNavBgStart,
       child: SafeArea(
         bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [kNavBgStart, kNavBgMid, kNavBgStart],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                border: Border(
+                  bottom: BorderSide(color: kNavBorderBottom, width: 1.0),
+                ),
               ),
               height: kToolbarHeight,
               child: Row(
             children: [
-              // ── LEFT: Logo + Empresa ──────────────────────────────────────
+              // ── LEFT: Botón Volver + Logo + Empresa + Breadcrumb ───────────
               Padding(
                 padding: EdgeInsets.only(left: screenWidth < 500 ? 6 : 12),
                 child: Row(
@@ -72,11 +88,29 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   children: [
                     if (showBackButton) ...[
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                         tooltip: 'Volver',
+                        constraints: const BoxConstraints.tightFor(
+                          width: 34,
+                          height: 34,
+                        ),
+                        padding: EdgeInsets.zero,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.14),
+                            ),
+                          ),
+                        ),
                         onPressed: () => Navigator.of(context).maybePop(),
                       ),
-                      const SizedBox(width: 4),
+                      SizedBox(width: screenWidth < 500 ? 6 : 8),
                     ],
                     Consumer<SettingsProvider>(
                       builder: (context, settings, _) {
@@ -87,60 +121,113 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             uri.hasScheme &&
                             uri.hasAuthority &&
                             uri.host.isNotEmpty;
+                        final showBreadcrumb = !hideCompanyName &&
+                            screenWidth >= 1200 &&
+                            name.isNotEmpty &&
+                            title.isNotEmpty &&
+                            title != 'Caja4U' &&
+                            title != 'Sistema POS' &&
+                            title != name;
 
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (hasValidLogo)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Image.network(
-                                    logoUrl!,
-                                    width: 26,
-                                    height: 26,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) => ClipRRect(
+                            Container(
+                              margin: const EdgeInsets.only(right: 9),
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: kBrandEmerald.withValues(alpha: 0.35),
+                                  width: 1,
+                                ),
+                              ),
+                              child: hasValidLogo
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(5),
+                                      child: Image.network(
+                                        logoUrl!,
+                                        width: 26,
+                                        height: 26,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => ClipRRect(
+                                          borderRadius: BorderRadius.circular(5),
+                                          child: Image.asset(
+                                            'assets/app_logo.png',
+                                            width: 26,
+                                            height: 26,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : ClipRRect(
                                       borderRadius: BorderRadius.circular(5),
                                       child: Image.asset(
                                         'assets/app_logo.png',
                                         width: 26,
                                         height: 26,
                                         fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.point_of_sale_rounded,
+                                          color: kBrandMint,
+                                          size: 26,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                            if (!hideCompanyName) ...[
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: showBreadcrumb ? 105 : 140,
+                                ),
+                                child: Text(
+                                  name.isNotEmpty ? name : title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (showBreadcrumb) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 16,
+                                  color: Colors.white38,
+                                ),
+                                const SizedBox(width: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: kBrandEmerald.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: kBrandEmerald.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 125),
+                                    child: Text(
+                                      title,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: kBrandMint,
                                       ),
                                     ),
                                   ),
                                 ),
-                              )
-                            else
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(5),
-                                  child: Image.asset(
-                                    'assets/app_logo.png',
-                                    width: 26,
-                                    height: 26,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Icon(
-                                      Icons.point_of_sale_rounded,
-                                      color: Colors.blueAccent,
-                                      size: 26,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (!hideCompanyName)
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 150),
-                                child: Text(
-                                  name.isNotEmpty ? name : title,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold, fontSize: 15),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
+                              ],
+                            ],
                           ],
                         );
                       },
@@ -155,7 +242,24 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   builder: (context, constraints) {
                     final w = constraints.maxWidth;
                     final isIconOnly = w < 480;
-                    final isCompact  = w < 760;
+                    final isCompact = w < 760;
+
+                    final String? gestionSubLabel = switch (currentRoute) {
+                      '/sales-history' => 'Ventas',
+                      '/quotes' => 'Presupuestos',
+                      '/catalog' => 'Catálogo',
+                      '/suppliers' => 'Proveedores',
+                      _ => null,
+                    };
+                    final String? finanzasSubLabel = switch (currentRoute) {
+                      '/cash-movements' => 'Gastos',
+                      '/cuentas-corrientes' => 'Ctas. Ctes.',
+                      '/checks' => 'Cheques',
+                      '/reports' => 'Reportes',
+                      _ => null,
+                    };
+                    final String? operacionesSubLabel =
+                        currentRoute == '/delivery-notes' ? 'Logística' : null;
 
                     return Consumer<SettingsProvider>(
                       builder: (context, settings, _) {
@@ -166,7 +270,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessChecks = settings.features.checks;
                         final bool canAccessSuppliers = settings.features.suppliers;
                         final bool canAccessExpenses = settings.features.expenses;
-
 
                         return Center(
                           child: SingleChildScrollView(
@@ -182,7 +285,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     shortLabel: 'POS',
                                     icon: Icons.point_of_sale,
                                     route: '/pos',
-                                    activeColor: Colors.teal.shade700,
                                     isCompact: isCompact,
                                     isIconOnly: isIconOnly,
                                   ),
@@ -190,11 +292,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 // 2. Gestión (Ventas, Presupuestos, Catálogo, Proveedores)
                                 _NavDropdownGroup(
                                   label: 'Gestión',
+                                  activeSubLabel: gestionSubLabel,
                                   icon: Icons.dashboard_customize_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
                                   isActive: ['/sales-history', '/catalog', '/quotes', '/suppliers'].contains(currentRoute),
-                                  activeColor: Colors.blueAccent,
                                   menuChildren: [
                                     _buildMenuItem(
                                       context: context,
@@ -240,11 +342,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 // 3. Finanzas (Ctas Ctes, Cheques, Gastos, Reportes)
                                 _NavDropdownGroup(
                                   label: 'Finanzas',
+                                  activeSubLabel: finanzasSubLabel,
                                   icon: Icons.account_balance_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
                                   isActive: ['/cuentas-corrientes', '/reports', '/checks', '/cash-movements'].contains(currentRoute),
-                                  activeColor: Colors.orange.shade700,
                                   menuChildren: [
                                     _buildMenuItem(
                                       context: context,
@@ -316,11 +418,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 if (settings.features.logistics)
                                   _NavDropdownGroup(
                                     label: 'Operaciones',
+                                    activeSubLabel: operacionesSubLabel,
                                     icon: Icons.local_shipping_outlined,
                                     isCompact: isCompact,
                                     isIconOnly: isIconOnly,
                                     isActive: ['/delivery-notes'].contains(currentRoute),
-                                    activeColor: Colors.green.shade800,
                                     menuChildren: [
                                       _buildMenuItem(
                                         context: context,
@@ -343,15 +445,27 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
 
-              // ── RIGHT: Alertas + Caja Activa + Impresora + Usuario ───────────────────
+              // ── RIGHT: Acciones + Alertas | Caja Activa + Reloj + Usuario ──
               Padding(
                 padding: EdgeInsets.only(right: screenWidth < 500 ? 6 : 12),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const UpdateBadgeWidget(),
+                    if (extraAction != null) ...[
+                      extraAction!,
+                      const SizedBox(width: 6),
+                    ],
                     const InventoryAlertsWidget(),
-                    const SizedBox(width: 4),
+                    if (screenWidth >= 640)
+                      Container(
+                        width: 1,
+                        height: 22,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        color: Colors.white.withValues(alpha: 0.12),
+                      )
+                    else
+                      const SizedBox(width: 4),
                     // ── MC-01: Badge de Caja Activa y Turno ────────────────────────
                     Consumer<SettingsProvider>(
                       builder: (ctx, settingsProv, _) {
@@ -389,63 +503,75 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
 
                         final compactBadge = screenWidth < 720;
                         final isVeryNarrow = screenWidth < 360;
-                        final badgeColor = isOpen ? Colors.teal.shade700 : Colors.amber.shade800;
-                        final badgeBg = isOpen ? Colors.teal.shade50 : Colors.amber.shade50;
-                        final badgeBorder = isOpen ? Colors.teal.shade200 : Colors.amber.shade300;
+                        final badgeColor = isOpen ? kBrandMint : kBrandAmberLight;
+                        final badgeBg = isOpen
+                            ? kBrandEmerald.withValues(alpha: 0.15)
+                            : kBrandAmber.withValues(alpha: 0.16);
+                        final badgeBorder = isOpen
+                            ? kBrandEmerald.withValues(alpha: 0.45)
+                            : kBrandAmber.withValues(alpha: 0.45);
 
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Tooltip(
-                            message: isOpen
-                                ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado de Terminal y Periféricos)'
-                                : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado de Terminal y Periféricos)',
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: cashProv != null
-                                  ? () => showTerminalPeripheralsDialog(ctx, initialTab: 0)
-                                  : null,
-                              child: Container(
-                                key: const Key('global_app_bar_register_badge'),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isVeryNarrow ? 6 : (compactBadge ? 8 : 10),
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: badgeBg,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: badgeBorder),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isOpen ? Icons.point_of_sale_rounded : Icons.lock_clock_outlined,
-                                      size: 15,
-                                      color: badgeColor,
+                        return Tooltip(
+                          message: isOpen
+                              ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado de Terminal y Periféricos)'
+                              : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado de Terminal y Periféricos)',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: cashProv != null
+                                ? () => showTerminalPeripheralsDialog(ctx, initialTab: 0)
+                                : null,
+                            child: Container(
+                              key: const Key('global_app_bar_register_badge'),
+                              height: 34,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isVeryNarrow ? 6 : (compactBadge ? 9 : 12),
+                              ),
+                              decoration: BoxDecoration(
+                                color: badgeBg,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: badgeBorder),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isOpen && !isVeryNarrow) ...[
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: kBrandMint,
+                                        shape: BoxShape.circle,
+                                      ),
                                     ),
-                                    if (!isVeryNarrow) ...[
-                                      const SizedBox(width: 5),
-                                      ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth: compactBadge
-                                              ? (screenWidth < 400 ? 55 : 90)
-                                              : 155,
-                                        ),
-                                        child: Text(
-                                          compactBadge
-                                              ? regName
-                                              : (isOpen ? '$regName • T#${shift.id}' : '$regName (Cerrada)'),
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: badgeColor,
-                                          ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Icon(
+                                    isOpen ? Icons.point_of_sale_rounded : Icons.lock_clock_outlined,
+                                    size: 15,
+                                    color: badgeColor,
+                                  ),
+                                  if (!isVeryNarrow) ...[
+                                    const SizedBox(width: 6),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: compactBadge
+                                            ? (screenWidth < 400 ? 55 : 90)
+                                            : 155,
+                                      ),
+                                      child: Text(
+                                        compactBadge
+                                            ? regName
+                                            : (isOpen ? '$regName • T#${shift.id}' : '$regName (Cerrada)'),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: isOpen ? Colors.white : kBrandAmberLight,
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
                             ),
                           ),
@@ -453,13 +579,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       },
                     ),
                     if (screenWidth >= 880) ...[
-                      LiveClockWidget(compact: screenWidth < 1050),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
+                      LiveClockWidget(compact: screenWidth < 1300),
                     ],
-                    if (extraAction != null) ...[
-                      extraAction!,
-                      const SizedBox(width: 8),
-                    ],
+                    SizedBox(width: screenWidth < 500 ? 4 : 6),
                     const SharedUserMenu(),
                   ],
                 ),
@@ -467,7 +590,22 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
         ), // ← cierra Container(height: kToolbarHeight)
-        if (bottom != null) bottom!,
+        if (bottom != null)
+          Material(
+            color: Colors.white,
+            child: DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+                ),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: bottom!,
+              ),
+            ),
+          ),
           ], // ← cierra Column.children
         ), // ← cierra Column
       ), // ← cierra SafeArea
@@ -481,39 +619,82 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     required String shortLabel,
     required IconData icon,
     required String route,
-    required Color activeColor,
     required bool isCompact,
     required bool isIconOnly,
   }) {
     final isActive = currentRoute == route;
-    final color = isActive ? activeColor : Colors.blueGrey;
+    final iconColor = isActive ? kBrandMint : const Color(0xFF94A3B8);
+    final textColor = isActive ? Colors.white : const Color(0xFFCBD5E1);
 
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: isIconOnly ? 1.0 : 2.0),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          border: isActive
-              ? Border(bottom: BorderSide(color: activeColor, width: 3))
-              : const Border(bottom: BorderSide(color: Colors.transparent, width: 3)),
-        ),
-        child: Tooltip(
-          message: label,
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.symmetric(
-                horizontal: isIconOnly ? 10 : (isCompact ? 12 : 16),
-                vertical: 12,
+      padding: EdgeInsets.symmetric(horizontal: isIconOnly ? 2.0 : 3.0),
+      child: Tooltip(
+        message: label,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isActive ? kBrandEmerald.withValues(alpha: 0.16) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive ? kBrandEmerald.withValues(alpha: 0.45) : Colors.transparent,
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                height: 36,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isIconOnly ? 10 : (isCompact ? 11 : 14),
+                      vertical: 0,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    foregroundColor: textColor,
+                    overlayColor: Colors.white.withValues(alpha: 0.08),
+                  ),
+                  onPressed: isActive
+                      ? null
+                      : () => Navigator.of(context).pushNamedAndRemoveUntil('/pos', (r) => false),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 17, color: iconColor),
+                      if (!isIconOnly) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          isCompact ? shortLabel : label,
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: isCompact ? 13 : 13.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              shape: const ContinuousRectangleBorder(),
-              foregroundColor: color,
-            ),
-            onPressed: isActive ? null : () => Navigator.of(context).pushNamedAndRemoveUntil('/pos', (r) => false),
-            icon: Icon(icon, size: isActive ? 19 : 17),
-            label: isIconOnly ? const SizedBox.shrink() : Text(
-              isCompact ? shortLabel : label,
-              style: TextStyle(fontWeight: isActive ? FontWeight.bold : FontWeight.normal, fontSize: isCompact ? 13 : 14),
-            ),
+              if (isActive)
+                Positioned(
+                  bottom: 0,
+                  child: Container(
+                    width: 22,
+                    height: 2.5,
+                    decoration: BoxDecoration(
+                      color: kBrandMint,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -602,20 +783,20 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
 // ── Widget Group Nav (Dropdown Profesional) ──────────────────────────
 class _NavDropdownGroup extends StatefulWidget {
   final String label;
+  final String? activeSubLabel;
   final IconData icon;
   final bool isCompact;
   final bool isIconOnly;
   final bool isActive;
-  final Color activeColor;
   final List<Widget> menuChildren;
 
   const _NavDropdownGroup({
     required this.label,
+    this.activeSubLabel,
     required this.icon,
     required this.isCompact,
     required this.isIconOnly,
     required this.isActive,
-    required this.activeColor,
     required this.menuChildren,
   });
 
@@ -643,75 +824,142 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
   Widget build(BuildContext context) {
     if (widget.menuChildren.isEmpty) return const SizedBox.shrink();
 
-    final color = widget.isActive ? widget.activeColor : Colors.blueGrey;
-
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: widget.isIconOnly ? 1.0 : 2.0),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          border: widget.isActive
-              ? Border(bottom: BorderSide(color: widget.activeColor, width: 3))
-              : const Border(bottom: BorderSide(color: Colors.transparent, width: 3)),
-        ),
-        child: MenuAnchor(
-          controller: _controller,
-          style: MenuStyle(
-            elevation: WidgetStateProperty.all(8),
-            shape: WidgetStateProperty.all(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: EdgeInsets.symmetric(horizontal: widget.isIconOnly ? 2.0 : 3.0),
+      child: MenuAnchor(
+        controller: _controller,
+        style: MenuStyle(
+          elevation: WidgetStateProperty.all(10),
+          padding: WidgetStateProperty.all(EdgeInsets.zero),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
             ),
-            backgroundColor: WidgetStateProperty.all(Colors.white),
           ),
-          builder: (context, controller, child) {
-            return MouseRegion(
-              onEnter: (_) {
-                _isHoveringButton = true;
-                if (!controller.isOpen) {
-                  controller.open();
-                }
-              },
-              onExit: (_) {
-                _isHoveringButton = false;
-                _checkClose();
-              },
-              child: widget.isIconOnly
-                  ? Tooltip(
-                      message: widget.label,
-                      waitDuration: const Duration(milliseconds: 500),
-                      child: _buildButton(color, controller),
-                    )
-                  : _buildButton(color, controller),
-            );
-          },
-          menuChildren: [
-            MouseRegion(
-              onEnter: (_) => _isHoveringMenu = true,
-              onExit: (_) {
-                _isHoveringMenu = false;
-                _checkClose();
-              },
+          backgroundColor: WidgetStateProperty.all(Colors.white),
+        ),
+        builder: (context, controller, child) {
+          final isHighlighted = widget.isActive || controller.isOpen || _isHoveringButton;
+          final Color bgColor = widget.isActive
+              ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.16)
+              : (isHighlighted
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.transparent);
+          final Color borderColor = widget.isActive
+              ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
+              : (isHighlighted
+                  ? Colors.white.withValues(alpha: 0.18)
+                  : Colors.transparent);
+          final Color iconColor = widget.isActive
+              ? GlobalAppBar.kBrandMint
+              : (isHighlighted ? const Color(0xFFCBD5E1) : const Color(0xFF94A3B8));
+          final Color textColor = (widget.isActive || isHighlighted)
+              ? Colors.white
+              : const Color(0xFFCBD5E1);
+
+          return MouseRegion(
+            onEnter: (_) {
+              if (mounted) {
+                setState(() => _isHoveringButton = true);
+              }
+              if (!controller.isOpen) {
+                controller.open();
+              }
+            },
+            onExit: (_) {
+              if (mounted) {
+                setState(() => _isHoveringButton = false);
+              }
+              _checkClose();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              height: 36,
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    height: 36,
+                    child: widget.isIconOnly
+                        ? Tooltip(
+                            message: widget.label,
+                            waitDuration: const Duration(milliseconds: 500),
+                            child: _buildButton(iconColor, textColor, controller),
+                          )
+                        : _buildButton(iconColor, textColor, controller),
+                  ),
+                  if (widget.isActive)
+                    Positioned(
+                      bottom: 0,
+                      child: Container(
+                        width: 22,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: GlobalAppBar.kBrandMint,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+        menuChildren: [
+          MouseRegion(
+            onEnter: (_) => _isHoveringMenu = true,
+            onExit: (_) {
+              _isHoveringMenu = false;
+              _checkClose();
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: widget.menuChildren,
+                children: [
+                  Container(
+                    height: 3.5,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          GlobalAppBar.kBrandEmerald,
+                          GlobalAppBar.kBrandMint,
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...widget.menuChildren,
+                  const SizedBox(height: 4),
+                ],
               ),
-            )
-          ],
-        ),
+            ),
+          )
+        ],
       ),
     );
   }
 
-  Widget _buildButton(Color color, MenuController controller) {
+  Widget _buildButton(Color iconColor, Color textColor, MenuController controller) {
     return TextButton(
       style: TextButton.styleFrom(
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         padding: EdgeInsets.symmetric(
-          horizontal: widget.isIconOnly ? 10 : (widget.isCompact ? 10 : 14),
-          vertical: 12,
+          horizontal: widget.isIconOnly ? 10 : (widget.isCompact ? 10 : 13),
+          vertical: 0,
         ),
-        shape: const ContinuousRectangleBorder(),
-        foregroundColor: color,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        foregroundColor: textColor,
+        overlayColor: Colors.white.withValues(alpha: 0.08),
       ),
       onPressed: () {
         if (controller.isOpen) {
@@ -723,18 +971,39 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(widget.icon, size: widget.isActive ? 19 : 17),
+          Icon(widget.icon, size: 17, color: iconColor),
           if (!widget.isIconOnly) ...[
             const SizedBox(width: 6),
             Text(
               widget.label,
-              style: TextStyle(fontWeight: widget.isActive ? FontWeight.bold : FontWeight.normal, fontSize: 14),
+              style: TextStyle(
+                color: textColor,
+                fontWeight: widget.isActive ? FontWeight.w700 : FontWeight.w500,
+                fontSize: widget.isCompact ? 13 : 13.5,
+              ),
             ),
+            if (widget.isActive &&
+                widget.activeSubLabel != null &&
+                !widget.isCompact) ...[
+              const SizedBox(width: 5),
+              Text(
+                '• ${widget.activeSubLabel}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: GlobalAppBar.kBrandMint,
+                ),
+              ),
+            ],
             const SizedBox(width: 4),
             AnimatedRotation(
               turns: controller.isOpen ? 0.5 : 0.0,
               duration: const Duration(milliseconds: 200),
-              child: Icon(Icons.expand_more, size: 16, color: color.withValues(alpha: 0.7)),
+              child: Icon(
+                Icons.expand_more,
+                size: 16,
+                color: textColor.withValues(alpha: 0.7),
+              ),
             ),
           ]
         ],
@@ -1236,155 +1505,222 @@ class _TerminalPeripheralsDialogState
               return AlertDialog(
                 backgroundColor: Colors.white,
                 surfaceTintColor: Colors.transparent,
+                clipBehavior: Clip.antiAlias,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                titlePadding: const EdgeInsets.fromLTRB(22, 18, 16, 0),
-                contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 12),
-                title: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isOpen ? Colors.teal.shade50 : Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isOpen ? Colors.teal.shade200 : Colors.blue.shade200,
-                            ),
-                          ),
-                          child: Icon(
-                            Icons.point_of_sale_rounded,
-                            color: isOpen ? Colors.teal.shade700 : Colors.blue.shade700,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      regName,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isOpen ? Colors.teal.shade50 : Colors.amber.shade50,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: isOpen ? Colors.teal.shade200 : Colors.amber.shade300,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      isOpen ? 'TURNO #${shift.id}' : 'CERRADA',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: isOpen ? Colors.teal.shade800 : Colors.amber.shade900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Configuración de Terminal Física y Periféricos Conectados',
-                                style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade500, fontWeight: FontWeight.w500),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Refrescar dispositivos conectados',
-                          icon: (_isLoadingPrinters || _isLoadingPorts)
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.refresh_rounded, color: Colors.blueGrey),
-                          onPressed: (_isLoadingPrinters || _isLoadingPorts)
-                              ? null
-                              : _refreshHardwareLists,
-                        ),
-                        IconButton(
-                          tooltip: 'Cerrar',
-                          icon: const Icon(Icons.close_rounded, color: Colors.blueGrey),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
+                titlePadding: EdgeInsets.zero,
+                contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 12),
+                title: Container(
+                  padding: const EdgeInsets.fromLTRB(22, 18, 16, 16),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [GlobalAppBar.kNavBgStart, GlobalAppBar.kNavBgMid],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(10),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: GlobalAppBar.kNavBorderBottom,
+                        width: 1.5,
                       ),
-                      child: TabBar(
-                        labelColor: Colors.blue.shade800,
-                        unselectedLabelColor: Colors.blueGrey.shade600,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        dividerColor: Colors.transparent,
-                        indicator: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isOpen
+                                  ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.18)
+                                  : GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isOpen
+                                    ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
+                                    : GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
+                              ),
                             ),
-                          ],
-                        ),
-                        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
-                        tabs: const [
-                          Tab(
-                            height: 38,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Icon(
+                              Icons.point_of_sale_rounded,
+                              color: isOpen
+                                  ? GlobalAppBar.kBrandMint
+                                  : GlobalAppBar.kBrandAmberLight,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.desktop_windows_outlined, size: 16),
-                                SizedBox(width: 6),
-                                Text('Terminal y Turno'),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        regName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isOpen
+                                            ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.18)
+                                            : GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isOpen
+                                              ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
+                                              : GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        isOpen ? 'TURNO #${shift.id}' : 'CERRADA',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isOpen
+                                              ? GlobalAppBar.kBrandMint
+                                              : GlobalAppBar.kBrandAmberLight,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'Configuración de Terminal Física y Periféricos Conectados',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF94A3B8),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Tab(
-                            height: 38,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.print_outlined, size: 16),
-                                SizedBox(width: 6),
-                                Text('Impresora y Cajón'),
-                              ],
+                          IconButton(
+                            tooltip: 'Refrescar dispositivos conectados',
+                            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                            padding: EdgeInsets.zero,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                              ),
                             ),
+                            icon: (_isLoadingPrinters || _isLoadingPorts)
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFFCBD5E1),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 18,
+                                    color: Color(0xFFCBD5E1),
+                                  ),
+                            onPressed: (_isLoadingPrinters || _isLoadingPorts)
+                                ? null
+                                : _refreshHardwareLists,
                           ),
-                          Tab(
-                            height: 38,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.scale_outlined, size: 16),
-                                SizedBox(width: 6),
-                                Text('Balanza y Point'),
-                              ],
+                          const SizedBox(width: 6),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                            padding: EdgeInsets.zero,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                              ),
                             ),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: Color(0xFFCBD5E1),
+                            ),
+                            onPressed: () => Navigator.pop(context),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        child: TabBar(
+                          labelColor: Colors.white,
+                          unselectedLabelColor: const Color(0xFF94A3B8),
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          dividerColor: Colors.transparent,
+                          indicator: BoxDecoration(
+                            color: GlobalAppBar.kBrandEmerald.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: GlobalAppBar.kBrandMint.withValues(alpha: 0.50),
+                            ),
+                          ),
+                          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                          tabs: const [
+                            Tab(
+                              height: 36,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.desktop_windows_outlined, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Terminal y Turno'),
+                                ],
+                              ),
+                            ),
+                            Tab(
+                              height: 36,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.print_outlined, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Impresora y Cajón'),
+                                ],
+                              ),
+                            ),
+                            Tab(
+                              height: 36,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.scale_outlined, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Balanza y Point'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 content: SizedBox(
                   width: 580,
@@ -2100,11 +2436,11 @@ class UpdateBadgeWidget extends StatelessWidget {
                            (result.backendUpdate?.isCritical == true);
 
         return Padding(
-          padding: const EdgeInsets.only(right: 8.0),
+          padding: const EdgeInsets.only(right: 6.0),
           child: Tooltip(
             message: '¡Nueva actualización disponible!',
             child: InkWell(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(10),
               onTap: () {
                 final update = result.frontendUpdate ?? result.backendUpdate!;
                 showDialog(
@@ -2114,16 +2450,26 @@ class UpdateBadgeWidget extends StatelessWidget {
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: isCritical ? Colors.red.shade50 : Colors.purple.shade50,
-                  border: Border.all(color: isCritical ? Colors.red : Colors.purple.shade300),
-                  borderRadius: BorderRadius.circular(20),
+                  color: isCritical
+                      ? Colors.redAccent.withValues(alpha: 0.22)
+                      : const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                  border: Border.all(
+                    color: isCritical
+                        ? Colors.redAccent
+                        : const Color(0xFFA78BFA),
+                  ),
+                  borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: (isCritical ? Colors.red : Colors.purple).withValues(alpha: 0.3),
+                      color: (isCritical
+                              ? Colors.redAccent
+                              : const Color(0xFF8B5CF6))
+                          .withValues(alpha: 0.25),
                       blurRadius: 8,
-                      spreadRadius: 1,
+                      spreadRadius: 0.5,
                     )
                   ],
                 ),
@@ -2133,15 +2479,17 @@ class UpdateBadgeWidget extends StatelessWidget {
                     Icon(
                       Icons.system_update_rounded,
                       size: 16,
-                      color: isCritical ? Colors.red.shade700 : Colors.purple.shade700,
+                      color: isCritical
+                          ? const Color(0xFFFCA5A5)
+                          : const Color(0xFFDDD6FE),
                     ),
                     const SizedBox(width: 6),
-                    Text(
+                    const Text(
                       'Actualizar',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: isCritical ? Colors.red.shade800 : Colors.purple.shade800,
+                        color: Colors.white,
                       ),
                     ),
                   ],

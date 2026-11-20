@@ -49,6 +49,13 @@ class InventoryAlertsDataSource {
     if (response.statusCode == 200) {
       return json.decode(response.body);
     }
-    throw Exception('Error ${response.statusCode} al posponer alerta de vencimiento');
+    String? serverMsg;
+    try {
+      final decoded = json.decode(response.body);
+      if (decoded is Map && decoded['message'] != null) {
+        serverMsg = decoded['message'].toString();
+      }
+    } catch (_) {}
+    throw Exception(serverMsg ?? 'Error ${response.statusCode} al actualizar la alerta de vencimiento');
   }
 }

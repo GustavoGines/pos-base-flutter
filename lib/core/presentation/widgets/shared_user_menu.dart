@@ -17,7 +17,7 @@ class SharedUserMenu extends StatelessWidget {
       builder: (context, auth, _) {
         final userName = auth.currentUser?['name'] ?? 'Sesión';
         return Padding(
-          padding: EdgeInsets.only(right: isCompact ? 4 : 16),
+          padding: EdgeInsets.only(right: isCompact ? 2 : 4),
           child: PopupMenuButton<String>(
             position: PopupMenuPosition.under,
             offset: const Offset(0, 6),
@@ -31,24 +31,33 @@ class SharedUserMenu extends StatelessWidget {
             ),
             tooltip: 'Opciones de Usuario ($userName)',
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 8),
+              height: 34,
+              padding: EdgeInsets.symmetric(horizontal: isCompact ? 8 : 12, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.blueGrey.shade50,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.blueGrey.shade200),
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.person_outline, size: 20, color: Colors.blueGrey),
+                  const Icon(Icons.person_outline, size: 17, color: Color(0xFF34D399)),
                   if (!isCompact) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      userName,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                    const SizedBox(width: 7),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 110),
+                      child: Text(
+                        userName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Colors.white70),
                   ],
                 ],
               ),
@@ -150,6 +159,57 @@ class SharedUserMenu extends StatelessWidget {
               final hasZReports = settings.features.zReports;
 
               return <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          userName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          'SESIÓN ACTIVA',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF059669),
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(height: 8),
                 if (hasZReports)
                   _buildMenuItem(
                     value: 'shift_audit',

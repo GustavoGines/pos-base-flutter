@@ -96,6 +96,10 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
       appBar: AppBar(
         title: const Text('Apertura de Caja'),
         centerTitle: true,
+        backgroundColor: const Color(0xFF121C33),
+        foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: const Border(bottom: BorderSide(color: Color(0xFF1E2D4A), width: 1)),
       ),
       body: Center(
         child: ConstrainedBox(

@@ -1001,7 +1001,9 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                         final isOut = typeStr == 'out' ||
                             typeStr == 'sale' ||
                             typeStr == 'decrement' ||
-                            typeStr == 'sale_ecommerce';
+                            typeStr == 'sale_ecommerce' ||
+                            typeStr == 'waste' ||
+                            typeStr == 'production_out';
                         final typeLabel = switch (typeStr) {
                           'in' => 'INGRESO',
                           'out' => 'EGRESO',
@@ -1009,6 +1011,10 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                           'sale_ecommerce' => 'VENTA ONLINE',
                           'decrement' => 'BAJA',
                           'increment' => 'ALTA',
+                          'waste' => 'MERMA',
+                          'production_in' => 'PRODUCCIÓN (+)',
+                          'production_out' => 'INSUMO PROD.',
+                          'purchase' => 'COMPRA',
                           _ => typeStr.toUpperCase(),
                         };
 

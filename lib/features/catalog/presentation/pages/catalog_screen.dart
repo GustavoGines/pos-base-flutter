@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
@@ -711,7 +712,21 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildExpiryCell(Product p) {
+  void _openProductBatches(CatalogProvider provider, Product p) {
+    if (p.isCombo || p.isService) return;
+    showDialog(
+      context: context,
+      builder: (_) => ProductBatchesDialog(provider: provider, product: p),
+    ).then((_) {
+      if (!mounted) return;
+      try {
+        context.read<InventoryAlertsProvider>().fetchAlerts();
+      } catch (_) {}
+    });
+  }
+
+  Widget _buildExpiryCell(Product p, CatalogProvider provider) {
+    final canManageLots = !p.isCombo && !p.isService;
     final rawExp = p.expirationDate;
     if (rawExp != null && rawExp.isNotEmpty) {
       final expDt = DateTime.tryParse(rawExp);
@@ -723,61 +738,116 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final label = expDt != null
           ? '${expDt.day.toString().padLeft(2, '0')}/${expDt.month.toString().padLeft(2, '0')}/${expDt.year}'
           : rawExp;
-      final warnThreshold = (p.expiryAlertDays ?? 15).clamp(4, 365);
+      final configuredPreAlert =
+          (p.expiryAlertDays != null && p.expiryAlertDays! > 0)
+              ? p.expiryAlertDays!
+              : 15;
+      final shelfLife =
+          (p.vencimientoDias != null && p.vencimientoDias! > 0)
+              ? p.vencimientoDias
+              : null;
+
+      final int criticalDays;
+      final int preAlertThreshold;
+      if (shelfLife != null && shelfLife <= 5) {
+        criticalDays = (shelfLife * 0.35).floor().clamp(1, 2);
+        preAlertThreshold = math
+            .max(criticalDays + 1, (shelfLife * 0.65).floor())
+            .clamp(criticalDays, math.max(criticalDays, shelfLife - 1));
+      } else {
+        criticalDays = configuredPreAlert <= 5
+            ? (configuredPreAlert * 0.35).floor().clamp(1, 2)
+            : 3;
+        preAlertThreshold = shelfLife != null
+            ? math.min(configuredPreAlert, math.max(criticalDays, shelfLife - 1))
+            : configuredPreAlert;
+      }
 
       final Color fgColor;
       final Color bgColor;
       final Color borderColor;
-      if (daysLeft <= 3) {
+      if (daysLeft <= 0) {
+        fgColor = Colors.white;
+        bgColor = Colors.red.shade700;
+        borderColor = Colors.red.shade900;
+      } else if (daysLeft <= criticalDays) {
         fgColor = Colors.red.shade800;
         bgColor = Colors.red.shade50;
-        borderColor = Colors.red.shade200;
-      } else if (daysLeft <= warnThreshold) {
+        borderColor = Colors.red.shade300;
+      } else if (daysLeft <= preAlertThreshold) {
         fgColor = Colors.amber.shade900;
         bgColor = Colors.amber.shade50;
-        borderColor = Colors.amber.shade300;
+        borderColor = Colors.amber.shade400;
       } else {
         fgColor = Colors.green.shade800;
         bgColor = Colors.green.shade50;
-        borderColor = Colors.green.shade200;
+        borderColor = Colors.green.shade300;
       }
 
-      final String tooltipMsg;
+      final String baseTooltipMsg;
       if (expDt == null) {
-        tooltipMsg = 'Vencimiento: $label';
+        baseTooltipMsg = 'Vencimiento: $label';
       } else if (daysLeft < 0) {
         final overdue = -daysLeft;
-        tooltipMsg = 'Vencido hace $overdue día${overdue == 1 ? '' : 's'} ($label)';
+        baseTooltipMsg = 'Vencido hace $overdue día${overdue == 1 ? '' : 's'} ($label)';
       } else if (daysLeft == 0) {
-        tooltipMsg = '¡Vence HOY! ($label)';
+        baseTooltipMsg = '¡Vence HOY! ($label)';
       } else if (daysLeft == 1) {
-        tooltipMsg = 'Vence mañana ($label)';
+        baseTooltipMsg = 'Vence mañana ($label)';
       } else {
-        tooltipMsg = 'Vence el $label (en $daysLeft días)';
+        baseTooltipMsg = 'Vence el $label (en $daysLeft días)';
       }
+
+      final tooltipMsg = canManageLots
+          ? '$baseTooltipMsg • Clic para ver/administrar lotes'
+          : baseTooltipMsg;
+
+      final badge = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: borderColor),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (daysLeft <= 0) ...[
+                Icon(Icons.warning_amber_rounded, size: 12, color: fgColor),
+                const SizedBox(width: 3),
+              ] else if (p.trackBatches && canManageLots) ...[
+                Icon(Icons.layers_outlined, size: 12, color: fgColor),
+                const SizedBox(width: 3),
+              ],
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: fgColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
       return Align(
         alignment: Alignment.centerLeft,
         child: Tooltip(
           message: tooltipMsg,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: borderColor),
-            ),
-            child: Text(
-              label,
-              maxLines: 1,
-              softWrap: false,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: fgColor,
-              ),
-            ),
-          ),
+          child: canManageLots
+              ? InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _openProductBatches(provider, p),
+                  child: badge,
+                )
+              : badge,
         ),
       );
     }
@@ -787,18 +857,90 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final fgColor = dias <= 30
           ? Colors.red.shade700
           : (dias <= 90 ? Colors.amber.shade900 : Colors.green.shade700);
+      final chip = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: canManageLots
+              ? Border.all(color: fgColor.withValues(alpha: 0.35))
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (p.trackBatches && canManageLots) ...[
+              Icon(Icons.layers_outlined, size: 12, color: fgColor),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              '$dias d',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: fgColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      );
+
       return Align(
         alignment: Alignment.centerLeft,
         child: Tooltip(
-          message: 'Vence $dias días después del envasado',
-          child: Text(
-            '$dias d',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: fgColor,
+          message: canManageLots
+              ? 'Vence $dias días después del envasado • Clic para ver/administrar lotes'
+              : 'Vence $dias días después del envasado',
+          child: canManageLots
+              ? InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _openProductBatches(provider, p),
+                  child: chip,
+                )
+              : chip,
+        ),
+      );
+    }
+
+    if (canManageLots) {
+      final isBatchActive = p.trackBatches;
+      final fg = isBatchActive ? Colors.deepOrange.shade700 : Colors.grey.shade600;
+      final bg = isBatchActive ? Colors.orange.shade50 : Colors.grey.shade100;
+      final border = isBatchActive ? Colors.orange.shade300 : Colors.grey.shade300;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: isBatchActive
+              ? 'Control por lotes activo (sin vencimiento cargado) • Clic para administrar lotes'
+              : 'Clic para ingresar o administrar lotes de vencimiento',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => _openProductBatches(provider, p),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isBatchActive) ...[
+                    Icon(Icons.layers_outlined, size: 12, color: fg),
+                    const SizedBox(width: 3),
+                  ],
+                  Text(
+                    isBatchActive ? 'Lotes' : '+ Lote',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       );
@@ -816,7 +958,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const double wId = 48;
     const double wBal = 58;
     const double wActivo = 70;
-    const double wVto = 104;
+    const double wVto = 116;
     const double wAcciones = 168;
 
     const int fNombre = 5;
@@ -1081,7 +1223,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               tableCell(width: wActivo, child: Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
-              tableCell(width: wVto, child: _buildExpiryCell(p)),
+              tableCell(width: wVto, child: _buildExpiryCell(p, provider)),
               tableCell(width: wAcciones, child: Wrap(
                 spacing: 4,
                 runSpacing: 4,
@@ -1104,16 +1246,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       tooltip: p.trackBatches ? 'Lotes y Vencimientos' : 'Administrar Lotes',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => ProductBatchesDialog(provider: provider, product: p),
-                        ).then((_) {
-                          if (mounted) {
-                            context.read<InventoryAlertsProvider>().fetchAlerts();
-                          }
-                        });
-                      },
+                      onPressed: () => _openProductBatches(provider, p),
                     ),
                   IconButton(
                     icon: const Icon(Icons.warehouse_outlined, size: 18),

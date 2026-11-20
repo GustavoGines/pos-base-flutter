@@ -46,6 +46,8 @@ class ProductionOrdersDialog extends StatefulWidget {
   final int initialTabIndex;
   final int? filterIngredientProductId;
   final int? initialExplicitBatchId;
+  final String? initialExplicitBatchCode;
+  final double? initialExplicitBatchAvailableQty;
 
   const ProductionOrdersDialog({
     super.key,
@@ -54,6 +56,8 @@ class ProductionOrdersDialog extends StatefulWidget {
     this.initialTabIndex = 0,
     this.filterIngredientProductId,
     this.initialExplicitBatchId,
+    this.initialExplicitBatchCode,
+    this.initialExplicitBatchAvailableQty,
   });
 
   @override
@@ -69,6 +73,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
   final Map<int, Product> _remoteTargetPool = {};
   Product? _sourceTransformProduct;
   bool _loadingCatalog = true;
+  bool _usingTransformFallback = false;
 
   // ── Modo Planilla Rápida Matutina vs Individual ──
   bool _batchMode = false;
@@ -155,6 +160,9 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
   bool _isEligibleTargetProduct(Product p) {
     if (p.isCombo || p.isService || !p.active) return false;
     if (widget.filterIngredientProductId == null) return true;
+    if (_usingTransformFallback) {
+      return p.id != widget.filterIngredientProductId;
+    }
     return p.recipeIngredients?.any((raw) {
           final ingId = (raw['ingredient_product_id'] as num?)?.toInt() ??
               (raw['id'] as num?)?.toInt();
@@ -182,14 +190,16 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
         _sourceTransformProduct = combined[widget.filterIngredientProductId!] ??
             await widget.provider.resolveProductById(widget.filterIngredientProductId!);
       }
+      _usingTransformFallback = false;
       var targets = combined.values
           .where(_isEligibleTargetProduct)
           .toList();
       // Fallback en modo Transformación/Re-elaboración: si ninguna receta previa incluye aún este lote/producto,
       // habilitar todos los productos elegibles activos distintos del insumo origen para permitir re-elaboración directa.
       if (targets.isEmpty && widget.filterIngredientProductId != null) {
+        _usingTransformFallback = true;
         targets = combined.values
-            .where((p) => !p.isCombo && !p.isService && p.active && p.id != widget.filterIngredientProductId)
+            .where(_isEligibleTargetProduct)
             .toList();
       }
       targets.sort((a, b) {
@@ -277,15 +287,19 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
         _sourceTransformProduct != null &&
         !_ingredientLines.any((l) => l.productId == widget.filterIngredientProductId)) {
       final src = _sourceTransformProduct!;
+      final explicitAvail = widget.initialExplicitBatchAvailableQty;
+      final defaultQty = (explicitAvail != null && explicitAvail > 0)
+          ? math.min(1.0, explicitAvail)
+          : 1.0;
       _ingredientLines.add(
         _DraftIngredientLine(
           productId: src.id,
           name: src.name,
           unitType: src.unitType,
-          currentStock: src.stock,
+          currentStock: explicitAvail ?? src.stock,
           unitCost: src.costPrice,
           trackBatches: src.trackBatches,
-          initialQty: 1.0,
+          initialQty: defaultQty,
         ),
       );
     }
@@ -1712,6 +1726,35 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.filterIngredientProductId != null && _sourceTransformProduct != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.teal.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.transform, size: 17, color: Colors.teal.shade800),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Re-elaboración desde ${_sourceTransformProduct!.name}'
+                      '${widget.initialExplicitBatchCode != null && widget.initialExplicitBatchCode!.isNotEmpty ? ' • Lote ${widget.initialExplicitBatchCode}' : (widget.initialExplicitBatchId != null ? ' • Lote #${widget.initialExplicitBatchId}' : '')}'
+                      '${widget.initialExplicitBatchAvailableQty != null ? ' (Disp: ${widget.initialExplicitBatchAvailableQty!.toQty()} ${_sourceTransformProduct!.unitType})' : ''}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.teal.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           SearchableSelectField<int>(
             value: _selectedTarget?.id,
             labelText: 'Producto terminado / semi-elaborado a producir *',

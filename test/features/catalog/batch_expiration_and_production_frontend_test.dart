@@ -14,6 +14,7 @@ import 'package:frontend_desktop/features/catalog/presentation/widgets/expired_b
 import 'package:frontend_desktop/features/catalog/presentation/widgets/print_labels_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/production_orders_dialog.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_adjustment_dialog.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
@@ -1336,6 +1337,293 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets(
+      'Campanita con lote: muestra 10 opciones compactas, adapta stage=7 y quitar vto limpia PosProvider',
+      (tester) async {
+        tester.view.physicalSize = const Size(1100, 760);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        SharedPreferences.setMockInitialValues({});
+
+        final soonExp = DateFormat('yyyy-MM-dd').format(
+          DateTime.now().add(const Duration(days: 2)),
+        );
+        final cake = Product(
+          id: 888,
+          name: 'Torta Rogel Loteada',
+          internalCode: 'PROD-888',
+          costPrice: 5000,
+          sellingPrice: 12000,
+          stock: 4,
+          active: true,
+          isSoldByWeight: false,
+          trackBatches: true,
+          vencimientoDias: 4,
+          expirationDate: soonExp,
+        );
+
+        String? capturedSnoozeAction;
+        final alertsClient = MockClient((req) async {
+          if (req.url.path.endsWith('/inventory/alerts')) {
+            return http.Response(
+              jsonEncode({
+                'alerts': [],
+                'expiration_alerts': [
+                  {
+                    'alert_type': 'expiration',
+                    'alert_level': 'warning',
+                    'stage': 7,
+                    'stage_code': 'warning_7d',
+                    'product_id': 888,
+                    'batch_id': 55,
+                    'batch_code': 'LOT-55',
+                    'product_name': cake.name,
+                    'days_until_expiry': 2,
+                    'expiry_stage_label': 'Próximo',
+                    'expiration_date': soonExp,
+                    'current_stock': 4,
+                  },
+                ],
+                'deficit_alerts': [],
+              }),
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          if (req.url.path.endsWith('/snooze')) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            capturedSnoozeAction = body['action']?.toString();
+            return http.Response(
+              jsonEncode({
+                'message': 'Fecha de vencimiento quitada del producto.',
+                'product': {
+                  'id': 888,
+                  'name': cake.name,
+                  'internal_code': 'PROD-888',
+                  'cost_price': 5000,
+                  'selling_price': 12000,
+                  'stock': 4,
+                  'active': true,
+                  'is_sold_by_weight': false,
+                  'track_batches': true,
+                  'vencimiento_dias': 4,
+                  'expiration_date': null,
+                },
+              }),
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response('{}', 200);
+        });
+
+        final alertsProv = InventoryAlertsProvider(
+          dataSource: InventoryAlertsDataSource(
+            baseUrl: 'http://localhost/api',
+            client: alertsClient,
+          ),
+        );
+        final fakeOfferRepo = _FakeOfferRepository();
+        final offerProv = OfferProvider(repository: fakeOfferRepo);
+        final posDs = PosRemoteDataSourceImpl(baseUrl: 'http://localhost/api', client: alertsClient);
+        final posRepo = PosRepositoryImpl(remoteDataSource: posDs);
+        final posProv = PosProvider(
+          processSaleUseCase: ProcessSaleUseCase(posRepo),
+          searchProductsUseCase: SearchProductsUseCase(posRepo),
+          repository: posRepo,
+          remoteDataSource: posDs,
+        );
+        expect(posProv.requestAddToCartWithPromo(cake), isTrue);
+        expect(posProv.cart.first.product.expirationDate, soonExp);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<InventoryAlertsProvider>.value(value: alertsProv),
+              ChangeNotifierProvider<OfferProvider>.value(value: offerProv),
+              ChangeNotifierProvider<PosProvider>.value(value: posProv),
+              ChangeNotifierProvider<CatalogProvider>(
+                create: (_) => _FakeBatchCatalogProvider(cake),
+              ),
+              ChangeNotifierProvider<SettingsProvider>(
+                create: (_) => _FakeSettingsProvider(),
+              ),
+            ],
+            child: const MaterialApp(
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.topRight,
+                  child: InventoryAlertsWidget(),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.notifications_active));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(Icons.snooze));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Registrar Merma / Dar de baja lote'), findsOneWidget);
+        expect(find.text('Transformar / Re-elaborar en receta'), findsOneWidget);
+        expect(find.text('Crear Oferta de Liquidación (%)'), findsOneWidget);
+        expect(find.text('Actualizar fecha de vencimiento'), findsOneWidget);
+        expect(find.text('Silenciar hasta aviso crítico'), findsOneWidget);
+        expect(find.text('Posponer por 1 día'), findsOneWidget);
+        expect(find.text('Posponer por 3 días'), findsOneWidget);
+        expect(find.text('Gestionar lotes del producto'), findsOneWidget);
+        expect(find.text('Editar producto en Catálogo'), findsOneWidget);
+        expect(find.text('Lote vendido / Quitar fecha vto.'), findsOneWidget);
+
+        await tester.tap(find.text('Lote vendido / Quitar fecha vto.'));
+        await tester.pumpAndSettle();
+        expect(find.text('Quitar fecha de vencimiento'), findsOneWidget);
+
+        await tester.tap(find.text('Quitar fecha'));
+        await tester.pumpAndSettle();
+
+        expect(capturedSnoozeAction, 'clear_expiration');
+        expect(posProv.cart.first.product.expirationDate, isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'ProductionOrdersDialog en Transformación con fallback muestra banner origen y permite búsqueda remota',
+      (tester) async {
+        tester.view.physicalSize = const Size(980, 740);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final sourceCake = Product(
+          id: 50,
+          name: 'Bizcochuelo Vainilla',
+          internalCode: '00050',
+          costPrice: 2000,
+          sellingPrice: 4500,
+          stock: 6,
+          active: true,
+          isSoldByWeight: false,
+          trackBatches: true,
+        );
+        final remoteDest = Product(
+          id: 51,
+          name: 'Torta Tres Leches Especial',
+          internalCode: '00051',
+          costPrice: 3500,
+          sellingPrice: 9500,
+          stock: 1,
+          active: true,
+          isSoldByWeight: false,
+        );
+
+        final fakeProvider = _FakeBatchCatalogProvider(
+          sourceCake,
+          remoteMatches: [remoteDest],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ProductionOrdersDialog(
+                provider: fakeProvider,
+                filterIngredientProductId: sourceCake.id,
+                initialExplicitBatchId: 55,
+                initialExplicitBatchCode: 'LOT-55',
+                initialExplicitBatchAvailableQty: 4,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining('Re-elaboración desde Bizcochuelo Vainilla • Lote LOT-55 (Disp: 4 un)'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byIcon(Icons.arrow_drop_down));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Buscar por nombre, código o barras...'),
+          'Tres Leches',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Torta Tres Leches Especial'), findsOneWidget);
+        await tester.tap(find.text('Torta Tres Leches Especial'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Bizcochuelo Vainilla'), findsOneWidget);
+        expect(find.textContaining('Disponible: 4 un'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'StockAdjustmentDialog en producto sin lotes muestra aviso de auto-activación y botón quitar vencimiento',
+      (tester) async {
+        tester.view.physicalSize = const Size(900, 740);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final sugar = Product(
+          id: 901,
+          name: 'Azúcar Ledesma 1kg',
+          internalCode: '81201',
+          costPrice: 900,
+          sellingPrice: 1800,
+          stock: 10,
+          active: true,
+          isSoldByWeight: false,
+          trackBatches: false,
+          vencimientoDias: 90,
+        );
+        final fakeProvider = _FakeBatchCatalogProvider(sugar);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ChangeNotifierProvider<CatalogProvider>.value(
+                value: fakeProvider,
+                child: StockAdjustmentDialog(provider: fakeProvider, product: sugar),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining('Al guardar con lote o vencimiento, este producto activará el control por lotes automáticamente'),
+          findsOneWidget,
+        );
+        expect(find.byTooltip('Quitar vencimiento'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Quitar vencimiento'));
+        await tester.pumpAndSettle();
+        expect(find.text('Vencimiento (opc)'), findsOneWidget);
+        expect(find.textContaining('activará el control por lotes'), findsNothing);
+
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Código de Lote (opc.)'),
+          'LED-2026',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('activará el control por lotes automáticamente'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
 
@@ -1358,6 +1646,20 @@ class _FakeBatchCatalogProvider extends ChangeNotifier implements CatalogProvide
 
   @override
   List<Product> get products => [sample, ...extraInitialProducts];
+
+  @override
+  Product? get lastUpdatedProduct => null;
+
+  @override
+  void syncProductSnapshot(Product updatedProduct) {}
+
+  @override
+  Future<Product?> resolveProductById(int productId) async {
+    for (final p in [sample, ...extraInitialProducts, ...remoteMatches]) {
+      if (p.id == productId) return p;
+    }
+    return null;
+  }
 
   @override
   Future<List<Product>> searchProductsRemote(
@@ -1539,6 +1841,9 @@ class _FakeOfferRepository implements OfferRepository {
     this.initialActive = const [],
     this.initialAll = const [],
   });
+
+  @override
+  Future<List<Product>> getProductsByIds(List<int> ids) async => const [];
 
   @override
   Future<List<OfferModel>> getActiveOffers() async => List.from(initialActive);

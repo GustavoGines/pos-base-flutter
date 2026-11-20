@@ -11,6 +11,9 @@ class InventoryAlertsProvider extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  Map<String, dynamic>? _lastSnoozeResponse;
+  Map<String, dynamic>? get lastSnoozeResponse => _lastSnoozeResponse;
+
   List<dynamic> _alerts = [];
   List<dynamic> get alerts => _alerts;
 
@@ -46,18 +49,21 @@ class InventoryAlertsProvider extends ChangeNotifier {
     String? expirationDate,
     int? batchId,
   }) async {
+    _error = null;
+    _lastSnoozeResponse = null;
     try {
-      await dataSource.snoozeExpirationAlert(
+      final res = await dataSource.snoozeExpirationAlert(
         productId,
         action: action,
         days: days,
         expirationDate: expirationDate,
         batchId: batchId,
       );
+      _lastSnoozeResponse = res;
       await fetchAlerts();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
       return false;
     }

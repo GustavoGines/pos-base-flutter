@@ -2,10 +2,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../data/models/product_batch_model.dart';
 import '../../domain/entities/product.dart';
@@ -421,10 +423,18 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _submitting = true);
+    String editPermission = AppPermissions.manageCatalog;
+    try {
+      final auth = context.read<AuthProvider>();
+      if (!auth.hasPermission(AppPermissions.manageCatalog) &&
+          auth.hasPermission(AppPermissions.adjustStock)) {
+        editPermission = AppPermissions.adjustStock;
+      }
+    } catch (_) {}
     await AdminPinDialog.protectAction(
       context,
       action: 'Modificar Lote ${batch.batchCode}',
-      permissionKey: AppPermissions.manageCatalog,
+      permissionKey: editPermission,
       onAuthorized: () async {
         final res = await widget.provider.updateProductBatch(
           batch.id,
@@ -1131,6 +1141,9 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                                                               filterIngredientProductId:
                                                                   widget.product.id,
                                                               initialExplicitBatchId: b.id,
+                                                              initialExplicitBatchCode: b.batchCode,
+                                                              initialExplicitBatchAvailableQty:
+                                                                  b.availableToSell,
                                                             ),
                                                           );
                                                           if (mounted) _loadBatches();

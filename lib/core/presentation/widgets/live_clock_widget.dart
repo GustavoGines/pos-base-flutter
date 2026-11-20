@@ -65,15 +65,16 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
     final timeString = widget.showSeconds ? '$hour:$minute:$second' : '$hour:$minute';
     final dateString = widget.compact ? '$dayNum $monthName' : '$dayName $dayNum $monthName ${_now.year}';
 
-    final effectiveTextColor = widget.textColor ?? Colors.blueGrey.shade800;
-    final effectiveBgColor = widget.backgroundColor ?? Colors.grey.shade100;
+    final effectiveTextColor = widget.textColor ?? const Color(0xFFCBD5E1);
+    final effectiveBgColor = widget.backgroundColor ?? Colors.white.withValues(alpha: 0.06);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: effectiveBgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blueGrey.shade200.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -82,7 +83,7 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
           Icon(
             Icons.access_time_rounded,
             size: widget.fontSize + 2,
-            color: Colors.blueAccent.shade700,
+            color: const Color(0xFF34D399),
           ),
           const SizedBox(width: 6),
           Text(
@@ -99,8 +100,8 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
             child: Container(
               width: 4,
               height: 4,
-              decoration: BoxDecoration(
-                color: Colors.blueGrey.shade400,
+              decoration: const BoxDecoration(
+                color: Colors.white38,
                 shape: BoxShape.circle,
               ),
             ),
@@ -110,7 +111,7 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
             style: TextStyle(
               fontSize: widget.fontSize,
               fontWeight: FontWeight.bold,
-              color: Colors.blueGrey.shade900,
+              color: Colors.white,
               fontFamily: 'monospace',
               letterSpacing: 0.5,
             ),

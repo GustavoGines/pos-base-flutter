@@ -506,5 +506,53 @@ void main() {
       expect(find.text('2% c/IVA ▾'), findsOneWidget);
       expect(find.textContaining('Suma fiscal coincide'), findsOneWidget);
     });
+
+    testWidgets(
+      'Botón + Otro lote permite desdoblar un mismo producto en múltiples lotes dentro de la misma factura sin error de Key ni overflow',
+      (tester) async {
+        tester.view.physicalSize = const Size(1024, 768);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final sugarInvoice = {
+          'id': 95,
+          'type': 'delivery_note',
+          'voucher_letter': 'S/D',
+          'affects_vat_book': false,
+          'amount': 12000.0,
+          'items': [
+            {
+              'product_id': 81250,
+              'product_name': 'Azúcar Ledesma 1kg Pack',
+              'quantity': 10,
+              'unit_cost': 1200.0,
+              'previous_cost': 1000.0,
+              'current_selling_price': 1800.0,
+              'track_batches': false,
+            },
+          ],
+        };
+
+        await tester.pumpWidget(buildTestDialog(initialInvoice: sugarInvoice));
+        await tester.pumpAndSettle();
+
+        final otherLotBtn = find.text('+ Otro lote (distinto vto.)');
+        expect(otherLotBtn, findsOneWidget);
+        await tester.ensureVisible(otherLotBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(otherLotBtn);
+        await tester.pumpAndSettle();
+
+        // Ahora existen 2 renglones del mismo producto sin DuplicateKey y con sus etiquetas Lote 1/2 y Lote 2/2
+        expect(find.text('Azúcar Ledesma 1kg Pack'), findsNWidgets(2));
+        expect(find.text('Lote 1/2'), findsOneWidget);
+        expect(find.text('Lote 2/2'), findsOneWidget);
+        expect(find.text('Otro lote de este producto (distinto vencimiento)'), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }

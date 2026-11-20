@@ -20,6 +20,7 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 
 import '../../../catalog/presentation/providers/catalog_provider.dart';
 import '../../../catalog/presentation/pages/catalog_screen.dart' show ProductFormDialog;
+import '../../../reports/presentation/providers/inventory_alerts_provider.dart';
 import 'dart:async';
 
 class _InvoiceItemModel {
@@ -307,6 +308,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           active: true,
           isSoldByWeight: isWeight,
           unitType: unitType,
+          trackBatches: map['track_batches'] == true ||
+              map['track_batches'] == 1 ||
+              prodMap['track_batches'] == true ||
+              prodMap['track_batches'] == 1,
+          vencimientoDias: int.tryParse(
+              (map['vencimiento_dias'] ?? prodMap['vencimiento_dias'] ?? '').toString()),
         );
 
         _items.add(
@@ -483,6 +490,25 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     _searchController.clear();
     _searchResults = [];
     _searchFocus.requestFocus();
+  }
+
+  void _addAnotherLotRow(int index, _InvoiceItemModel sourceItem) {
+    setState(() {
+      sourceItem.showLotFields = true;
+      final newItem = _InvoiceItemModel(
+        product: sourceItem.product,
+        quantity: 1,
+        newCost: sourceItem.newCost,
+        manualPrice: sourceItem.manualPrice,
+        updatePrice: sourceItem.updatePrice,
+        vatRate: sourceItem.vatRate,
+        batchId: null,
+        expirationDate: null,
+        autoDefaultExpiry: false,
+      )..showLotFields = true;
+      _items.insert(index + 1, newItem);
+      _autoRecalculateFiscalIfNeeded();
+    });
   }
 
   void _handleCostChange(_InvoiceItemModel item, String val) {
@@ -1218,6 +1244,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           if (catalogProv != null) {
             unawaited(catalogProv.loadProducts());
           }
+          try {
+            unawaited(context.read<InventoryAlertsProvider>().fetchAlerts());
+          } catch (_) {}
           if (mounted) {
             Navigator.of(context).pop(true);
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1235,6 +1264,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             if (catalogProv != null) {
               unawaited(catalogProv.loadProducts());
             }
+            try {
+              unawaited(context.read<InventoryAlertsProvider>().fetchAlerts());
+            } catch (_) {}
             Navigator.of(context).pop(true);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -2058,8 +2090,19 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             ? Colors.deepOrange
             : (item.vatRate == 0.0 ? Colors.blueGrey : Colors.indigo));
 
+    int lotIndex = 0;
+    int totalLotsForProduct = 0;
+    for (int idx = 0; idx < _items.length; idx++) {
+      if (_items[idx].product.id == item.product.id) {
+        totalLotsForProduct++;
+        if (idx <= index) {
+          lotIndex++;
+        }
+      }
+    }
+
     return Padding(
-      key: ValueKey('invoice_item_${item.product.id}'),
+      key: ObjectKey(item),
       padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2251,18 +2294,38 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 alignment: Alignment.centerLeft,
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: const Icon(Icons.layers_outlined, size: 15),
-                    label: const Text(
-                      '+ Asignar Lote / Vencimiento de este ingreso',
-                      style: TextStyle(fontSize: 11.5),
-                    ),
-                    onPressed: () => setState(() => item.showLotFields = true),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.layers_outlined, size: 15),
+                        label: const Text(
+                          '+ Asignar Lote / Vencimiento de este ingreso',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                        onPressed: () => setState(() => item.showLotFields = true),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: Colors.deepOrange.shade700,
+                        ),
+                        icon: const Icon(Icons.add_circle_outline, size: 15),
+                        label: const Text(
+                          '+ Otro lote (distinto vto.)',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                        onPressed: () => _addAnotherLotRow(index, item),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -2279,66 +2342,123 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         : Colors.grey.shade300,
                   ),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 5,
-                      child: TextFormField(
-                        controller: item.batchCodeCtrl,
-                        decoration: InputDecoration(
-                          labelText: item.product.trackBatches
-                              ? 'Código de Lote (opc. auto)'
-                              : 'Código de Lote (control por lotes)',
-                          hintText: 'Ej. FAC-00123',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.qr_code_outlined, size: 16),
+                    if (totalLotsForProduct > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.deepOrange.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Lote $lotIndex/$totalLotsForProduct',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.deepOrange.shade900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: TextFormField(
+                            controller: item.batchCodeCtrl,
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              labelText: 'Código de Lote (opc. auto)',
+                              hintText: 'Ej. FAC-00123',
+                              isDense: true,
+                              prefixIcon: Icon(Icons.qr_code_outlined, size: 16),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 5,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 12),
+                            ),
+                            icon: Icon(
+                              Icons.event_available_outlined,
+                              size: 16,
+                              color: item.expirationDate != null
+                                  ? Colors.deepOrange
+                                  : null,
+                            ),
+                            label: Text(
+                              item.expirationDate != null
+                                  ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
+                                  : 'Fecha de Vencimiento',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onPressed: () async {
+                              final picked = await showCompactDatePicker(
+                                context: context,
+                                initialDate: item.expirationDate ??
+                                    DateTime.now().add(const Duration(days: 7)),
+                                helpText:
+                                    'Vencimiento del lote (${item.product.name})',
+                              );
+                              if (picked != null) {
+                                setState(() => item.expirationDate = picked);
+                              }
+                            },
+                          ),
+                        ),
+                        if (item.expirationDate != null)
+                          IconButton(
+                            tooltip: 'Limpiar vencimiento',
+                            icon: const Icon(Icons.clear, size: 17),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () =>
+                                setState(() => item.expirationDate = null),
+                          ),
+                      ],
+                    ),
+                    if (!item.product.trackBatches &&
+                        (item.batchCodeCtrl.text.trim().isNotEmpty ||
+                            item.expirationDate != null))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Al guardar, se activará el control por lotes en este producto conservando el stock actual por separado.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.teal.shade900,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: Colors.deepOrange.shade700,
+                          ),
+                          icon: const Icon(Icons.add_circle_outline, size: 15),
+                          label: const Text(
+                            'Otro lote de este producto (distinto vencimiento)',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: () => _addAnotherLotRow(index, item),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 5,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 12),
-                        ),
-                        icon: Icon(
-                          Icons.event_available_outlined,
-                          size: 16,
-                          color: item.expirationDate != null
-                              ? Colors.deepOrange
-                              : null,
-                        ),
-                        label: Text(
-                          item.expirationDate != null
-                              ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
-                              : 'Fecha de Vencimiento',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onPressed: () async {
-                          final picked = await showCompactDatePicker(
-                            context: context,
-                            initialDate: item.expirationDate ??
-                                DateTime.now().add(const Duration(days: 7)),
-                            helpText:
-                                'Vencimiento del lote (${item.product.name})',
-                          );
-                          if (picked != null) {
-                            setState(() => item.expirationDate = picked);
-                          }
-                        },
-                      ),
-                    ),
-                    if (item.expirationDate != null)
-                      IconButton(
-                        tooltip: 'Limpiar vencimiento',
-                        icon: const Icon(Icons.clear, size: 17),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () =>
-                            setState(() => item.expirationDate = null),
-                      ),
                   ],
                 ),
               ),

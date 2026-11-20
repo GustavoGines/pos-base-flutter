@@ -5,6 +5,8 @@ import '../providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/expired_batches_sweep_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
@@ -16,6 +18,7 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -164,7 +167,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         );
         return;
       }
-      await Navigator.of(context).pushNamed('/catalog', arguments: product);
+      final currentRoute = ModalRoute.of(context)?.settings.name;
+      if (currentRoute == '/catalog') {
+        await Navigator.of(context).pushReplacementNamed('/catalog', arguments: product);
+      } else {
+        await Navigator.of(context).pushNamed('/catalog', arguments: product);
+      }
       if (mounted) {
         alertsProvider.fetchAlerts();
       }
@@ -175,6 +183,81 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
             content: Text('Producto no disponible en catálogo local.')),
       );
     }
+  }
+
+  void _syncCatalogAndPosProduct(Product? product) {
+    if (!mounted || product == null) return;
+    try {
+      context.read<CatalogProvider>().syncProductSnapshot(product);
+    } catch (_) {}
+    try {
+      context.read<PosProvider>().syncUpdatedCatalogProduct(product);
+    } catch (_) {}
+    try {
+      context.read<OfferProvider>().syncUpdatedProduct(product);
+    } catch (_) {}
+  }
+
+  void _syncPosCartFromCatalog(CatalogProvider catalogProvider) {
+    if (!mounted) return;
+    try {
+      final posProv = context.read<PosProvider>();
+      final cartIds = posProv.cart.map((c) => c.product.id).where((id) => id > 0).toSet();
+      if (cartIds.isNotEmpty) {
+        for (final p in catalogProvider.products) {
+          if (cartIds.contains(p.id)) {
+            posProv.syncUpdatedCatalogProduct(p);
+          }
+        }
+      }
+      Product? lastUpdated;
+      try {
+        lastUpdated = catalogProvider.lastUpdatedProduct;
+      } catch (_) {}
+      if (lastUpdated != null) {
+        posProv.syncUpdatedCatalogProduct(lastUpdated);
+        try {
+          context.read<OfferProvider>().syncUpdatedProduct(lastUpdated);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  String _resolveCatalogOrStockPermission(BuildContext ctx) {
+    try {
+      final auth = ctx.read<AuthProvider>();
+      if (!auth.hasPermission(AppPermissions.manageCatalog) &&
+          auth.hasPermission(AppPermissions.adjustStock)) {
+        return AppPermissions.adjustStock;
+      }
+    } catch (_) {}
+    return AppPermissions.manageCatalog;
+  }
+
+  Widget _buildMenuRow(
+    IconData icon,
+    Color color,
+    String text, {
+    FontWeight fontWeight = FontWeight.normal,
+    Color? textColor,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: fontWeight,
+              color: textColor ?? color,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   List<dynamic> _safeExpirationAlerts(InventoryAlertsProvider provider) {
@@ -226,22 +309,42 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     isLabelVisible: count > 0,
                     label: Text(count > 9 ? '9+' : count.toString(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
                     backgroundColor: hasCritical ? Colors.red.shade600 : Colors.orange.shade600,
-                    offset: const Offset(-4, 4),
+                    offset: const Offset(2, -2),
                     child: Transform.rotate(
                       angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
                       child: IconButton(
                         tooltip: count == 0
                             ? 'Sin alertas'
                             : '$count alerta${count > 1 ? 's' : ''} activa${count > 1 ? 's' : ''}',
+                        constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                        padding: EdgeInsets.zero,
+                        style: IconButton.styleFrom(
+                          backgroundColor: hasCritical
+                              ? Colors.redAccent.withValues(alpha: 0.18)
+                              : count > 0
+                                  ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
+                                  : Colors.white.withValues(alpha: 0.07),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: hasCritical
+                                  ? Colors.redAccent.withValues(alpha: 0.45)
+                                  : count > 0
+                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
+                                      : Colors.white.withValues(alpha: 0.14),
+                            ),
+                          ),
+                        ),
                         icon: Icon(
                           count > 0
                               ? Icons.notifications_active
                               : Icons.notifications_none,
+                          size: 19,
                           color: hasCritical
-                              ? Colors.red.shade600
+                              ? const Color(0xFFFF6B6B)
                               : count > 0
-                                  ? Colors.orange.shade700
-                                  : Colors.blueGrey.shade400,
+                                  ? const Color(0xFFFBBF24)
+                                  : const Color(0xFFCBD5E1),
                         ),
                         onPressed: _toggleOverlay,
                       ),
@@ -288,9 +391,25 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildHeader(context),
-                  _buildSearchBar(context),
-                  const Divider(height: 1),
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF121C33), Color(0xFF16233F)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFF1E2D4A), width: 1.5),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildHeader(context),
+                        _buildSearchBar(context),
+                      ],
+                    ),
+                  ),
                   Flexible(child: _buildBody()),
                   const Divider(height: 1),
                   _buildFooter(),
@@ -305,29 +424,63 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 10),
+      padding: const EdgeInsets.fromLTRB(18, 14, 12, 10),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-                color: Colors.orange.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.notifications_active,
-                color: Colors.orange.shade800, size: 20),
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.45),
+              ),
+            ),
+            child: const Icon(
+              Icons.notifications_active_rounded,
+              color: Color(0xFFFBBF24),
+              size: 19,
+            ),
           ),
           const SizedBox(width: 12),
           const Expanded(
-            child: Text('Alertas de Reposición',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: Text(
+              'Alertas de Reposición',
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.2,
+              ),
+            ),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            padding: EdgeInsets.zero,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+            ),
+            icon: const Icon(Icons.refresh, size: 18, color: Color(0xFFCBD5E1)),
             tooltip: null,
             onPressed: () =>
                 context.read<InventoryAlertsProvider>().fetchAlerts(),
           ),
+          const SizedBox(width: 6),
           IconButton(
-            icon: const Icon(Icons.close, size: 20),
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            padding: EdgeInsets.zero,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+            ),
+            icon: const Icon(Icons.close, size: 18, color: Color(0xFFCBD5E1)),
             tooltip: null,
             onPressed: _hideOverlay,
           ),
@@ -353,7 +506,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         }
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
           child: SizedBox(
             height: 36,
             child: TextField(
@@ -364,14 +517,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   _searchQuery = val;
                 });
               },
-              style: const TextStyle(fontSize: 12.5),
+              style: const TextStyle(fontSize: 12.5, color: Colors.white),
+              cursorColor: const Color(0xFF34D399),
               decoration: InputDecoration(
                 hintText: 'Buscar producto, código o categoría...',
-                hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-                prefixIcon: Icon(
+                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                prefixIcon: const Icon(
                   Icons.search_rounded,
                   size: 18,
-                  color: Colors.blueGrey.shade400,
+                  color: Color(0xFF34D399),
                 ),
                 prefixIconConstraints: const BoxConstraints(
                   minWidth: 34,
@@ -379,10 +533,10 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                 ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.close_rounded,
                           size: 16,
-                          color: Colors.grey.shade600,
+                          color: Color(0xFFCBD5E1),
                         ),
                         padding: EdgeInsets.zero,
                         tooltip: 'Limpiar búsqueda',
@@ -397,7 +551,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   minHeight: 36,
                 ),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: Colors.white.withValues(alpha: 0.08),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -405,13 +559,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.orange.shade600,
-                    width: 1.3,
+                  borderSide: const BorderSide(
+                    color: Color(0xFF34D399),
+                    width: 1.4,
                   ),
                 ),
               ),
@@ -586,6 +742,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   );
                   if (swept == true && mounted) {
                     provider.fetchAlerts();
+                    _syncPosCartFromCatalog(catalogProvider);
                   }
                 },
               ),
@@ -797,9 +954,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     provider: catalogProvider,
                     filterIngredientProductId: productId,
                     initialExplicitBatchId: batchId,
+                    initialExplicitBatchCode: batchCode,
+                    initialExplicitBatchAvailableQty: stock,
                   ),
                 );
-                if (mounted) provider.fetchAlerts();
+                if (mounted) {
+                  provider.fetchAlerts();
+                  _syncPosCartFromCatalog(catalogProvider);
+                }
               } else if (action == 'liquidate') {
                 await _openLiquidateFromAlert(
                   productId: productId,
@@ -834,7 +996,10 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     product: product,
                   ),
                 );
-                if (mounted) provider.fetchAlerts();
+                if (mounted) {
+                  provider.fetchAlerts();
+                  _syncPosCartFromCatalog(catalogProvider);
+                }
               } else if (action == 'clear') {
                 await _openClearExpirationFromAlert(
                   provider,
@@ -848,70 +1013,132 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               }
             },
             itemBuilder: (context) {
-              final nextStageLabel = daysRemaining > 7
-                  ? 'Silenciar hasta próximo aviso (7 días)'
-                  : (daysRemaining > 3
-                      ? 'Silenciar hasta aviso crítico (3 días)'
-                      : 'Silenciar hasta el día del vencimiento');
+              final alertStage = (alert['stage'] as num?)?.toInt();
+              final String nextStageLabel;
+              if (alertStage != null) {
+                if (alertStage >= 15) {
+                  nextStageLabel = 'Silenciar hasta próximo aviso';
+                } else if (alertStage >= 7) {
+                  nextStageLabel = 'Silenciar hasta aviso crítico';
+                } else {
+                  nextStageLabel = 'Silenciar hasta el día del vencimiento';
+                }
+              } else {
+                nextStageLabel = daysRemaining > 7
+                    ? 'Silenciar hasta próximo aviso (7 días)'
+                    : (daysRemaining > 3
+                        ? 'Silenciar hasta aviso crítico (3 días)'
+                        : 'Silenciar hasta el día del vencimiento');
+              }
               return [
                 PopupMenuItem(
                   value: 'write_off',
-                  child: Text(
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.delete_sweep_outlined,
+                    Colors.deepOrange,
                     batchId != null
                         ? 'Registrar Merma / Dar de baja lote'
                         : 'Registrar Merma / Dar de baja stock',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.deepOrange,
-                    ),
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
                 if (batchId != null)
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'transform',
-                    child: Text('Transformar / Re-elaborar en receta',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal)),
+                    height: 36,
+                    child: _buildMenuRow(
+                      Icons.bakery_dining_outlined,
+                      Colors.teal,
+                      'Transformar / Re-elaborar en receta',
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'liquidate',
-                  child: Text('Crear Oferta de Liquidación (%)',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.local_offer_outlined,
+                    Colors.purple,
+                    'Crear Oferta de Liquidación (%)',
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'update_exp',
-                  child: Text('Actualizar fecha de vencimiento',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo)),
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.edit_calendar_outlined,
+                    Colors.indigo,
+                    'Actualizar fecha de vencimiento',
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
+                const PopupMenuDivider(height: 8),
                 if (!isExpired)
                   PopupMenuItem(
                     value: 'snooze_stage',
-                    child: Text(
+                    height: 36,
+                    child: _buildMenuRow(
+                      Icons.notifications_paused_outlined,
+                      Colors.blueGrey.shade800,
                       nextStageLabel,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      fontWeight: FontWeight.bold,
+                      textColor: Colors.black87,
                     ),
                   ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'snooze_1',
-                  child: Text('Posponer por 1 día', style: TextStyle(fontSize: 12)),
-                ),
-                const PopupMenuItem(
-                  value: 'snooze_3',
-                  child: Text('Posponer por 3 días', style: TextStyle(fontSize: 12)),
-                ),
-                if (batchId != null)
-                  const PopupMenuItem(
-                    value: 'batches',
-                    child: Text('Gestionar lotes del producto', style: TextStyle(fontSize: 12)),
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.snooze,
+                    Colors.blueGrey.shade600,
+                    'Posponer por 1 día',
+                    textColor: Colors.black87,
                   ),
-                const PopupMenuItem(
-                  value: 'view',
-                  child: Text('Editar producto en Catálogo', style: TextStyle(fontSize: 12)),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
+                  value: 'snooze_3',
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.snooze,
+                    Colors.blueGrey.shade600,
+                    'Posponer por 3 días',
+                    textColor: Colors.black87,
+                  ),
+                ),
+                const PopupMenuDivider(height: 8),
+                if (batchId != null)
+                  PopupMenuItem(
+                    value: 'batches',
+                    height: 36,
+                    child: _buildMenuRow(
+                      Icons.layers_outlined,
+                      Colors.blueGrey.shade700,
+                      'Gestionar lotes del producto',
+                      textColor: Colors.black87,
+                    ),
+                  ),
+                PopupMenuItem(
+                  value: 'view',
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.edit_outlined,
+                    Colors.blueGrey.shade700,
+                    'Editar producto en Catálogo',
+                    textColor: Colors.black87,
+                  ),
+                ),
+                PopupMenuItem(
                   value: 'clear',
-                  child: Text('Lote vendido / Quitar fecha vto.',
-                      style: TextStyle(fontSize: 12, color: Colors.red)),
+                  height: 36,
+                  child: _buildMenuRow(
+                    Icons.event_busy_outlined,
+                    Colors.red,
+                    batchId != null
+                        ? 'Lote vendido / Quitar fecha vto.'
+                        : 'Quitar fecha de vencimiento',
+                  ),
                 ),
               ];
             },
@@ -1107,6 +1334,17 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           );
           if (!mounted) return;
           if (res != null) {
+            Product? updatedProd;
+            if (res['product'] is Map) {
+              updatedProd = ProductModel.fromJson(
+                Map<String, dynamic>.from(res['product'] as Map),
+              );
+            } else {
+              try {
+                updatedProd = catalogProvider.lastUpdatedProduct;
+              } catch (_) {}
+            }
+            _syncCatalogAndPosProduct(updatedProd);
             final lost = (res['cost_lost'] as num?)?.toDouble();
             SnackBarService.success(
               context,
@@ -1129,6 +1367,11 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           );
           if (!mounted) return;
           if (ok) {
+            Product? updatedProd;
+            try {
+              updatedProd = catalogProvider.lastUpdatedProduct;
+            } catch (_) {}
+            _syncCatalogAndPosProduct(updatedProd);
             SnackBarService.success(context, 'Merma registrada y stock actualizado (-${qty.toQty()}).');
             alertsProvider.fetchAlerts();
           } else {
@@ -1326,30 +1569,41 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     }
 
     final offerProv = context.read<OfferProvider>();
-    final ok = await offerProv.createQuickOffer(
-      name: offerName.isNotEmpty ? offerName : 'Liquidación $productName',
-      description: batchCode != null && batchCode.isNotEmpty
-          ? 'Liquidación por vencimiento lote $batchCode'
-          : 'Liquidación por próximo vencimiento',
-      type: 'percentage',
-      discountPercentage: discount,
-      periodType: 'custom',
-      startDate: DateTime(today.year, today.month, today.day, 0, 0, 0),
-      endDate: DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59),
-      productIds: [productId],
-    );
-    if (mounted) {
-      if (ok) {
-        try {
-          context.read<PosProvider>().syncActiveOffers(offerProv.activeOffers);
-        } catch (_) {}
-        SnackBarService.success(
-          context,
-          'Oferta de liquidación (${discount.toQty()}% OFF) activa hasta ${DateFormat('dd/MM/yyyy').format(endDate)} y aplicada en caja.',
+    bool ok = false;
+    final authorized = await AdminPinDialog.protectAction(
+      context,
+      action: 'Crear Oferta de Liquidación ($productName)',
+      permissionKey: AppPermissions.applyDiscounts,
+      onAuthorized: () async {
+        ok = await offerProv.createQuickOffer(
+          name: offerName.isNotEmpty ? offerName : 'Liquidación $productName',
+          description: batchCode != null && batchCode.isNotEmpty
+              ? 'Liquidación por vencimiento lote $batchCode'
+              : 'Liquidación por próximo vencimiento',
+          type: 'percentage',
+          discountPercentage: discount,
+          periodType: 'custom',
+          startDate: DateTime(today.year, today.month, today.day, 0, 0, 0),
+          endDate: DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59),
+          productIds: [productId],
         );
-      } else {
-        SnackBarService.error(context, offerProv.errorMessage ?? 'No se pudo crear la oferta.');
-      }
+      },
+    );
+    if (!authorized || !mounted) return;
+    if (ok) {
+      try {
+        context.read<PosProvider>().syncActiveOffers(offerProv.activeOffers);
+      } catch (_) {}
+      try {
+        final loadedIds = context.read<CatalogProvider>().products.map((p) => p.id).toSet();
+        offerProv.syncOfferOnlyProducts(loadedIds, force: true);
+      } catch (_) {}
+      SnackBarService.success(
+        context,
+        'Oferta de liquidación (${discount.toQty()}% OFF) activa hasta ${DateFormat('dd/MM/yyyy').format(endDate)} y aplicada en caja.',
+      );
+    } else {
+      SnackBarService.error(context, offerProv.errorMessage ?? 'No se pudo crear la oferta.');
     }
   }
 
@@ -1383,7 +1637,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     await AdminPinDialog.protectAction(
       context,
       action: 'Actualizar vencimiento de $productName',
-      permissionKey: AppPermissions.manageCatalog,
+      permissionKey: _resolveCatalogOrStockPermission(context),
       onAuthorized: () async {
         final formatted = DateFormat('yyyy-MM-dd').format(picked);
         final ok = await alertsProvider.snoozeExpirationAlert(
@@ -1394,6 +1648,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         );
         if (!mounted) return;
         if (ok) {
+          final rawProd = alertsProvider.lastSnoozeResponse?['product'];
+          if (rawProd is Map) {
+            _syncCatalogAndPosProduct(
+              ProductModel.fromJson(Map<String, dynamic>.from(rawProd)),
+            );
+          }
           SnackBarService.success(
             context,
             'Vencimiento actualizado al ${DateFormat('dd/MM/yyyy').format(picked)}.',
@@ -1441,7 +1701,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     await AdminPinDialog.protectAction(
       context,
       action: 'Quitar fecha de vencimiento ($productName)',
-      permissionKey: AppPermissions.manageCatalog,
+      permissionKey: _resolveCatalogOrStockPermission(context),
       onAuthorized: () async {
         final ok = await alertsProvider.snoozeExpirationAlert(
           productId,
@@ -1450,6 +1710,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         );
         if (!mounted) return;
         if (ok) {
+          final rawProd = alertsProvider.lastSnoozeResponse?['product'];
+          if (rawProd is Map) {
+            _syncCatalogAndPosProduct(
+              ProductModel.fromJson(Map<String, dynamic>.from(rawProd)),
+            );
+          }
           SnackBarService.success(context, 'Fecha de vencimiento quitada.');
         } else {
           SnackBarService.error(

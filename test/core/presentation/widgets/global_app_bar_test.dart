@@ -272,5 +272,36 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('Uses Caja4U dark navy background (#121C33) and renders contextual breadcrumb on wide screens', (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final settingsProv = FakeSettingsProvider(
+        settings: const BusinessSettings(companyName: 'Dev4U'),
+      );
+
+      await tester.pumpWidget(
+        buildTestAppBar(
+          settingsProv: settingsProv,
+          currentRoute: '/settings',
+          title: 'Configuración del Sistema',
+          showBackButton: true,
+        ),
+      );
+      await tester.pump();
+
+      final appBarMaterialFinder = find.descendant(
+        of: find.byType(GlobalAppBar),
+        matching: find.byWidgetPredicate(
+          (w) => w is Material && w.color == const Color(0xFF121C33),
+        ),
+      );
+      expect(appBarMaterialFinder, findsOneWidget);
+      expect(find.text('Dev4U'), findsOneWidget);
+      expect(find.text('Configuración del Sistema'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }
