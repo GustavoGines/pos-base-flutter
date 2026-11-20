@@ -2,20 +2,23 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows/Android) están documentados aquí.
 
 
-## [2.1.0] - 2026-11-03
+## [2.1.0] - 2026-11-20
 ### Identidad Visual y Rebranding (Caja4U • by Dev4U)
 - Nueva identidad corporativa **Caja4U • by Dev4U** en barra superior, pantalla de acceso, ventana de Windows, Android y actualizador OTA.
 - Nuevos íconos de alta resolución (`app_icon.ico`, `app_logo.png` y Adaptive Icons de Android).
 - Migración transparente y automática en OTA de preferencias locales (`SharedPreferences`) y accesos directos de Escritorio (`Sistema POS` -> `Caja4U`) sin pérdida de configuración en terminales en producción.
-### Facturación Electrónica ARCA / AFIP y Comprobantes
-- Emisión de Factura A con validación estricta de receptor (CUIT de 11 dígitos y Condición frente al IVA).
-- Generación de Comprobante PDF A4 con código QR oficial de ARCA/AFIP, desglose impositivo discriminado y CAE.
-- Asistente paso a paso para generación de CSR y vinculación de certificados digitales ARCA/AFIP.
-- Modo Entorno Demo (Homologación) con credenciales de prueba en 1 clic.
-### Mejoras de Usabilidad y Estabilidad
-- Rediseño del menú principal con botones más amplios y legibles en resoluciones estándar y táctiles.
-- Unificación de carga del logo del negocio y refresco automático de configuración en cambios de ruta.
-- Limpieza de textos corruptos (mojibake UTF-8) en todo el sistema.
+### Lotes, Vencimientos, Producción Propia y Aislamiento Modular (Opción 1A)
+- Control de vencimientos por lotes en catálogo, compras, stock y campanita de alertas predictivas con validez en días sincronizada con fecha de vencimiento.
+- Módulo de Producción Propia, recetas multi-nivel y Planilla Rápida Matutina para horneado/elaboración diaria.
+- Aislamiento modular `batch_expiration` y `production` según rubro (`retail` vs `hardware_store`) y addons de licencia.
+### Facturación Electrónica ARCA / AFIP, Libro IVA y Comprobantes
+- Emisión de Factura A con validación estricta de receptor (CUIT de 11 dígitos y Condición frente al IVA) y percepciones IIBB.
+- Vistas de Libro IVA Compras y Ventas, posición mensual de IVA y rediseño de comprobantes A4/Carta y térmicos 58mm/80mm con código QR oficial de ARCA/AFIP.
+- Asistente paso a paso para generación de CSR y vinculación de certificados digitales ARCA/AFIP con Modo Entorno Demo (Homologación).
+### Mejoras de Usabilidad, Catálogo y Proveedores
+- Menú contextual con clic derecho en la tabla de catálogo (acciones individuales y masivas), cambio rápido de precio y duplicación de productos.
+- Carga compacta de ítems en facturas/remitos de proveedores con soporte multi-lote y creación rápida de productos preseleccionando el proveedor actual.
+- Rediseño del menú principal, unificación de carga de logo del negocio y limpieza de textos corruptos (mojibake UTF-8) en todo el sistema.
 
 ## [2.0.1] - 2026-10-12
 ### Correcciones

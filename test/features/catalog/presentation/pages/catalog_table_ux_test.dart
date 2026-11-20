@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import 'package:frontend_desktop/features/auth/presentation/providers/auth_provi
 import 'package:frontend_desktop/features/catalog/domain/entities/brand.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/presentation/pages/catalog_screen.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
@@ -23,18 +25,42 @@ class _LoadProductsCall {
   const _LoadProductsCall(this.sortBy, this.sortDirection);
 }
 
+class _QuickPriceCall {
+  final int id;
+  final double? sellingPrice;
+  final double? costPrice;
+
+  const _QuickPriceCall({
+    required this.id,
+    this.sellingPrice,
+    this.costPrice,
+  });
+}
+
 class _StatefulFakeCatalogProvider extends ChangeNotifier
     implements CatalogProvider {
   final List<Product> _products;
   final List<_LoadProductsCall> loadCalls = [];
+  final List<_QuickPriceCall> quickPriceCalls = [];
   String _sortBy = 'name';
   String _sortDirection = 'asc';
+  Product? _lastCreatedProduct;
+  Product? _lastUpdatedProduct;
 
   _StatefulFakeCatalogProvider({required List<Product> products})
       : _products = products;
 
   @override
   List<Product> get products => _products;
+
+  @override
+  List<Category> get categories => const [];
+
+  @override
+  List<Brand> get brands => const [];
+
+  @override
+  List<Rubro> get rubros => const [];
 
   @override
   List<Product> get criticalAlerts => const [];
@@ -62,6 +88,42 @@ class _StatefulFakeCatalogProvider extends ChangeNotifier
 
   @override
   String? get errorMessage => null;
+
+  @override
+  Product? get lastCreatedProduct => _lastCreatedProduct;
+
+  @override
+  Product? get lastUpdatedProduct => _lastUpdatedProduct;
+
+  @override
+  Future<void> loadMetadata({bool force = false}) async {}
+
+  @override
+  Future<void> loadBrands() async {}
+
+  @override
+  Future<Product?> updateProductPriceFromPos(
+    int id, {
+    String? name,
+    double? sellingPrice,
+    double? costPrice,
+    double? ivaRate,
+    String? barcode,
+  }) async {
+    quickPriceCalls.add(
+      _QuickPriceCall(id: id, sellingPrice: sellingPrice, costPrice: costPrice),
+    );
+    final idx = _products.indexWhere((p) => p.id == id);
+    if (idx == -1) return null;
+    final updated = _products[idx].copyWith(
+      sellingPrice: sellingPrice ?? _products[idx].sellingPrice,
+      costPrice: costPrice ?? _products[idx].costPrice,
+    );
+    _products[idx] = updated;
+    _lastUpdatedProduct = updated;
+    notifyListeners();
+    return updated;
+  }
 
   @override
   Future<void> loadProducts({
@@ -145,6 +207,9 @@ class _FakeSupplierProvider extends ChangeNotifier implements SupplierProvider {
 
   @override
   bool get isLoading => false;
+
+  @override
+  Future<void> fetchSuppliers({String? search}) async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -483,6 +548,176 @@ void main() {
       expect(find.byIcon(Icons.layers_outlined), findsNothing);
       expect(find.text('Producción'), findsNothing);
       expect(find.byIcon(Icons.bakery_dining_outlined), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Clic derecho individual despliega opciones contextuales, permite cambio rápido de precio y respeta Opción 1A',
+    (tester) async {
+      const viewport = Size(1280, 800);
+      await tester.binding.setSurfaceSize(viewport);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final catalogProv = _StatefulFakeCatalogProvider(
+        products: buildProducts(),
+      );
+      final retailProductionSettings = _FakeSettingsProvider(
+        businessType: 'retail',
+        features: const FeatureFlags(
+          quotes: true,
+          suppliers: true,
+          multiRubro: true,
+          batchExpiration: true,
+          production: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        wrapCatalog(
+          catalogProvider: catalogProv,
+          viewport: viewport,
+          settingsProvider: retailProductionSettings,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final targetCenter = tester.getCenter(find.text('YOGUR ENTERO VENCE HOY'));
+      await tester.tapAt(targetCenter, buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Editar producto'), findsOneWidget);
+      expect(find.text('Cambiar precio rápido'), findsOneWidget);
+      expect(find.text('Ajustar stock'), findsOneWidget);
+      expect(find.text('Lotes y vencimientos'), findsOneWidget);
+      expect(find.text('Elaborar / Hornear ahora'), findsOneWidget);
+      expect(find.text('Duplicar producto'), findsOneWidget);
+      expect(find.text('Imprimir etiqueta'), findsOneWidget);
+      expect(find.text('Compartir ficha (WhatsApp)'), findsOneWidget);
+      expect(find.text('Copiar código de barras'), findsOneWidget);
+      expect(find.text('Generar presupuesto'), findsOneWidget);
+      expect(find.text('Desactivar en POS'), findsOneWidget);
+      expect(find.text('Eliminar producto'), findsOneWidget);
+
+      // Ejecutar "Cambiar precio rápido"
+      await tester.tap(find.text('Cambiar precio rápido'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cambiar Precio Rápido'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Precio Venta *'),
+        '2500',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Guardar Precio'));
+      await tester.pumpAndSettle();
+      // Descartar toast de SnackBarService antes de reabrir otro modal
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+
+      expect(catalogProv.quickPriceCalls, hasLength(1));
+      expect(catalogProv.quickPriceCalls.first.id, 2);
+      expect(catalogProv.quickPriceCalls.first.sellingPrice, 2500.0);
+      expect(tester.takeException(), isNull);
+
+      // Probar "Duplicar producto"
+      await tester.tapAt(
+        tester.getCenter(find.text('YOGUR ENTERO VENCE HOY')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Duplicar producto'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Duplicar Producto'), findsOneWidget);
+      expect(find.text('YOGUR ENTERO VENCE HOY (Copia)'), findsOneWidget);
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+
+      // En Ferretería sin addons (Opción 1A), clic derecho oculta Lotes y Elaborar
+      final hwProv = _StatefulFakeCatalogProvider(products: buildProducts());
+      final hwSettings = _FakeSettingsProvider(
+        businessType: 'hardware_store',
+        features: const FeatureFlags(
+          quotes: false,
+          suppliers: true,
+          batchExpiration: false,
+          production: false,
+        ),
+      );
+      await tester.pumpWidget(
+        wrapCatalog(
+          catalogProvider: hwProv,
+          viewport: viewport,
+          settingsProvider: hwSettings,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(
+        tester.getCenter(find.text('YOGUR ENTERO VENCE HOY')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Editar producto'), findsOneWidget);
+      expect(find.text('Cambiar precio rápido'), findsOneWidget);
+      expect(find.text('Lotes y vencimientos'), findsNothing);
+      expect(find.text('Elaborar / Hornear ahora'), findsNothing);
+      expect(find.text('Generar presupuesto'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Clic derecho con selección múltiple muestra menú de lote en filas tildadas e individual en no seleccionadas',
+    (tester) async {
+      const viewport = Size(1280, 800);
+      await tester.binding.setSurfaceSize(viewport);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final catalogProv = _StatefulFakeCatalogProvider(
+        products: buildProducts(),
+      );
+
+      await tester.pumpWidget(
+        wrapCatalog(catalogProvider: catalogProv, viewport: viewport),
+      );
+      await tester.pumpAndSettle();
+
+      // Seleccionar 2 productos mediante los checkboxes de fila (índices 1 y 2; el 0 es el de cabecera)
+      final checkboxes = find.byType(Checkbox);
+      await tester.tap(checkboxes.at(1));
+      await tester.tap(checkboxes.at(2));
+      await tester.pumpAndSettle();
+
+      // Clic derecho sobre uno de los seleccionados -> menú de lote
+      await tester.tapAt(
+        tester.getCenter(find.text('YOGUR ENTERO VENCE HOY')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 productos seleccionados'), findsOneWidget);
+      expect(find.text('Asignar Categoría'), findsOneWidget);
+      expect(find.text('Asignar Marca'), findsOneWidget);
+      expect(find.text('Asignar Proveedor'), findsOneWidget);
+      expect(find.text('Imprimir Etiquetas (2)'), findsOneWidget);
+      expect(find.text('Eliminar Seleccionados (2)'), findsOneWidget);
+      expect(find.text('Editar producto'), findsNothing);
+
+      // Cerrar menú haciendo tap fuera y probar clic derecho sobre una fila NO seleccionada
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(
+        tester.getCenter(find.text('QUESO CREMA VENCIDO')),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Editar producto'), findsOneWidget);
+      expect(find.text('2 productos seleccionados'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

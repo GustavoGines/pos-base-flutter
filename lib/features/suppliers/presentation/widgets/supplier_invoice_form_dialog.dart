@@ -1531,12 +1531,26 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                         tooltip: 'Nuevo Producto Rápido',
                                         onPressed: () async {
                                           final catalogProv = context.read<CatalogProvider>();
-                                          await showDialog(
+                                          final rawQuery = _searchController.text.trim();
+                                          final looksLikeBarcode =
+                                              RegExp(r'^\d{6,}$').hasMatch(rawQuery);
+                                          final createdProduct = await showDialog<Product>(
                                             context: context,
                                             barrierDismissible: false,
-                                            builder: (_) =>
-                                                ProductFormDialog(provider: catalogProv),
+                                            builder: (_) => ProductFormDialog(
+                                              provider: catalogProv,
+                                              initialSupplierId: widget.supplierId,
+                                              initialSupplierName: widget.supplierName,
+                                              initialName: looksLikeBarcode
+                                                  ? null
+                                                  : (rawQuery.isNotEmpty ? rawQuery : null),
+                                              initialBarcode:
+                                                  looksLikeBarcode ? rawQuery : null,
+                                            ),
                                           );
+                                          if (createdProduct != null && mounted) {
+                                            _addProduct(createdProduct);
+                                          }
                                         },
                                       ),
                                       border: InputBorder.none,
@@ -2131,33 +2145,72 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       }
     }
 
-    return Padding(
+    return Container(
       key: ObjectKey(item),
-      padding: const EdgeInsets.all(12.0),
+      color: index.isOdd ? Colors.grey.shade50.withValues(alpha: 0.7) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.product.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      'Costo Ant: \$${item.product.costPrice.toCurrency()} | PVP Actual: \$${item.product.sellingPrice.toCurrency()}',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Tooltip(
+                  message:
+                      '${item.product.name}\nCosto Ant: \$${item.product.costPrice.toCurrency()} | PVP Actual: \$${item.product.sellingPrice.toCurrency()}',
+                  child: Row(
+                    children: [
+                      if (totalLotsForProduct > 1) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.deepOrange.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Lote $lotIndex/$totalLotsForProduct',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.deepOrange.shade900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                      ],
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: item.product.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13.5,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              TextSpan(
+                                text:
+                                    '  •  Ant: \$${item.product.costPrice.toCurrency()} | PVP: \$${item.product.sellingPrice.toCurrency()}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.normal,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               if (showVatSelector) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 PopupMenuButton<double>(
                   tooltip: 'Cambiar alícuota de IVA de este artículo',
                   initialValue: item.vatRate,
@@ -2187,10 +2240,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                     ),
                   ],
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: rateColor.shade50,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(5),
                       border: Border.all(color: rateColor.shade200),
                     ),
                     child: Row(
@@ -2199,26 +2252,28 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         Text(
                           rateLabel,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: rateColor.shade800,
                           ),
                         ),
-                        const SizedBox(width: 2),
-                        Icon(Icons.arrow_drop_down, size: 16, color: rateColor.shade700),
+                        Icon(Icons.arrow_drop_down, size: 14, color: rateColor.shade700),
                       ],
                     ),
                   ),
                 ),
               ],
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               Text(
                 '\$${item.subtotal.toCurrency()}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
               ),
+              const SizedBox(width: 2),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.red),
-                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, color: Colors.red, size: 17),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                tooltip: 'Quitar ítem',
                 onPressed: () {
                   item.dispose();
                   setState(() {
@@ -2229,16 +2284,19 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
           Row(
             children: [
               Expanded(
                 flex: 2,
                 child: TextFormField(
                   controller: item.qtyCtrl,
+                  style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
                     labelText: 'Cant. (${item.product.unitType})',
                     isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
                   ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (val) {
@@ -2252,50 +2310,72 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   },
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 flex: 3,
                 child: TextFormField(
                   controller: item.costCtrl,
+                  style: const TextStyle(fontSize: 13),
                   decoration: const InputDecoration(
-                    labelText: 'Costo Un. (Opc.)',
+                    labelText: 'Costo Un.',
                     prefixText: '\$',
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 7),
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [ArsThousandsInputFormatter()],
                   onChanged: (val) => _handleCostChange(item, val),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 flex: 2,
                 child: TextFormField(
                   controller: item.marginCtrl,
+                  style: const TextStyle(fontSize: 13),
                   decoration: const InputDecoration(
                     labelText: '% Util.',
                     suffixText: '%',
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 7),
                   ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (val) => _handleMarginChange(item, val),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 flex: 3,
                 child: TextFormField(
                   controller: item.pvpCtrl,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: item.updatePrice ? FontWeight.w600 : FontWeight.normal,
+                    color: item.updatePrice ? Colors.green.shade900 : null,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Nuevo PVP',
                     prefixText: '\$',
                     isDense: true,
+                    filled: item.updatePrice,
+                    fillColor: item.updatePrice
+                        ? Colors.green.shade50.withValues(alpha: 0.7)
+                        : null,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                    suffixIconConstraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
                     suffixIcon: Tooltip(
-                      message: 'Actualizar Precio de Venta en Catálogo',
+                      message: item.updatePrice
+                          ? 'Se actualizará el Precio de Venta a \$${item.manualPrice.toCurrency()}'
+                          : 'Marcar para actualizar el Precio de Venta en Catálogo',
                       child: Checkbox(
                         value: item.updatePrice,
+                        activeColor: Colors.green.shade700,
                         visualDensity: VisualDensity.compact,
-                        onChanged: (val) => setState(() => item.updatePrice = val ?? false),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (val) =>
+                            setState(() => item.updatePrice = val ?? false),
                       ),
                     ),
                   ),
@@ -2306,66 +2386,53 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
-          if (item.updatePrice)
-            Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Text(
-                '✓ Se actualizará el Precio de Venta a \$${item.manualPrice.toCurrency()}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.green.shade800,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
           if (_canUseBatches && !item.product.isCombo && !item.product.isService) ...[
             if (!item.showLotFields)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.layers_outlined, size: 15),
-                        label: const Text(
-                          '+ Asignar Lote / Vencimiento de este ingreso',
-                          style: TextStyle(fontSize: 11.5),
-                        ),
-                        onPressed: () => setState(() => item.showLotFields = true),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 2,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          foregroundColor: Colors.deepOrange.shade700,
-                        ),
-                        icon: const Icon(Icons.add_circle_outline, size: 15),
-                        label: const Text(
-                          '+ Otro lote (distinto vto.)',
-                          style: TextStyle(fontSize: 11.5),
-                        ),
-                        onPressed: () => _addAnotherLotRow(index, item),
+                      icon: const Icon(Icons.layers_outlined, size: 14),
+                      label: const Text(
+                        '+ Lote / Vto.',
+                        style: TextStyle(fontSize: 11),
                       ),
-                    ],
-                  ),
+                      onPressed: () => setState(() => item.showLotFields = true),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: Colors.deepOrange.shade700,
+                      ),
+                      icon: const Icon(Icons.add_circle_outline, size: 14),
+                      label: const Text(
+                        '+ Otro lote',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () => _addAnotherLotRow(index, item),
+                    ),
+                  ],
                 ),
               )
             else
               Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(top: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade50.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: item.product.trackBatches
                         ? Colors.orange.shade300
@@ -2375,40 +2442,27 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (totalLotsForProduct > 1)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.deepOrange.shade100,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Lote $lotIndex/$totalLotsForProduct',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.deepOrange.shade900,
-                            ),
-                          ),
-                        ),
-                      ),
                     LayoutBuilder(
                       builder: (context, lotConstraints) {
                         final batchCodeField = TextFormField(
                           controller: item.batchCodeCtrl,
+                          style: const TextStyle(fontSize: 12),
                           onChanged: (_) => setState(() {}),
                           decoration: const InputDecoration(
-                            labelText: 'Código de Lote (opc. auto)',
-                            hintText: 'Ej. FAC-00123',
+                            labelText: 'Lote (opc. auto)',
+                            hintText: 'FAC-001',
                             isDense: true,
-                            prefixIcon: Icon(Icons.qr_code_outlined, size: 16),
+                            contentPadding:
+                                EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                            prefixIcon: Icon(Icons.qr_code_outlined, size: 14),
+                            prefixIconConstraints:
+                                BoxConstraints(minWidth: 24, minHeight: 24),
                           ),
                         );
 
                         final validityField = TextFormField(
                           controller: item.validityDaysCtrl,
+                          style: const TextStyle(fontSize: 12),
                           keyboardType: TextInputType.number,
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           decoration: const InputDecoration(
@@ -2416,8 +2470,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             suffixText: 'd',
                             isDense: true,
                             contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 10,
+                              horizontal: 6,
+                              vertical: 6,
                             ),
                           ),
                           onChanged: (val) {
@@ -2428,46 +2482,40 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             }
                             final n = int.tryParse(trimmed);
                             if (n != null && n >= 1 && n <= 3650) {
+                              final now = DateTime.now();
                               setState(() {
                                 item.expirationDate =
-                                    DateTime.now().add(Duration(days: n));
+                                    DateTime(now.year, now.month, now.day + n);
                               });
                             }
                           },
                         );
 
-                        final dateBtn = OutlinedButton.icon(
+                        final dateBtn = OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 12,
+                              horizontal: 7,
+                              vertical: 7,
                             ),
-                          ),
-                          icon: Icon(
-                            Icons.event_available_outlined,
-                            size: 16,
-                            color: item.expirationDate != null
-                                ? Colors.deepOrange
-                                : null,
-                          ),
-                          label: Text(
-                            item.expirationDate != null
-                                ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
-                                : 'Fecha de Vencimiento',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                            minimumSize: const Size(0, 30),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           onPressed: () async {
+                            final now = DateTime.now();
                             final picked = await showCompactDatePicker(
                               context: context,
                               initialDate: item.expirationDate ??
-                                  DateTime.now().add(const Duration(days: 7)),
+                                  DateTime(now.year, now.month, now.day + 7),
                               helpText:
                                   'Vencimiento del lote (${item.product.name})',
                             );
                             if (picked != null) {
-                              final now = DateTime.now();
-                              final today = DateTime(now.year, now.month, now.day);
+                              final currentNow = DateTime.now();
+                              final today = DateTime(
+                                currentNow.year,
+                                currentNow.month,
+                                currentNow.day,
+                              );
                               final expDay = DateTime(
                                 picked.year,
                                 picked.month,
@@ -2483,14 +2531,41 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               });
                             }
                           },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.event_available_outlined,
+                                size: 14,
+                                color: item.expirationDate != null
+                                    ? Colors.deepOrange
+                                    : null,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  item.expirationDate != null
+                                      ? 'Vence: ${DateFormat('dd/MM/yyyy').format(item.expirationDate!)}'
+                                      : 'Vencimiento',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5),
+                                ),
+                              ),
+                            ],
+                          ),
                         );
 
                         final Widget? clearBtn = (item.expirationDate != null ||
                                 item.validityDaysCtrl.text.isNotEmpty)
                             ? IconButton(
                                 tooltip: 'Limpiar vencimiento',
-                                icon: const Icon(Icons.clear, size: 17),
-                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.clear, size: 15),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
                                 onPressed: () => setState(() {
                                   item.expirationDate = null;
                                   item.validityDaysCtrl.clear();
@@ -2498,15 +2573,42 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               )
                             : null;
 
-                        if (lotConstraints.maxWidth >= 460) {
+                        final addAnotherLotBtn = Tooltip(
+                          message:
+                              'Agregar otro lote de este producto (distinto vencimiento)',
+                          child: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: Colors.deepOrange.shade700,
+                            ),
+                            icon: const Icon(Icons.add_circle_outline, size: 14),
+                            label: const Text(
+                              '+ Otro lote',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () => _addAnotherLotRow(index, item),
+                          ),
+                        );
+
+                        if (lotConstraints.maxWidth >= 430) {
                           return Row(
                             children: [
-                              Expanded(flex: 4, child: batchCodeField),
-                              const SizedBox(width: 6),
-                              SizedBox(width: 86, child: validityField),
-                              const SizedBox(width: 6),
-                              Expanded(flex: 5, child: dateBtn),
+                              Expanded(flex: 3, child: batchCodeField),
+                              const SizedBox(width: 5),
+                              SizedBox(width: 72, child: validityField),
+                              const SizedBox(width: 5),
+                              Expanded(flex: 4, child: dateBtn),
                               if (clearBtn != null) clearBtn,
+                              const SizedBox(width: 2),
+                              addAnotherLotBtn,
                             ],
                           );
                         }
@@ -2514,12 +2616,18 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            batchCodeField,
-                            const SizedBox(height: 8),
                             Row(
                               children: [
-                                SizedBox(width: 96, child: validityField),
-                                const SizedBox(width: 8),
+                                Expanded(child: batchCodeField),
+                                const SizedBox(width: 6),
+                                SizedBox(width: 76, child: validityField),
+                                const SizedBox(width: 4),
+                                addAnotherLotBtn,
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
                                 Expanded(child: dateBtn),
                                 if (clearBtn != null) clearBtn,
                               ],
@@ -2532,36 +2640,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         (item.batchCodeCtrl.text.trim().isNotEmpty ||
                             item.expirationDate != null))
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          'Al guardar, se activará el control por lotes en este producto conservando el stock actual por separado.',
+                          'Al guardar, se activará el control por lotes conservando el stock actual.',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             color: Colors.teal.shade900,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            foregroundColor: Colors.deepOrange.shade700,
-                          ),
-                          icon: const Icon(Icons.add_circle_outline, size: 15),
-                          label: const Text(
-                            'Otro lote de este producto (distinto vencimiento)',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                          ),
-                          onPressed: () => _addAnotherLotRow(index, item),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),

@@ -53,6 +53,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
   Timer? _debounceTimer;
   final Map<int, Product> _selectedProducts = {};
+  int? _contextMenuProductId;
 
   @override
   void initState() {
@@ -1115,8 +1116,21 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         );
 
-    Widget productRow(Product p, int index) => Material(
-          color: _selectedProducts.containsKey(p.id) ? Colors.blue.shade50 : (index.isOdd ? Colors.grey.shade50 : Colors.white),
+    Widget productRow(Product p, int index) {
+      final isContextActive = _contextMenuProductId == p.id;
+      final isSelected = _selectedProducts.containsKey(p.id);
+      return Material(
+        color: isContextActive
+            ? Colors.indigo.shade50
+            : (isSelected
+                ? Colors.blue.shade50
+                : (index.isOdd ? Colors.grey.shade50 : Colors.white)),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (details) =>
+              _showProductContextMenu(context, details.globalPosition, provider, p),
+          onLongPressStart: (details) =>
+              _showProductContextMenu(context, details.globalPosition, provider, p),
           child: InkWell(
             onTap: () {
               if (_selectedProducts.isNotEmpty) {
@@ -1293,7 +1307,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
             ],
           ),
         ),
+        ),
       );
+    }
 
     return Column(
       children: [
@@ -1322,13 +1338,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
     });
   }
 
-  void _showProductForm(BuildContext ctx, CatalogProvider provider, {Product? product}) {
-    showDialog(
+  void _showProductForm(
+    BuildContext ctx,
+    CatalogProvider provider, {
+    Product? product,
+    Product? duplicateFrom,
+  }) {
+    showDialog<Product>(
       context: ctx,
       barrierDismissible: true,
       builder: (_) => ProductFormDialog(
         provider: provider,
         product: product,
+        duplicateFrom: duplicateFrom,
       ),
     ).then((_) {
       if (mounted) {
@@ -1476,7 +1498,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
-  Future<void> _bulkGenerateQuote() async {
+  Future<void> _bulkGenerateQuote() => _generateQuoteForProducts(
+        _selectedProducts.values.toList(),
+        clearSelection: true,
+      );
+
+  Future<void> _generateQuoteForProducts(
+    List<Product> products, {
+    bool clearSelection = false,
+  }) async {
     final hasQuotes = context.read<SettingsProvider>().features.quotes;
     if (!hasQuotes) {
       PlanUpgradeDialog.show(
@@ -1487,7 +1517,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
       return;
     }
 
-    final products = _selectedProducts.values.toList();
     if (products.isEmpty) return;
 
     bool hasQuoteProv = false;
@@ -1516,7 +1545,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     } catch (_) {}
 
-    setState(() => _selectedProducts.clear());
+    if (clearSelection && mounted) {
+      setState(() => _selectedProducts.clear());
+    }
 
     if (mounted && hasQuoteProv) {
       await Navigator.push(
@@ -1791,6 +1822,486 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
   }
+
+  bool _hasValidProductImageUrl(String? rawUrl) {
+    final resolved = resolveImageUrl(rawUrl);
+    if (resolved == null || resolved.trim().isEmpty) return false;
+    final uri = Uri.tryParse(resolved.trim());
+    return uri != null &&
+        uri.hasScheme &&
+        uri.hasAuthority &&
+        uri.host.isNotEmpty;
+  }
+
+  PopupMenuItem<String> _buildContextMenuItem({
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String label,
+    Color? textColor,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 36,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showQuickPriceDialog(
+    BuildContext ctx,
+    CatalogProvider provider,
+    Product p,
+  ) async {
+    await showDialog<Product>(
+      context: ctx,
+      barrierDismissible: true,
+      builder: (_) => _QuickPriceEditDialog(provider: provider, product: p),
+    );
+  }
+
+  Future<void> _showProductContextMenu(
+    BuildContext ctx,
+    Offset globalPosition,
+    CatalogProvider provider,
+    Product p,
+  ) async {
+    final RenderBox? overlay =
+        Overlay.of(ctx).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+
+    final sp = ctx.read<SettingsProvider?>();
+    final canSeeSupplier = sp?.features.suppliers ?? false;
+    final canUseQuotes = sp?.features.quotes ?? false;
+    final canUseBatches = sp == null
+        ? true
+        : (sp.features.batchExpiration || sp.features.production);
+    final canUseProduction = sp?.features.production ?? false;
+    final isBulkContext =
+        _selectedProducts.length > 1 && _selectedProducts.containsKey(p.id);
+    final resolvedImgUrl =
+        _hasValidProductImageUrl(p.imageUrl) ? resolveImageUrl(p.imageUrl) : null;
+
+    setState(() => _contextMenuProductId = p.id);
+
+    final position = RelativeRect.fromRect(
+      Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 0, 0),
+      Offset.zero & overlay.size,
+    );
+
+    final String? selectedAction;
+    try {
+      selectedAction = await showMenu<String>(
+        context: ctx,
+        position: position,
+        elevation: 8,
+        constraints: const BoxConstraints(minWidth: 235, maxWidth: 310),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        items: isBulkContext
+            ? <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 40,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${_selectedProducts.length} productos seleccionados',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      Text(
+                        'Acciones rápidas sobre el lote',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(height: 6),
+                _buildContextMenuItem(
+                  value: 'bulk_category',
+                  icon: Icons.folder_outlined,
+                  color: Colors.orange,
+                  label: 'Asignar Categoría',
+                ),
+                _buildContextMenuItem(
+                  value: 'bulk_brand',
+                  icon: Icons.branding_watermark_outlined,
+                  color: Colors.indigo,
+                  label: 'Asignar Marca',
+                ),
+                if (canSeeSupplier)
+                  _buildContextMenuItem(
+                    value: 'bulk_supplier',
+                    icon: Icons.local_shipping_outlined,
+                    color: Colors.brown,
+                    label: 'Asignar Proveedor',
+                  ),
+                _buildContextMenuItem(
+                  value: 'bulk_prices',
+                  icon: Icons.trending_up,
+                  color: Colors.deepOrange,
+                  label: 'Actualizar Precios',
+                ),
+                if (canUseQuotes)
+                  _buildContextMenuItem(
+                    value: 'bulk_quote',
+                    icon: Icons.request_quote_outlined,
+                    color: Colors.teal,
+                    label: 'Generar Presupuesto',
+                  ),
+                _buildContextMenuItem(
+                  value: 'bulk_status',
+                  icon: Icons.power_settings_new,
+                  color: Colors.teal.shade700,
+                  label: 'Cambiar Estado (Activar / Desactivar)',
+                ),
+                _buildContextMenuItem(
+                  value: 'bulk_labels',
+                  icon: Icons.print_outlined,
+                  color: Colors.deepPurple,
+                  label: 'Imprimir Etiquetas (${_selectedProducts.length})',
+                ),
+                const PopupMenuDivider(height: 6),
+                _buildContextMenuItem(
+                  value: 'bulk_delete',
+                  icon: Icons.delete_outline,
+                  color: Colors.red,
+                  label: 'Eliminar Seleccionados (${_selectedProducts.length})',
+                  textColor: Colors.red.shade700,
+                ),
+                _buildContextMenuItem(
+                  value: 'bulk_clear',
+                  icon: Icons.deselect,
+                  color: Colors.grey.shade600,
+                  label: 'Limpiar Selección',
+                ),
+              ]
+            : <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 44,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        p.isService
+                            ? '\$${p.sellingPrice.toCurrency()} • Servicio'
+                            : '\$${p.sellingPrice.toCurrency()} • Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight, unitSuffix: 'un.')}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(height: 6),
+                _buildContextMenuItem(
+                  value: 'edit',
+                  icon: Icons.edit_outlined,
+                  color: Colors.blue,
+                  label: 'Editar producto',
+                ),
+                _buildContextMenuItem(
+                  value: 'quick_price',
+                  icon: Icons.price_change_outlined,
+                  color: Colors.deepOrange,
+                  label: 'Cambiar precio rápido',
+                ),
+                if (!p.isService)
+                  _buildContextMenuItem(
+                    value: 'adjust_stock',
+                    icon: Icons.warehouse_outlined,
+                    color: Colors.teal,
+                    label: 'Ajustar stock',
+                  ),
+                if (canUseBatches && !p.isCombo && !p.isService)
+                  _buildContextMenuItem(
+                    value: 'batches',
+                    icon: Icons.layers_outlined,
+                    color: Colors.deepOrange.shade700,
+                    label: 'Lotes y vencimientos',
+                  ),
+                if (canUseProduction && !p.isCombo && !p.isService)
+                  _buildContextMenuItem(
+                    value: 'produce',
+                    icon: Icons.bakery_dining_outlined,
+                    color: Colors.brown.shade700,
+                    label: 'Elaborar / Hornear ahora',
+                  ),
+                const PopupMenuDivider(height: 6),
+                _buildContextMenuItem(
+                  value: 'duplicate',
+                  icon: Icons.copy_all_outlined,
+                  color: Colors.indigo,
+                  label: 'Duplicar producto',
+                ),
+                _buildContextMenuItem(
+                  value: 'print_label',
+                  icon: Icons.print_outlined,
+                  color: Colors.deepPurple,
+                  label: 'Imprimir etiqueta',
+                ),
+                _buildContextMenuItem(
+                  value: 'share',
+                  icon: Icons.share_outlined,
+                  color: Colors.green.shade700,
+                  label: 'Compartir ficha (WhatsApp)',
+                ),
+                _buildContextMenuItem(
+                  value: 'copy_code',
+                  icon: Icons.qr_code_2_outlined,
+                  color: Colors.blueGrey,
+                  label: (p.barcode != null && p.barcode!.trim().isNotEmpty)
+                      ? 'Copiar código de barras'
+                      : 'Copiar código interno',
+                ),
+                if (canUseQuotes)
+                  _buildContextMenuItem(
+                    value: 'quote',
+                    icon: Icons.request_quote_outlined,
+                    color: Colors.teal.shade700,
+                    label: 'Generar presupuesto',
+                  ),
+                if (resolvedImgUrl != null)
+                  _buildContextMenuItem(
+                    value: 'view_image',
+                    icon: Icons.image_search_outlined,
+                    color: Colors.purple,
+                    label: 'Ver foto ampliada',
+                  ),
+                const PopupMenuDivider(height: 6),
+                _buildContextMenuItem(
+                  value: 'toggle_active',
+                  icon: p.active
+                      ? Icons.visibility_off_outlined
+                      : Icons.check_circle_outline,
+                  color: p.active ? Colors.amber.shade800 : Colors.green.shade700,
+                  label: p.active ? 'Desactivar en POS' : 'Activar en POS',
+                ),
+                _buildContextMenuItem(
+                  value: 'delete',
+                  icon: Icons.delete_outline,
+                  color: Colors.red,
+                  label: 'Eliminar producto',
+                  textColor: Colors.red.shade700,
+                ),
+              ],
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (_contextMenuProductId == p.id) {
+            _contextMenuProductId = null;
+          }
+        });
+      }
+    }
+
+    if (selectedAction == null || !mounted) return;
+
+    switch (selectedAction) {
+      case 'bulk_category':
+        await _bulkUpdateCategory(provider);
+        break;
+      case 'bulk_brand':
+        await _bulkUpdateBrand(provider);
+        break;
+      case 'bulk_supplier':
+        await _bulkUpdateSupplier(provider);
+        break;
+      case 'bulk_prices':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Aumento Masivo Lote',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) {
+          await showDialog(
+            context: context,
+            builder: (_) => BulkPriceUpdateDialog(
+              provider: provider,
+              targetProductIds: _selectedProducts.keys.toList(),
+            ),
+          );
+          if (mounted) setState(() => _selectedProducts.clear());
+        }
+        break;
+      case 'bulk_quote':
+        await _bulkGenerateQuote();
+        break;
+      case 'bulk_status':
+        await _bulkToggleActive(provider);
+        break;
+      case 'bulk_labels':
+        await showDialog(
+          context: context,
+          builder: (_) =>
+              PrintLabelsDialog(products: _selectedProducts.values.toList()),
+        );
+        break;
+      case 'bulk_delete':
+        await _confirmBulkDelete(provider);
+        break;
+      case 'bulk_clear':
+        setState(() => _selectedProducts.clear());
+        break;
+      case 'edit':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Editar Producto',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) _showProductForm(context, provider, product: p);
+        break;
+      case 'quick_price':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Cambiar Precio Rápido',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) await _showQuickPriceDialog(context, provider, p);
+        break;
+      case 'adjust_stock':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Ajustar Stock',
+          permissionKey: 'adjust_stock',
+        );
+        if (auth && mounted) _showStockAdjustment(context, provider, p);
+        break;
+      case 'batches':
+        _openProductBatches(provider, p);
+        break;
+      case 'produce':
+        await showDialog(
+          context: context,
+          builder: (_) =>
+              ProductionOrdersDialog(provider: provider, initialProduct: p),
+        );
+        if (mounted) {
+          try {
+            context.read<InventoryAlertsProvider>().fetchAlerts();
+          } catch (_) {}
+        }
+        break;
+      case 'duplicate':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Duplicar Producto',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) {
+          _showProductForm(context, provider, duplicateFrom: p);
+        }
+        break;
+      case 'print_label':
+        await showDialog(
+          context: context,
+          builder: (_) => PrintLabelsDialog(products: [p]),
+        );
+        break;
+      case 'share':
+        await ProductShareHelper.shareProduct(p, context: context);
+        break;
+      case 'copy_code':
+        final hasBarcode = p.barcode != null && p.barcode!.trim().isNotEmpty;
+        final code = hasBarcode ? p.barcode!.trim() : p.internalCode;
+        await Clipboard.setData(ClipboardData(text: code));
+        if (mounted) {
+          SnackBarService.success(
+            context,
+            hasBarcode
+                ? 'Código de barras copiado: $code'
+                : 'Código interno copiado: $code',
+          );
+        }
+        break;
+      case 'quote':
+        await _generateQuoteForProducts([p]);
+        break;
+      case 'view_image':
+        if (resolvedImgUrl != null) {
+          await showDialog(
+            context: context,
+            builder: (_) => ProductImagePreviewDialog(
+              title: p.name,
+              imageUrl: resolvedImgUrl,
+            ),
+          );
+        }
+        break;
+      case 'toggle_active':
+        final nextActive = !p.active;
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: nextActive ? 'Activar Producto en POS' : 'Desactivar Producto en POS',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) {
+          final msg = await provider.bulkUpdateProducts([p.id], active: nextActive);
+          if (!mounted) return;
+          if (msg != null) {
+            SnackBarService.success(
+              context,
+              nextActive
+                  ? '"${p.name}" activado en POS.'
+                  : '"${p.name}" desactivado en POS.',
+            );
+          } else {
+            SnackBarService.error(
+              context,
+              provider.errorMessage ?? 'Error al cambiar estado del producto.',
+            );
+          }
+        }
+        break;
+      case 'delete':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Eliminar Producto',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) _confirmDelete(context, provider, p);
+        break;
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1799,8 +2310,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
 class ProductFormDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product? product;
+  final Product? duplicateFrom;
+  final int? initialSupplierId;
+  final String? initialSupplierName;
+  final String? initialName;
+  final String? initialBarcode;
 
-  const ProductFormDialog({super.key, required this.provider, this.product});
+  const ProductFormDialog({
+    super.key,
+    required this.provider,
+    this.product,
+    this.duplicateFrom,
+    this.initialSupplierId,
+    this.initialSupplierName,
+    this.initialName,
+    this.initialBarcode,
+  });
 
   @override
   State<ProductFormDialog> createState() => _ProductFormDialogState();
@@ -1863,18 +2388,33 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   bool _clearStalePriceWholesale = false;
 
   bool get _isEditing => widget.product != null;
+  bool get _isDuplicating => widget.product == null && widget.duplicateFrom != null;
 
   @override
   void initState() {
     super.initState();
     final p = widget.product;
-    _nameCtrl = TextEditingController(text: p?.name ?? '');
-    _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
+    final source = p ?? widget.duplicateFrom;
+    final cleanInitialName = widget.initialName?.trim();
+    final cleanInitialBarcode = widget.initialBarcode?.trim();
+    _nameCtrl = TextEditingController(
+      text: p?.name ??
+          (_isDuplicating
+              ? '${source!.name} (Copia)'
+              : (cleanInitialName ?? '')),
+    );
+    _barcodeCtrl = TextEditingController(
+      text: p?.barcode ?? (_isDuplicating ? '' : (cleanInitialBarcode ?? '')),
+    );
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(
-      text: (p != null && p.costPrice > 0) ? p.costPrice.toArsInput() : '',
+      text: (source != null && source.costPrice > 0)
+          ? source.costPrice.toArsInput()
+          : '',
     );
-    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toArsInput() : '');
+    _priceCtrl = TextEditingController(
+      text: source != null ? source.sellingPrice.toArsInput() : '',
+    );
     _marginCtrl = TextEditingController();
     final hasFractionalStock =
         p != null && (p.stock - p.stock.roundToDouble()).abs() > 0.0005;
@@ -1891,26 +2431,28 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _costCtrl.addListener(_onCostChanged);
     _marginCtrl.addListener(_onMarginChanged);
     _priceCtrl.addListener(_onPriceChanged);
-    _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
-    _isSoldByWeight = p?.isSoldByWeight ?? false;
-    _active = p?.active ?? true;
-    _isCombo = p?.isCombo ?? false;
-    _isService = p?.isService ?? false;
-    if (_isCombo && p?.comboIngredients != null) {
-      _comboIngredients = p!.comboIngredients!
+    _minStockCtrl = TextEditingController(
+      text: (source?.minStock != null) ? source!.minStock!.toStringAsFixed(0) : '',
+    );
+    _isSoldByWeight = source?.isSoldByWeight ?? false;
+    _active = source?.active ?? true;
+    _isCombo = source?.isCombo ?? false;
+    _isService = source?.isService ?? false;
+    if (_isCombo && source?.comboIngredients != null) {
+      _comboIngredients = source!.comboIngredients!
           .map((ing) => Map<String, dynamic>.from(ing))
           .toList();
     }
-    if (p?.priceTiers != null) {
-      _priceTiers = List<Map<String, dynamic>>.from(p!.priceTiers!);
+    if (source?.priceTiers != null) {
+      _priceTiers = List<Map<String, dynamic>>.from(source!.priceTiers!);
       _expandPriceTiers = _priceTiers.isNotEmpty;
     }
-    _unitType = p?.unitType ?? 'un';
-    final rawIva = p?.ivaRate ?? 21.0;
+    _unitType = source?.unitType ?? 'un';
+    final rawIva = source?.ivaRate ?? 21.0;
     _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
-    _categoryId = p?.category?.id;
-    _brandId = p?.brand?.id;
-    _supplierId = p?.supplier?.id;
+    _categoryId = source?.category?.id;
+    _brandId = source?.brand?.id;
+    _supplierId = source?.supplier?.id ?? widget.initialSupplierId;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
@@ -1919,30 +2461,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       }
     });
     _expiryCtrl = TextEditingController(
-      text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
+      text: source?.vencimientoDias != null ? source!.vencimientoDias.toString() : '',
     );
     _expiryAlertDaysCtrl = TextEditingController(
-      text: (p?.expiryAlertDays ?? 15).toString(),
+      text: (source?.expiryAlertDays ?? 15).toString(),
     );
     if (p?.expirationDate != null && p!.expirationDate!.isNotEmpty) {
       _expirationDate = DateTime.tryParse(p.expirationDate!);
     }
-    _trackBatches = p?.trackBatches ?? false;
-    _lotDeductionPolicy = p?.lotDeductionPolicy ?? 'fefo';
-    _allowSellExpired = p?.allowSellExpired ?? false;
-    _hasProductionRecipe = p?.hasProductionRecipe ?? false;
+    _trackBatches = source?.trackBatches ?? false;
+    _lotDeductionPolicy = source?.lotDeductionPolicy ?? 'fefo';
+    _allowSellExpired = source?.allowSellExpired ?? false;
+    _hasProductionRecipe = source?.hasProductionRecipe ?? false;
     _recipeYieldCtrl = TextEditingController(
-      text: (p?.recipeYieldQuantity ?? 1.0).toQty(),
+      text: (source?.recipeYieldQuantity ?? 1.0).toQty(),
     );
     _initialBatchCodeCtrl = TextEditingController();
-    if (p?.recipeIngredients != null) {
-      _recipeIngredients = p!.recipeIngredients!
+    if (source?.recipeIngredients != null) {
+      _recipeIngredients = source!.recipeIngredients!
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
     }
     _showExpirationSection = _trackBatches ||
         _expirationDate != null ||
-        (p?.vencimientoDias != null && p!.vencimientoDias! > 0);
+        (source?.vencimientoDias != null && source!.vencimientoDias! > 0);
   }
 
   void _handleFormBarcodeScan(String barcode) {
@@ -2097,7 +2639,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Future<void> _loadSavedMargin() async {
-    if (_isEditing) {
+    if (_isEditing || _isDuplicating) {
       final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
       final price = ArsThousandsInputFormatter.parse(_priceCtrl.text);
       if (cost > 0) {
@@ -2499,26 +3041,38 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         }
 
         final margin = double.tryParse(_marginCtrl.text.replaceAll(',', '.')) ?? 0.0;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setDouble('last_profit_margin', margin);
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setDouble('last_profit_margin', margin);
+        } catch (_) {}
 
         if (!mounted) return;
+        Product? resultProd;
         if (targetProductId != null) {
-          Product? syncedProd;
           try {
-            syncedProd = widget.provider.products.where((p) => p.id == targetProductId).firstOrNull ??
-                widget.provider.lastCreatedProduct;
+            resultProd = widget.provider.products
+                    .where((p) => p.id == targetProductId)
+                    .firstOrNull ??
+                widget.provider.lastCreatedProduct ??
+                widget.provider.lastUpdatedProduct;
           } catch (_) {}
-          if (syncedProd != null) {
-            try {
-              context.read<PosProvider?>()?.syncUpdatedCatalogProduct(syncedProd);
-            } catch (_) {}
-            try {
-              context.read<OfferProvider?>()?.syncUpdatedProduct(syncedProd);
-            } catch (_) {}
-          }
         }
-        Navigator.of(context).pop();
+        if (resultProd == null) {
+          try {
+            resultProd = _isEditing
+                ? widget.provider.lastUpdatedProduct
+                : widget.provider.lastCreatedProduct;
+          } catch (_) {}
+        }
+        if (resultProd != null) {
+          try {
+            context.read<PosProvider?>()?.syncUpdatedCatalogProduct(resultProd);
+          } catch (_) {}
+          try {
+            context.read<OfferProvider?>()?.syncUpdatedProduct(resultProd);
+          } catch (_) {}
+        }
+        Navigator.of(context).pop(resultProd);
         if (imageUploadSuccess) {
           SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : '¡Producto creado exitosamente!');
         } else {
@@ -3201,7 +3755,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         children: [
           Expanded(
             child: Text(
-              _isEditing ? 'Editar Producto' : 'Nuevo Producto',
+              _isEditing
+                  ? 'Editar Producto'
+                  : (_isDuplicating ? 'Duplicar Producto' : 'Nuevo Producto'),
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19),
             ),
           ),
@@ -3438,8 +3994,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               builder: (_) {
                                 final sortedSuppliers =
                                     sortByAlphabeticalName(suppliers, (s) => s.name);
-                                final hasSelection =
+                                final hasMatchingSupplier =
                                     sortedSuppliers.any((s) => s.id == _supplierId);
+                                final fallbackSupplierName =
+                                    widget.initialSupplierName?.trim();
+                                final showFallbackInitialSupplier = !hasMatchingSupplier &&
+                                    _supplierId != null &&
+                                    _supplierId == widget.initialSupplierId &&
+                                    fallbackSupplierName != null &&
+                                    fallbackSupplierName.isNotEmpty;
+                                final hasSelection =
+                                    hasMatchingSupplier || showFallbackInitialSupplier;
                                 return Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
@@ -3458,6 +4023,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                             label: '— Sin proveedor —',
                                             isResetOption: true,
                                           ),
+                                          if (showFallbackInitialSupplier)
+                                            SearchableSelectOption<int?>(
+                                              value: _supplierId,
+                                              label: fallbackSupplierName,
+                                            ),
                                           ...sortedSuppliers.map((s) {
                                             final hasCuit =
                                                 s.cuit != null && s.cuit!.trim().isNotEmpty;
@@ -6822,6 +7392,348 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+      ],
+    );
+  }
+}
+
+class _QuickPriceEditDialog extends StatefulWidget {
+  final CatalogProvider provider;
+  final Product product;
+
+  const _QuickPriceEditDialog({
+    required this.provider,
+    required this.product,
+  });
+
+  @override
+  State<_QuickPriceEditDialog> createState() => _QuickPriceEditDialogState();
+}
+
+class _QuickPriceEditDialogState extends State<_QuickPriceEditDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _costCtrl;
+  late final TextEditingController _marginCtrl;
+  late final TextEditingController _priceCtrl;
+  bool _isAutoCalculating = false;
+  bool _priceIsAuto = false;
+  bool _costIsAuto = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.product;
+    _costCtrl = TextEditingController(
+      text: p.costPrice > 0 ? p.costPrice.toArsInput() : '',
+    );
+    _priceCtrl = TextEditingController(
+      text: p.sellingPrice > 0 ? p.sellingPrice.toArsInput() : '',
+    );
+    final initialMargin = (p.costPrice > 0 && p.sellingPrice > 0)
+        ? ((p.sellingPrice - p.costPrice) / p.costPrice) * 100
+        : 0.0;
+    _marginCtrl = TextEditingController(
+      text: p.costPrice > 0 ? initialMargin.toCleanMargin() : '',
+    );
+
+    _costCtrl.addListener(_onCostChanged);
+    _marginCtrl.addListener(_onMarginChanged);
+    _priceCtrl.addListener(_onPriceChanged);
+  }
+
+  @override
+  void dispose() {
+    _costCtrl.dispose();
+    _marginCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onCostChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.trim();
+
+    _costIsAuto = false;
+
+    if (costStr.isEmpty) {
+      if (_priceIsAuto) {
+        _isAutoCalculating = true;
+        _priceCtrl.clear();
+        _priceIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    final cost = ArsThousandsInputFormatter.parse(costStr);
+    if (cost <= 0) return;
+
+    if (priceStr.isEmpty || _priceIsAuto) {
+      if (marginStr.isNotEmpty) {
+        final margin = double.tryParse(marginStr) ?? 0.0;
+        final newPrice = cost * (1 + (margin / 100));
+        _isAutoCalculating = true;
+        _priceCtrl.text = newPrice.toArsInput();
+        _priceIsAuto = true;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    final price = ArsThousandsInputFormatter.parse(priceStr);
+    if (price > 0) {
+      final margin = ((price - cost) / cost) * 100;
+      _isAutoCalculating = true;
+      _marginCtrl.text = margin.toCleanMargin();
+      _isAutoCalculating = false;
+    }
+  }
+
+  void _onMarginChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.trim();
+
+    if (marginStr.isEmpty) {
+      if (_costIsAuto) {
+        _isAutoCalculating = true;
+        _costCtrl.clear();
+        _costIsAuto = false;
+        _isAutoCalculating = false;
+      } else if (_priceIsAuto) {
+        _isAutoCalculating = true;
+        _priceCtrl.clear();
+        _priceIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    final margin = double.tryParse(marginStr);
+    if (margin == null || margin <= -100) return;
+
+    final cost = costStr.isNotEmpty ? ArsThousandsInputFormatter.parse(costStr) : 0.0;
+    if (cost > 0) {
+      final newPrice = cost * (1 + (margin / 100));
+      _isAutoCalculating = true;
+      _priceCtrl.text = newPrice.toArsInput();
+      _priceIsAuto = true;
+      _isAutoCalculating = false;
+    } else if (priceStr.isNotEmpty && !widget.product.isCombo) {
+      final price = ArsThousandsInputFormatter.parse(priceStr);
+      if (price > 0) {
+        final newCost = price / (1 + (margin / 100));
+        _isAutoCalculating = true;
+        _costCtrl.text = newCost.toArsInput();
+        _costIsAuto = true;
+        _isAutoCalculating = false;
+      }
+    }
+  }
+
+  void _onPriceChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.trim();
+    final priceStr = _priceCtrl.text.trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+
+    _priceIsAuto = false;
+
+    if (priceStr.isEmpty) {
+      if (_costIsAuto) {
+        _isAutoCalculating = true;
+        _costCtrl.clear();
+        _costIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    final price = ArsThousandsInputFormatter.parse(priceStr);
+    if (price <= 0) return;
+
+    final cost = costStr.isNotEmpty ? ArsThousandsInputFormatter.parse(costStr) : 0.0;
+    if (cost > 0) {
+      final margin = ((price - cost) / cost) * 100;
+      _isAutoCalculating = true;
+      _marginCtrl.text = margin.toCleanMargin();
+      _isAutoCalculating = false;
+    } else if (marginStr.isNotEmpty && !widget.product.isCombo) {
+      final margin = double.tryParse(marginStr);
+      if (margin != null && margin > -100) {
+        final newCost = price / (1 + (margin / 100));
+        _isAutoCalculating = true;
+        _costCtrl.text = newCost.toArsInput();
+        _costIsAuto = true;
+        _isAutoCalculating = false;
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_formKey.currentState!.validate()) return;
+    final newSelling = ArsThousandsInputFormatter.parse(_priceCtrl.text);
+    final newCost = _costCtrl.text.trim().isNotEmpty
+        ? ArsThousandsInputFormatter.parse(_costCtrl.text)
+        : 0.0;
+
+    setState(() => _saving = true);
+    final updated = await widget.provider.updateProductPriceFromPos(
+      widget.product.id,
+      sellingPrice: newSelling,
+      costPrice: widget.product.isCombo ? null : newCost,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (updated != null) {
+      try {
+        context.read<PosProvider?>()?.syncUpdatedCatalogProduct(updated);
+      } catch (_) {}
+      try {
+        context.read<OfferProvider?>()?.syncUpdatedProduct(updated);
+      } catch (_) {}
+      Navigator.of(context).pop(updated);
+      SnackBarService.success(
+        context,
+        'Precio de "${widget.product.name}" actualizado a \$${updated.sellingPrice.toCurrency()}.',
+      );
+    } else {
+      SnackBarService.error(
+        context,
+        widget.provider.errorMessage ?? 'No se pudo actualizar el precio.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+      title: Row(
+        children: [
+          Icon(Icons.price_change_outlined, color: Colors.deepOrange.shade700),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Cambiar Precio Rápido',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 20),
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SizedBox(
+          width: 420,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  p.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Actual: Costo \$${p.costPrice.toCurrency()} • Venta \$${p.sellingPrice.toCurrency()}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        controller: _costCtrl,
+                        readOnly: p.isCombo,
+                        decoration: InputDecoration(
+                          labelText: p.isCombo ? 'Costo Combo' : 'Costo (\$)',
+                          isDense: true,
+                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [ArsThousandsInputFormatter()],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _marginCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '% Margen',
+                          suffixText: '%',
+                          isDense: true,
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        controller: _priceCtrl,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Precio Venta *',
+                          isDense: true,
+                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [ArsThousandsInputFormatter()],
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) {
+                            return 'Requerido';
+                          }
+                          final parsed = ArsThousandsInputFormatter.tryParse(val);
+                          if (parsed == null || parsed <= 0) {
+                            return 'Mayor a 0';
+                          }
+                          return null;
+                        },
+                        onFieldSubmitted: (_) => _save(),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          icon: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.check_rounded, size: 18),
+          label: const Text('Guardar Precio'),
+          onPressed: _saving ? null : _save,
+        ),
       ],
     );
   }

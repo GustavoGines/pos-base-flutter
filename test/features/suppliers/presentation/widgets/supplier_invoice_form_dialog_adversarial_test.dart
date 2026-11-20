@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:frontend_desktop/core/network/api_client.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/brand.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
 import 'package:frontend_desktop/features/suppliers/presentation/widgets/supplier_invoice_form_dialog.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 
@@ -21,6 +26,13 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
   FeatureFlags get features =>
       FeatureFlags(suppliers: true, batchExpiration: _batchExpiration);
+
+  @override
+  BusinessSettings? get settings => BusinessSettings(
+        licensePlanType: 'premium',
+        businessType: _batchExpiration ? 'retail' : 'hardware_store',
+        features: features,
+      );
 
   void setIsRI(bool val) {
     _isRI = val;
@@ -38,6 +50,15 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 
 class FakeSupplierProvider extends ChangeNotifier implements SupplierProvider {
   @override
+  List<Supplier> get suppliers => const [];
+
+  @override
+  bool get isLoading => false;
+
+  @override
+  Future<void> fetchSuppliers({String? search}) async {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -46,10 +67,69 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
   Future<List<Product>> search(String query) async => [];
 
   @override
+  void syncUpdatedCatalogProduct(Product product) {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
+  final List<Product> _products = [];
+  Map<String, dynamic>? lastCreatedPayload;
+  Product? _lastCreatedProduct;
+
+  @override
+  List<Product> get products => _products;
+
+  @override
+  List<Category> get categories => const [];
+
+  @override
+  List<Brand> get brands => const [];
+
+  @override
+  List<Rubro> get rubros => const [];
+
+  @override
+  bool get isLoading => false;
+
+  @override
+  String? get errorMessage => null;
+
+  @override
+  Product? get lastCreatedProduct => _lastCreatedProduct;
+
+  @override
+  Product? get lastUpdatedProduct => null;
+
+  @override
+  Future<bool> createProduct(Map<String, dynamic> data) async {
+    lastCreatedPayload = Map<String, dynamic>.from(data);
+    final created = Product(
+      id: 999,
+      name: (data['name'] ?? '').toString(),
+      barcode: data['barcode']?.toString(),
+      internalCode: (data['internal_code'] ?? '00999').toString(),
+      costPrice: (data['cost_price'] as num?)?.toDouble() ?? 0.0,
+      sellingPrice: (data['selling_price'] as num?)?.toDouble() ?? 0.0,
+      stock: (data['stock'] as num?)?.toDouble() ?? 0.0,
+      active: true,
+      isSoldByWeight: false,
+      supplier: data['supplier_id'] != null
+          ? Supplier(
+              id: data['supplier_id'] as int,
+              name: 'Distribuidora Central S.A.',
+              balance: 0,
+              isActive: true,
+            )
+          : null,
+    );
+    _lastCreatedProduct = created;
+    _products.add(created);
+    notifyListeners();
+    return true;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -69,6 +149,7 @@ void main() {
   late FakeApiClient fakeApi;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     fakeSettings = FakeSettingsProvider();
     fakeSupplier = FakeSupplierProvider();
     fakePos = FakePosProvider();
@@ -551,7 +632,7 @@ void main() {
         await tester.pumpWidget(buildTestDialog(initialInvoice: sugarInvoice));
         await tester.pumpAndSettle();
 
-        final otherLotBtn = find.text('+ Otro lote (distinto vto.)');
+        final otherLotBtn = find.text('+ Otro lote');
         expect(otherLotBtn, findsOneWidget);
         await tester.ensureVisible(otherLotBtn);
         await tester.pumpAndSettle();
@@ -559,10 +640,10 @@ void main() {
         await tester.pumpAndSettle();
 
         // Ahora existen 2 renglones del mismo producto sin DuplicateKey y con sus etiquetas Lote 1/2 y Lote 2/2
-        expect(find.text('Azúcar Ledesma 1kg Pack'), findsNWidgets(2));
+        expect(find.textContaining('Azúcar Ledesma 1kg Pack'), findsNWidgets(2));
         expect(find.text('Lote 1/2'), findsOneWidget);
         expect(find.text('Lote 2/2'), findsOneWidget);
-        expect(find.text('Otro lote de este producto (distinto vencimiento)'), findsNWidgets(2));
+        expect(find.text('+ Otro lote'), findsNWidgets(2));
 
         // Escribir '10' en Validez del primer lote calcula la fecha de vencimiento a +10 días sin overflow
         await tester.enterText(
@@ -611,9 +692,59 @@ void main() {
         await tester.pumpWidget(buildTestDialog(initialInvoice: hardwareInvoice));
         await tester.pumpAndSettle();
 
-        expect(find.text('Amoladora Angular 115mm'), findsOneWidget);
-        expect(find.text('+ Asignar Lote / Vencimiento de este ingreso'), findsNothing);
-        expect(find.text('+ Otro lote (distinto vto.)'), findsNothing);
+        expect(find.textContaining('Amoladora Angular 115mm'), findsOneWidget);
+        expect(find.text('+ Lote / Vto.'), findsNothing);
+        expect(find.text('+ Otro lote'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Botón + (Nuevo Producto Rápido) preselecciona el proveedor de la factura, precarga el nombre y auto-agrega al crear',
+      (tester) async {
+        tester.view.physicalSize = const Size(1024, 768);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await tester.pumpWidget(buildTestDialog());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Buscar producto por nombre o código...'),
+          'Azucar Ledesma',
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.tap(find.byTooltip('Nuevo Producto Rápido'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Nuevo Producto'), findsOneWidget);
+        expect(find.text('Azucar Ledesma'), findsWidgets);
+        // El proveedor actual de la factura aparece preseleccionado inmediatamente
+        expect(find.text('Distribuidora Central S.A.'), findsOneWidget);
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Precio Venta *'),
+          '1500',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Crear Producto'));
+        await tester.pumpAndSettle();
+        // Esperar cierre automático del toast de SnackBarService
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Nuevo Producto'), findsNothing);
+        expect(fakeCatalog.lastCreatedPayload, isNotNull);
+        expect(fakeCatalog.lastCreatedPayload!['supplier_id'], 1);
+        expect(fakeCatalog.lastCreatedPayload!['name'], 'Azucar Ledesma');
+        // El nuevo producto queda agregado automáticamente al listado de ítems del comprobante
+        expect(find.textContaining('Azucar Ledesma'), findsWidgets);
+        expect(find.widgetWithText(TextFormField, 'Nuevo PVP'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
