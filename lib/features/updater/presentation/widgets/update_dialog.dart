@@ -20,6 +20,40 @@ class UpdateDialog extends StatefulWidget {
     this.autoStart = false,
   });
 
+  /// Determina si la URL de la API (`pos_api`) apunta a ESTA misma computadora
+  /// (`localhost`, `127.0.0.1`, `::1` o cualquiera de las direcciones IPv4/IPv6
+  /// de las interfaces de red locales de esta máquina).
+  static Future<bool> doesApiUrlPointToThisMachine(String apiUrl) async {
+    try {
+      final uri = Uri.parse(apiUrl.trim());
+      final host = uri.host.trim().toLowerCase();
+      if (host.isEmpty) return true;
+      if (host == 'localhost' || host == '127.0.0.1' || host == '::1') {
+        return true;
+      }
+
+      // Si no es una IP privada LAN (ej. túnel Cloudflare remoto), no es local
+      if (!AppConfig.isPrivateLanIpUrl(apiUrl)) {
+        return false;
+      }
+
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: true,
+        type: InternetAddressType.any,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (addr.address.trim().toLowerCase() == host) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   @override
   State<UpdateDialog> createState() => _UpdateDialogState();
 }
@@ -81,12 +115,31 @@ class _UpdateDialogState extends State<UpdateDialog> {
       String? resolvedBackendPath;
 
       // ─────────────────────────────────────────────────────────────────
-      // PROTECCIÓN MULTI-CAJA LAN (Resolver y verificar ruta local del Backend ANTES de descargar)
+      // PROTECCIÓN MULTI-CAJA LAN (Resolver y verificar si esta PC es la PC Servidor ANTES de descargar)
       // ─────────────────────────────────────────────────────────────────
       if (!_isFrontend) {
+        final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+
+        // 0. Verificar si pos_api apunta a OTRA computadora de la red (Caja Secundaria).
+        // Incluso si esta notebook tiene una carpeta C:\laragon local, si la app está
+        // conectada a la IP de otra máquina (ej. 192.168.1.150 y la IP de esta PC no es .150),
+        // NO debemos actualizar el Laragon local de la notebook.
+        final bool pointsToThisMachine =
+            await UpdateDialog.doesApiUrlPointToThisMachine(currentApiUrl);
+        if (!pointsToThisMachine) {
+          final remoteHost = Uri.tryParse(currentApiUrl)?.host ?? currentApiUrl;
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _status =
+                  '⚠️ Esta terminal está conectada al Servidor remoto ($remoteHost).\n\nLa actualización del Servidor debe ejecutarse directamente desde la PC Servidor principal ($remoteHost).';
+            });
+          }
+          return;
+        }
+
         // 1. Intentar obtener la ruta real y absoluta directamente desde el backend (API 1.8.3+)
         try {
-          final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
           final sessionToken = prefs.getString('pos_session_token');
           final response = await http
               .get(

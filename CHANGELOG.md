@@ -2,6 +2,12 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows/Android) están documentados aquí.
 
 
+## [2.1.2] - 2026-11-21
+### Blindaje de Red Multi-Caja, Preservación de IP del Cliente y Reinicio de Servicios OTA
+- Preservación estricta de la IP LAN configurada por el cliente (`pos_api` / `pos_api_local`) durante actualizaciones OTA y migración de preferencias, evitando sobreescrituras con valores por defecto.
+- Detección automática de terminales secundarias en red LAN (`NetworkInterface`) para evitar que una caja secundaria intente actualizar un servidor local durante el encadenamiento OTA.
+- Reinicio automático en caliente de servicios en segundo plano (`Reverb`, `Queue Worker` y `Scheduler`) y actualización de íconos en accesos directos de Escritorio (`Caja4U` y `Servidor Caja4U`).
+
 ## [2.1.1] - 2026-11-21
 ### Actualizador OTA Diferencial Ultrarrápido y Blindaje Anti-Antivirus
 - Extracción diferencial inteligente por tamaño y `CRC-32` desde el directorio central del ZIP sin descomprimir ni escribir archivos sin cambios, reduciendo el tiempo de actualización de minutos a segundos.

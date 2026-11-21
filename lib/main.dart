@@ -294,17 +294,48 @@ void _sanitizeAndMigrateWindowsSharedPreferencesSync({bool forceReset = false}) 
       return;
     }
 
-    // Si ambos existen y son válidos, fusionar claves faltantes del archivo legado sin pisar las nuevas
+    // Si ambos existen y son válidos, fusionar claves del archivo legado:
+    // - Si el archivo legado (v1.8.5) fue modificado más recientemente que el nuevo,
+    //   o si en el nuevo archivo la IP es la IP por defecto de fábrica (192.168.1.200)
+    //   y en el legado el cliente había configurado su propia IP (ej. 192.168.1.150),
+    //   las claves de red y terminal del cliente en el archivo legado SIEMPRE prevalecen.
     if (legacyValid && newValid) {
       final legacyMap = json.decode(legacyFile.readAsStringSync());
       final newMap = json.decode(newFile.readAsStringSync());
 
       if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
         bool modified = false;
+        final bool legacyIsNewer =
+            legacyFile.lastModifiedSync().isAfter(newFile.lastModifiedSync());
+
+        const networkAndTerminalKeys = <String>{
+          'flutter.pos_api',
+          'flutter.pos_api_local',
+          'flutter.pos_api_remote',
+          'flutter.backend_install_path',
+          'flutter.assigned_register_id',
+        };
+
         for (final entry in legacyMap.entries) {
-          if (!newMap.containsKey(entry.key)) {
-            newMap[entry.key] = entry.value;
+          final key = entry.key;
+          final legacyVal = entry.value;
+          if (!newMap.containsKey(key)) {
+            newMap[key] = legacyVal;
             modified = true;
+          } else if (networkAndTerminalKeys.contains(key) && legacyVal != null) {
+            final currentNewVal = newMap[key]?.toString() ?? '';
+            final legacyValStr = legacyVal.toString();
+            // Si en el nuevo archivo quedó la IP por defecto del instalador (.200)
+            // o el archivo legado es más reciente y tiene otra IP configurada por el cliente,
+            // respetamos siempre la configuración real del cliente.
+            final bool newIsFactoryDefault =
+                currentNewVal.contains('192.168.1.200');
+            if (legacyValStr.isNotEmpty &&
+                currentNewVal != legacyValStr &&
+                (newIsFactoryDefault || legacyIsNewer)) {
+              newMap[key] = legacyVal;
+              modified = true;
+            }
           }
         }
         if (modified) {
@@ -377,14 +408,23 @@ foreach ($dir in $folders) {
           Remove-Item -LiteralPath $lnk.FullName -Force
         }
       }
-    } elseif ($lnk.Name -ieq 'Servidor POS.lnk') {
-      $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
-      if (-not (Test-Path -LiteralPath $newSrvPath)) {
-        Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
+    } elseif ($lnk.Name -ieq 'Servidor POS.lnk' -or $lnk.Name -ieq 'Servidor Caja4U.lnk') {
+      if ($iconPath -and (Test-Path -LiteralPath $iconPath)) {
+        $sc.IconLocation = "$iconPath,0"
+        $sc.Save()
+      }
+      if ($lnk.Name -ieq 'Servidor POS.lnk') {
+        $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
+        if (-not (Test-Path -LiteralPath $newSrvPath)) {
+          Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
+        } else {
+          Remove-Item -LiteralPath $lnk.FullName -Force
+        }
       }
     }
   }
 }
+ie4uinit.exe -ClearIconCache
 ie4uinit.exe -show
 ''';
 
@@ -652,7 +692,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
       // 🔁 RESCUE TRIGGER OTA 🔁
       if (AppConfig.isMobile) {
-        const currentAppVersion = '2.1.1';
+        const currentAppVersion = '2.1.2';
         const rescueSecret = 'pos-rescue-2026-GGLabs';
         final lastVersion = prefs.getString('app_version') ?? '1.0.0';
         if (lastVersion != currentAppVersion) {
@@ -1213,11 +1253,9 @@ class _MainAppState extends State<MainApp> {
     final bool isLanIp =
         !isMobilePlatform && AppConfig.isPrivateLanIpUrl(currentUrl);
 
-    // Si es una IP de red local en Desktop (ej. 192.168.1.200), usamos un timeout
-    // corto de 3 segundos para detectar rápidamente cambios de red Wi-Fi en notebooks.
     final Duration initialTimeout = isMobilePlatform
         ? const Duration(seconds: 15)
-        : (isLanIp ? const Duration(seconds: 3) : const Duration(seconds: 8));
+        : (isLanIp ? const Duration(seconds: 6) : const Duration(seconds: 8));
 
     try {
       await settingsProvider.loadSettings().timeout(initialTimeout);
@@ -1226,19 +1264,10 @@ class _MainAppState extends State<MainApp> {
       debugPrint('[Init] Error conectando a $currentUrl: $e');
 
       if (!isMobilePlatform) {
-        final bool isNetworkFailure = e is TimeoutException ||
-            e is SocketException ||
-            e is http.ClientException ||
-            e.toString().contains('TimeoutException') ||
-            e.toString().contains('SocketException') ||
-            e.toString().contains('Connection');
-
-        // 1. Fallback Inteligente de Red:
-        // Si la URL guardada era una IP de red local (ej. 192.168.1.X) o puerto 8000
-        // y dio TimeoutException / SocketException en una máquina Servidor con Laragon local:
-        // probar ping automático contra http://127.0.0.1/Sistema_POS/pos-backend/public/api (3s).
-        if ((isLanIp && isNetworkFailure && AppConfig.hasLocalLaragonServer()) ||
-            currentUrl.contains(':8000')) {
+        // IMPORTANTE: NUNCA sobreescribir la IP de red local configurada por el cliente
+        // (ej. 192.168.1.150) con localhost ni con 192.168.1.200 cuando hay un timeout temporal.
+        // Solo hacemos fallback automático si la URL era un puerto de desarrollo (:8000).
+        if (currentUrl.contains(':8000') && AppConfig.hasLocalLaragonServer()) {
           success = await _tryLocalhostFallback(
             prefs: prefs,
             previousUrl: currentUrl,
@@ -1247,14 +1276,14 @@ class _MainAppState extends State<MainApp> {
           );
         }
 
-        // 2. Si ya apuntaba a localhost (127.0.0.1) y falló, dar un breve margen de 1s
-        // y reintentar con tope de 3 segundos por si Apache/MySQL estaban despertando.
-        if (!success && !isLanIp) {
-          await Future.delayed(const Duration(seconds: 1));
+        // Dar un breve margen de 1.5s y reintentar contra la MISMA URL configurada por el cliente
+        // por si Apache/MySQL o la red Wi-Fi estaban despertando tras el reinicio OTA.
+        if (!success) {
+          await Future.delayed(const Duration(milliseconds: 1500));
           try {
             await settingsProvider
                 .loadSettings()
-                .timeout(const Duration(seconds: 3));
+                .timeout(const Duration(seconds: 5));
             success = true;
           } catch (_) {}
         }
@@ -1321,22 +1350,34 @@ class _MainAppState extends State<MainApp> {
               final check = await UpdateService().checkUpdate();
               final backendUpdate = check.backendUpdate;
 
-              if (backendUpdate != null && ctx.mounted) {
-                // Actualización integral en progreso: saltamos el cartel de "App actualizada"
-                // y pasamos directamente a la Fase 2 (Servidor).
-                await showDialog(
-                  context: ctx,
-                  barrierDismissible: false,
-                  builder: (_) => UpdateDialog(
-                    updateInfo: backendUpdate,
-                    autoStart: true,
-                  ),
-                );
-                // Refrescar forzosamente la pantalla de login para borrar el badge obsoleto
-                AppConfig.navigatorKey.currentState
-                    ?.pushReplacementNamed('/login');
-                return; // Salimos para no mostrar el OtaResultDialog
-              }
+            // Si llegamos aquí: o solo había update de frontend, o hubo error,
+            // o esta PC es una Caja Secundaria conectada al servidor por red LAN
+            // (en cuyo caso no debe auto-disparar la actualización del Backend local).
+            bool isSecondaryLanTerminal = false;
+            if (backendUpdate != null) {
+              try {
+                final prefs = await _getSafeSharedPreferences();
+                final apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+                isSecondaryLanTerminal = !(await UpdateDialog.doesApiUrlPointToThisMachine(apiUrl));
+              } catch (_) {}
+            }
+
+            if (backendUpdate != null && !isSecondaryLanTerminal && ctx.mounted) {
+              // Actualización integral en progreso en la PC Servidor: saltamos el cartel de "App actualizada"
+              // y pasamos directamente a la Fase 2 (Servidor).
+              await showDialog(
+                context: ctx,
+                barrierDismissible: false,
+                builder: (_) => UpdateDialog(
+                  updateInfo: backendUpdate,
+                  autoStart: true,
+                ),
+              );
+              // Refrescar forzosamente la pantalla de login para borrar el badge obsoleto
+              AppConfig.navigatorKey.currentState
+                  ?.pushReplacementNamed('/login');
+              return; // Salimos para no mostrar el OtaResultDialog
+            }
             } catch (e) {
               debugPrint('[OTA Auto-Resume] Error chequeando backend: $e');
             }

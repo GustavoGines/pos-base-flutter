@@ -279,20 +279,34 @@ void main(List<String> args) async {
       }
     }
 
-    // 3. Reiniciar workers de cola en segundo plano (no bloqueante)
+    // 3. Reiniciar workers de cola y WebSockets Reverb en segundo plano (no bloqueante)
     if (!hasError) {
-      try {
-        final qResult = Process.runSync(
-          phpExe,
-          [artisanPath, 'queue:restart'],
-          workingDirectory: targetDir,
-          environment: phpEnv.isNotEmpty ? phpEnv : null,
-        );
-        if (qResult.exitCode == 0) {
-          log.log('  queue:restart: OK');
+      for (final bgCmd in ['queue:restart', 'reverb:restart']) {
+        try {
+          final qResult = Process.runSync(
+            phpExe,
+            [artisanPath, bgCmd],
+            workingDirectory: targetDir,
+            environment: phpEnv.isNotEmpty ? phpEnv : null,
+          );
+          if (qResult.exitCode == 0) {
+            log.log('  $bgCmd: OK');
+          }
+        } catch (e) {
+          log.log('  Advertencia ejecutando $bgCmd (no bloqueante): $e');
         }
-      } catch (e) {
-        log.log('  Advertencia ejecutando queue:restart (no bloqueante): $e');
+      }
+
+      // Asegurar que las tareas programadas de Windows (Reverb, Queue, Schedule) vuelvan a
+      // levantar inmediatamente si se detuvieron al recibir la señal de restart.
+      for (final taskName in [
+        'SistemaPOS_Reverb',
+        'SistemaPOS_Queue',
+        'SistemaPOS_Schedule',
+      ]) {
+        try {
+          Process.runSync('schtasks', ['/run', '/tn', taskName]);
+        } catch (_) {}
       }
     }
 
@@ -446,76 +460,115 @@ void _writeOtaResult(
 /// Migra las preferencias de usuario desde `com.example\frontend_desktop` hacia `Dev4U\Caja4U`
 /// en todos los perfiles de Windows (`C:\Users\*`), y actualiza los accesos directos del Escritorio
 /// Público y de Usuarios (`Sistema POS.lnk` -> `Caja4U.lnk`, `Servidor POS.lnk` -> `Servidor Caja4U.lnk`).
-/// Una vez completada exitosamente por primera vez, escribe `.branding_caja4u_migrated` para no
-/// repetir el escaneo en cada actualización OTA futura.
 void _migrateBrandingAndPrefs(String targetDir, OtaLogger log) {
   final markerFile = File(p.join(targetDir, '.branding_caja4u_migrated'));
-  if (markerFile.existsSync()) {
-    log.log(
-        'Migración de preferencias y accesos directos Caja4U ya aplicada previamente — omitiendo.');
-    return;
-  }
+  final bool alreadyMigratedPrefs = markerFile.existsSync();
 
-  log.log('Iniciando migración de preferencias y accesos directos Caja4U...');
+  if (!alreadyMigratedPrefs) {
+    log.log('Iniciando migración de preferencias de usuario a Caja4U...');
 
-  // A) Migrar shared_preferences.json en todos los perfiles de usuario
-  try {
-    final usersDir = Directory(r'C:\Users');
-    if (usersDir.existsSync()) {
-      for (final entity in usersDir.listSync()) {
-        if (entity is! Directory) continue;
-        final legacyFile = File(p.join(
-          entity.path,
-          'AppData',
-          'Roaming',
-          'com.example',
-          'frontend_desktop',
-          'shared_preferences.json',
-        ));
-        if (!legacyFile.existsSync()) continue;
+    // A) Migrar shared_preferences.json en todos los perfiles de usuario
+    try {
+      final usersDir = Directory(r'C:\Users');
+      if (usersDir.existsSync()) {
+        const networkAndTerminalKeys = <String>{
+          'flutter.pos_api',
+          'flutter.pos_api_local',
+          'flutter.pos_api_remote',
+          'flutter.backend_install_path',
+          'flutter.assigned_register_id',
+        };
 
-        final newDir = Directory(p.join(
-          entity.path,
-          'AppData',
-          'Roaming',
-          'Dev4U',
-          'Caja4U',
-        ));
-        final newFile = File(p.join(newDir.path, 'shared_preferences.json'));
+        for (final entity in usersDir.listSync()) {
+          if (entity is! Directory) continue;
+          final legacyFile = File(p.join(
+            entity.path,
+            'AppData',
+            'Roaming',
+            'com.example',
+            'frontend_desktop',
+            'shared_preferences.json',
+          ));
+          if (!legacyFile.existsSync()) continue;
 
-        try {
-          if (!newFile.existsSync()) {
-            newDir.createSync(recursive: true);
-            legacyFile.copySync(newFile.path);
-            log.log('  ✓ Preferencias copiadas a ${newFile.path}');
-          } else {
-            final legacyMap = jsonDecode(legacyFile.readAsStringSync());
-            final newMap = jsonDecode(newFile.readAsStringSync());
-            if (legacyMap is Map<String, dynamic> &&
-                newMap is Map<String, dynamic>) {
-              bool changed = false;
-              for (final entry in legacyMap.entries) {
-                if (!newMap.containsKey(entry.key)) {
-                  newMap[entry.key] = entry.value;
-                  changed = true;
+          final newDir = Directory(p.join(
+            entity.path,
+            'AppData',
+            'Roaming',
+            'Dev4U',
+            'Caja4U',
+          ));
+          final newFile = File(p.join(newDir.path, 'shared_preferences.json'));
+
+          try {
+            if (!newFile.existsSync()) {
+              newDir.createSync(recursive: true);
+              legacyFile.copySync(newFile.path);
+              log.log('  ✓ Preferencias copiadas a ${newFile.path}');
+            } else {
+              final legacyMap = jsonDecode(legacyFile.readAsStringSync());
+              final newMap = jsonDecode(newFile.readAsStringSync());
+              if (legacyMap is Map<String, dynamic> &&
+                  newMap is Map<String, dynamic>) {
+                bool changed = false;
+                final bool legacyIsNewer = legacyFile
+                    .lastModifiedSync()
+                    .isAfter(newFile.lastModifiedSync());
+
+                for (final entry in legacyMap.entries) {
+                  final key = entry.key;
+                  final legacyVal = entry.value;
+                  if (!newMap.containsKey(key)) {
+                    newMap[key] = legacyVal;
+                    changed = true;
+                  } else if (networkAndTerminalKeys.contains(key) &&
+                      legacyVal != null) {
+                    final currentNewVal = newMap[key]?.toString() ?? '';
+                    final legacyValStr = legacyVal.toString();
+                    final bool newIsFactoryDefault =
+                        currentNewVal.contains('192.168.1.200');
+                    if (legacyValStr.isNotEmpty &&
+                        currentNewVal != legacyValStr &&
+                        (newIsFactoryDefault || legacyIsNewer)) {
+                      newMap[key] = legacyVal;
+                      changed = true;
+                    }
+                  }
+                }
+                if (changed) {
+                  newFile.writeAsStringSync(jsonEncode(newMap));
+                  log.log('  ✓ Preferencias fusionadas en ${newFile.path}');
                 }
               }
-              if (changed) {
-                newFile.writeAsStringSync(jsonEncode(newMap));
-                log.log('  ✓ Preferencias fusionadas en ${newFile.path}');
-              }
             }
+          } catch (e) {
+            log.log('  Advertencia migrando preferencias en ${entity.path}: $e');
           }
-        } catch (e) {
-          log.log('  Advertencia migrando preferencias en ${entity.path}: $e');
         }
       }
+    } catch (e) {
+      log.log('Advertencia escaneando perfiles de usuario: $e');
     }
-  } catch (e) {
-    log.log('Advertencia escaneando perfiles de usuario: $e');
+
+    // Si en esta PC existe instalar_tareas_bg.bat y la tarea SistemaPOS_Queue aún no fue registrada
+    // (ej. cliente v1.8.5 que actualiza sólo por OTA), registrarla automáticamente aprovechando el UAC de Frontend.
+    try {
+      final bgScript =
+          File(r'C:\laragon\www\Sistema_POS\pos-backend\instalar_tareas_bg.bat');
+      if (bgScript.existsSync()) {
+        final qCheck = Process.runSync(
+            'schtasks', ['/query', '/tn', 'SistemaPOS_Queue']);
+        if (qCheck.exitCode != 0) {
+          log.log(
+              'Registrando tareas en segundo plano de Laravel (Reverb/Queue/Schedule)...');
+          Process.runSync('cmd.exe', ['/c', bgScript.path]);
+        }
+      }
+    } catch (_) {}
   }
 
   // B) Actualizar accesos directos (.lnk) en Escritorio Público, Menú Inicio y Perfiles
+  //    y refrescar el ícono de Caja4U en caso de que haya quedado algún acceso directo viejo.
   try {
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     final icoCandidate = p.join(targetDir, 'app_icon.ico');
@@ -547,7 +600,7 @@ $uniqueFolders = $folders | Select-Object -Unique
 
 foreach ($dir in $uniqueFolders) {
   if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { continue }
-  Get-ChildItem -LiteralPath $dir -Filter '*.lnk' -Recurse | ForEach-Object {
+  Get-ChildItem -LiteralPath $dir -Filter '*.lnk' | ForEach-Object {
     $lnk = $_
     $sc = $wsh.CreateShortcut($lnk.FullName)
     if ($sc.TargetPath -and ($sc.TargetPath -ieq $exePath -or $sc.TargetPath -like '*\Sistema_POS.exe')) {
@@ -564,14 +617,23 @@ foreach ($dir in $uniqueFolders) {
           Remove-Item -LiteralPath $lnk.FullName -Force
         }
       }
-    } elseif ($lnk.Name -ieq 'Servidor POS.lnk') {
-      $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
-      if (-not (Test-Path -LiteralPath $newSrvPath)) {
-        Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
+    } elseif ($lnk.Name -ieq 'Servidor POS.lnk' -or $lnk.Name -ieq 'Servidor Caja4U.lnk') {
+      if ($iconPath -and (Test-Path -LiteralPath $iconPath)) {
+        $sc.IconLocation = "$iconPath,0"
+        $sc.Save()
+      }
+      if ($lnk.Name -ieq 'Servidor POS.lnk') {
+        $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
+        if (-not (Test-Path -LiteralPath $newSrvPath)) {
+          Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
+        } else {
+          Remove-Item -LiteralPath $lnk.FullName -Force
+        }
       }
     }
   }
 }
+ie4uinit.exe -ClearIconCache
 ie4uinit.exe -show
 ''';
 
@@ -602,9 +664,12 @@ ie4uinit.exe -show
 
     if (psResult.exitCode == 0) {
       log.log('  ✓ Accesos directos y caché de íconos actualizados a Caja4U.');
-      try {
-        markerFile.writeAsStringSync(DateTime.now().toUtc().toIso8601String());
-      } catch (_) {}
+      if (!alreadyMigratedPrefs) {
+        try {
+          markerFile
+              .writeAsStringSync(DateTime.now().toUtc().toIso8601String());
+        } catch (_) {}
+      }
     } else {
       log.log(
           '  Advertencia actualizando accesos directos (exitCode=${psResult.exitCode}).');
