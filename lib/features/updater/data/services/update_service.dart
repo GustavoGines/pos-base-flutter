@@ -45,6 +45,7 @@ class UpdateService {
       // para evitar que un entorno cambiado (ej: Sistema_POS → Sistema_POS_test)
       // bloquee silenciosamente la detección de actualizaciones.
       String currentBackendVersion = '0.0.0';
+      String? localBackendVendorHash;
       try {
         final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
         final localBackendUri = Uri.parse('$currentApiUrl/version-check?t=${DateTime.now().millisecondsSinceEpoch}');
@@ -52,6 +53,7 @@ class UpdateService {
         if (localResponse.statusCode == 200) {
           final localData = json.decode(localResponse.body);
           currentBackendVersion = localData['version'] ?? '0.0.0';
+          localBackendVendorHash = localData['vendor_hash']?.toString();
         } else {
           // Si el servidor responde pero hay error (500, 404), usamos 0.0.0 para permitir que el OTA lo repare.
           currentBackendVersion = '0.0.0'; 
@@ -77,7 +79,11 @@ class UpdateService {
       if (backendResponse.statusCode == 200) {
         final data = json.decode(backendResponse.body);
         if (data['success'] == true && data['update_available'] == true && data['data'] != null) {
-          backendUpdate = UpdateInfo.fromJson(data['data'], component: 'backend');
+          backendUpdate = UpdateInfo.fromJson(
+            data['data'],
+            component: 'backend',
+            localVendorHash: localBackendVendorHash,
+          );
         }
       }
 

@@ -76,19 +76,100 @@ class _UpdateDialogState extends State<UpdateDialog> {
       //   puede leer desde %TEMP% sin problemas.
       // ─────────────────────────────────────────────────────────────────
       final installPath = File(Platform.resolvedExecutable).parent.path;
+      final updaterPath = p.join(installPath, 'updater.exe');
+      final prefs = await SharedPreferences.getInstance();
+      String? resolvedBackendPath;
+
+      // ─────────────────────────────────────────────────────────────────
+      // PROTECCIÓN MULTI-CAJA LAN (Resolver y verificar ruta local del Backend ANTES de descargar)
+      // ─────────────────────────────────────────────────────────────────
+      if (!_isFrontend) {
+        // 1. Intentar obtener la ruta real y absoluta directamente desde el backend (API 1.8.3+)
+        try {
+          final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+          final sessionToken = prefs.getString('pos_session_token');
+          final response = await http
+              .get(
+                Uri.parse('$currentApiUrl/system/install-path'),
+                headers: {
+                  'Accept': 'application/json',
+                  if (sessionToken != null && sessionToken.isNotEmpty) ...{
+                    'X-Session-Token': sessionToken,
+                    'Authorization': 'Bearer $sessionToken',
+                  },
+                },
+              )
+              .timeout(const Duration(seconds: 4));
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            resolvedBackendPath = data['backend_path'] as String?;
+            debugPrint('[UpdateDialog] Ruta backend (vía API): $resolvedBackendPath');
+          }
+        } catch (e) {
+          debugPrint('[UpdateDialog] Error consultando API de install-path: $e');
+        }
+
+        // 2. Fallbacks tradicionales si la API falla o estamos offline
+        if (resolvedBackendPath == null || resolvedBackendPath.isEmpty) {
+          final configuredBackendPath = prefs.getString('backend_install_path');
+          if (configuredBackendPath != null && configuredBackendPath.isNotEmpty) {
+            resolvedBackendPath = configuredBackendPath;
+            debugPrint('[UpdateDialog] Ruta backend (manual): $resolvedBackendPath');
+          } else {
+            final relPath = p.join(
+              File(Platform.resolvedExecutable).parent.parent.path,
+              'pos-backend',
+            );
+            if (Directory(relPath).existsSync()) {
+              resolvedBackendPath = relPath;
+              debugPrint('[UpdateDialog] Ruta backend (auto-detectada): $resolvedBackendPath');
+            }
+          }
+        }
+
+        if (resolvedBackendPath == null || resolvedBackendPath.isEmpty) {
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _status =
+                  '❌ Ruta del backend no configurada.\n\nAndá a Ajustes → Red y Terminales → "Ruta del Backend" y escribí la ruta de instalación del servidor.\nEjemplo: C:\\laragon\\www\\Sistema_POS\\pos-backend';
+            });
+          }
+          return;
+        }
+
+        // 3. Verificar que el directorio del backend exista físicamente en ESTA PC (protección Caja Secundaria LAN)
+        final localArtisanFile = File(p.join(resolvedBackendPath, 'artisan'));
+        if (!localArtisanFile.existsSync()) {
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _status =
+                  '⚠️ Esta terminal es una Caja Secundaria conectada por red.\n\nEl Servidor (Backend) debe actualizarse directamente desde la PC Servidor principal donde está instalado Laragon.';
+            });
+          }
+          return;
+        }
+      }
+
+      final bool useLightweight = widget.updateInfo.useLightweightAppPackage;
       final zipName = _isFrontend
           ? 'update_v${widget.updateInfo.version}.zip'
-          : 'update_backend_v${widget.updateInfo.version}.zip';
+          : useLightweight
+              ? 'update_backend_app_v${widget.updateInfo.version}.zip'
+              : 'update_backend_v${widget.updateInfo.version}.zip';
       // Tanto Frontend como Backend usan %TEMP% para evitar errno=5 (Acceso denegado)
       // al escribir en C:\Program Files sin permisos de administrador.
       // El updater.exe (elevado) podrá leer desde %TEMP% sin problemas.
       final zipDir = Directory.systemTemp.path;
       final zipPath = p.join(zipDir, zipName);
+      final downloadUrl = widget.updateInfo.effectiveDownloadUrl;
 
-      debugPrint('[UpdateDialog] Guardando ZIP en: $zipPath');
+      debugPrint('[UpdateDialog] Guardando ZIP en: $zipPath (URL: $downloadUrl, liviano: $useLightweight)');
 
       await dio.download(
-        widget.updateInfo.downloadUrl,
+        downloadUrl,
         zipPath,
         onReceiveProgress: (received, total) {
           if (total != -1 && mounted) {
@@ -103,7 +184,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       );
 
       // L-14: Verificación criptográfica SHA-256 del paquete descargado (si el servidor suministró hash)
-      if (widget.updateInfo.sha256Checksum != null) {
+      if (widget.updateInfo.effectiveSha256Checksum != null) {
         if (mounted) {
           setState(() => _status = 'Verificando integridad del paquete (SHA-256)...');
         }
@@ -125,67 +206,6 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
       if (mounted) {
         setState(() => _status = 'Preparando actualización...');
-      }
-
-      final updaterPath = p.join(installPath, 'updater.exe');
-
-      // Obtener ruta del backend
-      final prefs = await SharedPreferences.getInstance();
-      String? resolvedBackendPath;
-
-      // 1. Intentar obtener la ruta real y absoluta directamente desde el backend (Nueva API 1.8.3)
-      try {
-        final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-        final sessionToken = prefs.getString('pos_session_token');
-        final response = await http
-            .get(
-              Uri.parse('$currentApiUrl/system/install-path'),
-              headers: {
-                'Accept': 'application/json',
-                if (sessionToken != null && sessionToken.isNotEmpty) ...{
-                  'X-Session-Token': sessionToken,
-                  'Authorization': 'Bearer $sessionToken',
-                },
-              },
-            )
-            .timeout(const Duration(seconds: 4));
-            
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          resolvedBackendPath = data['backend_path'] as String?;
-          debugPrint('[UpdateDialog] Ruta backend (vía API): $resolvedBackendPath');
-        }
-      } catch (e) {
-        debugPrint('[UpdateDialog] Error consultando API de install-path: $e');
-      }
-
-      // 2. Fallbacks tradicionales si la API falla o estamos offline
-      if (resolvedBackendPath == null || resolvedBackendPath.isEmpty) {
-        final configuredBackendPath = prefs.getString('backend_install_path');
-        if (configuredBackendPath != null && configuredBackendPath.isNotEmpty) {
-          resolvedBackendPath = configuredBackendPath;
-          debugPrint('[UpdateDialog] Ruta backend (manual): $resolvedBackendPath');
-        } else {
-          final relPath = p.join(
-            File(Platform.resolvedExecutable).parent.parent.path,
-            'pos-backend',
-          );
-          if (Directory(relPath).existsSync()) {
-            resolvedBackendPath = relPath;
-            debugPrint('[UpdateDialog] Ruta backend (auto-detectada): $resolvedBackendPath');
-          }
-        }
-      }
-
-      if (!_isFrontend && resolvedBackendPath == null) {
-        if (mounted) {
-          setState(() {
-            _isDownloading = false;
-            _status =
-                '❌ Ruta del backend no configurada.\n\nAndá a Ajustes → Red y Terminales → "Ruta del Backend" y escribí la ruta de instalación del servidor.\nEjemplo: C:\\laragon\\www\\Sistema_POS\\pos-backend';
-          });
-        }
-        return;
       }
 
       final targetDir = _isFrontend ? installPath : resolvedBackendPath!;
@@ -391,21 +411,21 @@ class _UpdateDialogState extends State<UpdateDialog> {
     }
   }
 
-  /// Arquitectura de lanzamiento OTA (dos capas):
+  /// Arquitectura de lanzamiento OTA compatible con Windows 10/11 y Antivirus (Avast / Defender):
   ///
-  /// CAPA 1 — cmd.exe lanzado en modo DETACHED por Flutter.
-  ///   cmd.exe sobrevive al exit(0) de Flutter porque Windows lo saca del
-  ///   Job Object del proceso padre. Esto es lo que funcionaba originalmente.
+  /// - [requireElevation] = false (BACKEND):
+  ///   La aplicación Flutter permanece abierta esperando el resultado y Laragon
+  ///   es escribible sin UAC. Lanzamos `updater.exe` DIRECTAMENTE como proceso
+  ///   nativo (`Process.start(updaterPath, [...], mode: ProcessStartMode.detached)`),
+  ///   sin invocar `cmd.exe`, sin `powershell.exe` y sin escribir scripts `.ps1`
+  ///   en `%TEMP%`. Esto evita por completo las alertas heurísticas de Behavior
+  ///   Shield en Avast/AVG/Kaspersky.
   ///
-  /// CAPA 2 — cmd.exe ejecuta: powershell -File launcher.ps1
-  ///   NO usamos -Command "..." porque cualquier " dentro del string termina
-  ///   el argumento prematuramente → rutas con espacios se cortan en el primer
-  ///   espacio (bug que creaba "C:\Program" en vez de "C:\Program Files\Sistema POS").
-  ///   Con -File el .ps1 se parsea como código nativo de PowerShell: sin
-  ///   reinterpretación, sin corte en comillas, sin problemas de espacios.
-  ///
-  /// [requireElevation] = true  → Frontend: Start-Process -Verb RunAs (UAC)
-  /// [requireElevation] = false → Backend: sin elevar (laragon es escribible).
+  /// - [requireElevation] = true (FRONTEND):
+  ///   Necesita elevación UAC (`Start-Process -Verb RunAs`) para escribir en
+  ///   `C:\Program Files\` y sobrevivir al `exit(0)` de Flutter. Usa `cmd.exe`
+  ///   en modo `detached` ejecutando `powershell -File` sobre el `.ps1` de
+  ///   lanzamiento y limpia el script temporal automáticamente al terminar.
   Future<void> _launchUpdaterDetached({
     required String updaterPath,
     required String componentArg,
@@ -413,36 +433,34 @@ class _UpdateDialogState extends State<UpdateDialog> {
     required String zipPath,
     required bool requireElevation,
   }) async {
+    if (!requireElevation) {
+      await Process.start(
+        updaterPath,
+        [
+          '--component=$componentArg',
+          '--target-dir=$targetDir',
+          '--zip-path=$zipPath',
+        ],
+        mode: ProcessStartMode.detached,
+        runInShell: false,
+      );
+      debugPrint('[UpdateDialog] Updater de Backend lanzado directamente sin PowerShell/CMD.');
+      return;
+    }
+
     // En PowerShell, ' es literal dentro de strings single-quoted.
     // Para incluir una ' dentro de ese string se duplica ('').
     String psQ(String s) => s.replaceAll("'", "''");
 
-    // BUG CONOCIDO DE POWERSHELL: -ArgumentList con array @(...) une los
-    // elementos con espacios SIN comillas → 'C:\Program Files\...' se parte
-    // en 'C:\Program' y 'Files\...' → ruta truncada en el updater.
-    //
-    // SOLUCIÓN: un único string con " embebidos alrededor de cada ruta.
-    // El parser CRT de Windows los delimitará correctamente:
-    //   --component=frontend     → argv[1]
-    //   "--target-dir=C:\Pro..." → argv[2] sin comillas
-    //   "--zip-path=..."         → argv[3] sin comillas
-    //
-    // Usamos single-quoted string en PS1 para que \ sean literales
-    // y los " lleguen intactos a Start-Process.
-    final String ps1Content;
-    if (requireElevation) {
-      ps1Content = [
-        '# OTA Launcher — Frontend (elevado con UAC)',
-        "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
-        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -Verb RunAs",
-      ].join('\r\n');
-    } else {
-      ps1Content = [
-        '# OTA Launcher — Backend (sin elevacion)',
-        "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
-        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -WindowStyle Hidden",
-      ].join('\r\n');
-    }
+    final String ps1Content = [
+      '# OTA Launcher — Frontend (elevado con UAC)',
+      "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
+      "try {",
+      "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -Verb RunAs -ErrorAction Stop",
+      "} finally {",
+      "  Remove-Item -LiteralPath \$MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
+      "}",
+    ].join('\r\n');
 
     // Escribir .ps1 en %TEMP% (no requiere permisos de admin).
     final ps1Path = p.join(
@@ -450,8 +468,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.ps1');
     try {
       File(ps1Path).writeAsStringSync(ps1Content);
-      debugPrint('[UpdateDialog] PS1 (${requireElevation ? "ELEVADO" : "NORMAL"}) escrito en: $ps1Path');
-      debugPrint('[UpdateDialog] Contenido:\n$ps1Content');
+      debugPrint('[UpdateDialog] PS1 (ELEVADO) escrito en: $ps1Path');
     } catch (e) {
       debugPrint('[UpdateDialog] Error escribiendo PS1: $e');
       rethrow;
@@ -461,12 +478,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
     // Llama a powershell -File (capa 2) → sin problemas de quoting/espacios.
     await Process.start(
       'cmd',
-      ['/c', 'powershell', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', ps1Path],
+      ['/c', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', ps1Path],
       mode: ProcessStartMode.detached,
       runInShell: false,
     );
 
-    debugPrint('[UpdateDialog] Launcher lanzado: cmd → powershell -File (DETACHED).');
+    debugPrint('[UpdateDialog] Launcher elevado lanzado: cmd → powershell -File (DETACHED).');
   }
 
   /// Persiste info del update pendiente en disco para diagnóstico post-crash.

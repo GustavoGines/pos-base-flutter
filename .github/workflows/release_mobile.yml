@@ -61,9 +61,13 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
 
-      - name: Rename APK
+      - name: Rename APK and Compute SHA-256
         run: |
-          mv build/app/outputs/flutter-apk/app-release.apk pos_mobile_v${{ steps.version.outputs.VERSION }}.apk
+          APK_FILE="pos_mobile_v${{ steps.version.outputs.VERSION }}.apk"
+          mv build/app/outputs/flutter-apk/app-release.apk "$APK_FILE"
+          APK_SHA256=$(sha256sum "$APK_FILE" | awk '{print $1}')
+          echo "APK_SHA256=$APK_SHA256" >> $GITHUB_ENV
+          echo "✅ APK preparado: $APK_FILE (SHA256: $APK_SHA256)"
 
       - name: Upload APK to Cloudflare R2
         env:
@@ -114,6 +118,7 @@ jobs:
               \"component\": \"android\",
               \"channel\": \"beta\",
               \"download_url\": \"${{ secrets.R2_PUBLIC_BASE_URL }}/mobile/pos_mobile_v${{ steps.version.outputs.VERSION }}.apk\",
+              \"sha256\": \"${{ env.APK_SHA256 }}\",
               \"changelog\": $CHANGELOG_ESCAPED,
               \"is_critical\": false,
               \"token\": \"${{ secrets.LICENSE_SERVER_TOKEN }}\"

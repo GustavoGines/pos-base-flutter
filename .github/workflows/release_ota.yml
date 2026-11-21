@@ -67,16 +67,37 @@ jobs:
                     -Destination "${{ env.RELEASE_DIR }}\updater.exe" `
                     -Force
 
-      # ─── 7. EMPAQUETAR EN ZIP ───────────────────────────
-      - name: 🗜️ Crear ZIP del Release
+      # ─── 7. GENERAR MANIFIESTO OTA Y EMPAQUETAR EN ZIP ──
+      - name: 🗜️ Crear Manifiesto OTA y ZIP del Release
         shell: pwsh
         run: |
+          $releaseFullPath = (Resolve-Path "${{ env.RELEASE_DIR }}").Path
+          $versionClean = "${{ github.ref_name }}".Replace('desktop-', '').TrimStart('v')
+          $manifestFiles = Get-ChildItem -Path $releaseFullPath -File -Recurse | ForEach-Object {
+            $_.FullName.Substring($releaseFullPath.Length + 1).Replace('\', '/')
+          } | Where-Object { $_ -ne 'ota_manifest.json' -and $_ -ne '.ota_manifest.json' }
+
+          $manifestObj = [ordered]@{
+            version   = $versionClean
+            component = 'frontend'
+            scope     = 'full'
+            files     = @($manifestFiles)
+          }
+          $manifestJson = $manifestObj | ConvertTo-Json -Compress
+          [System.IO.File]::WriteAllText(
+            (Join-Path $releaseFullPath 'ota_manifest.json'),
+            $manifestJson,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
           Compress-Archive `
             -Path "${{ env.RELEASE_DIR }}\*" `
             -DestinationPath "${{ env.ZIP_NAME }}" `
             -Force
           $size = [math]::Round((Get-Item "${{ env.ZIP_NAME }}").Length / 1MB, 2)
-          Write-Host "✅ ZIP creado: ${{ env.ZIP_NAME }} ($size MB)"
+          $zipSha256 = (Get-FileHash -Path "${{ env.ZIP_NAME }}" -Algorithm SHA256).Hash.ToLower()
+          echo "ZIP_SHA256=$zipSha256" >> $env:GITHUB_ENV
+          Write-Host "✅ ZIP creado: ${{ env.ZIP_NAME }} ($size MB, SHA256: $zipSha256)"
 
       # ─── 8. SUBIR A CLOUDFLARE R2 ───────────────────────
       #   Secrets necesarios en GitHub → Settings → Secrets:
@@ -126,6 +147,7 @@ jobs:
           $BODY = @{
             version      = $VERSION
             download_url = $DOWNLOAD_URL
+            sha256       = "${{ env.ZIP_SHA256 }}"
             changelog    = $MSG
             is_critical  = $false
             token        = "${{ secrets.LICENSE_SERVER_TOKEN }}"

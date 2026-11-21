@@ -2,6 +2,12 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows/Android) están documentados aquí.
 
 
+## [2.1.1] - 2026-11-21
+### Actualizador OTA Diferencial Ultrarrápido y Blindaje Anti-Antivirus
+- Extracción diferencial inteligente por tamaño y `CRC-32` desde el directorio central del ZIP sin descomprimir ni escribir archivos sin cambios, reduciendo el tiempo de actualización de minutos a segundos.
+- Descarga automática de paquete liviano de servidor (~850 KB) cuando `composer.lock` no cambia, manteniendo compatibilidad total con clientes `v1.8.5` y `v2.1.0`.
+- Commit atómico de versión post-migración, protección de terminales secundarias en red LAN y lanzamiento nativo compatible con Windows 10/11 y antivirus (Avast / Defender).
+
 ## [2.1.0] - 2026-11-20
 ### Identidad Visual y Rebranding (Caja4U • by Dev4U)
 - Nueva identidad corporativa **Caja4U • by Dev4U** en barra superior, pantalla de acceso, ventana de Windows, Android y actualizador OTA.

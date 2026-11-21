@@ -652,7 +652,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
       // 🔁 RESCUE TRIGGER OTA 🔁
       if (AppConfig.isMobile) {
-        const currentAppVersion = '2.1.0';
+        const currentAppVersion = '2.1.1';
         const rescueSecret = 'pos-rescue-2026-GGLabs';
         final lastVersion = prefs.getString('app_version') ?? '1.0.0';
         if (lastVersion != currentAppVersion) {

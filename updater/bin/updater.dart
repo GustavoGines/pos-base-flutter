@@ -2,74 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
-
-// ─────────────────────────────────────────────────────────
-// Logger: escribe en stdout Y en updater_log.txt del dir
-// ─────────────────────────────────────────────────────────
-class _Logger {
-  final File _file;
-  final String _sessionId;
-
-  _Logger(String targetDir)
-      : _file = File(p.join(targetDir, 'updater_log.txt')),
-        _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
-
-  void writeHeader({
-    required String component,
-    required String version,
-    required String zipPath,
-    required String targetDir,
-  }) {
-    final sep = '=' * 60;
-    final header = [
-      sep,
-      'Caja4U — Actualizador de OTA',
-      'Sesión ID  : $_sessionId',
-      'Fecha/Hora : ${DateTime.now()}',
-      'Componente : $component',
-      'Versión    : $version',
-      'ZIP        : $zipPath',
-      'Destino    : $targetDir',
-      sep,
-      '',
-    ].join('\n');
-
-    try {
-      // Overwrite el log anterior — solo conservamos el último intento
-      _file.writeAsStringSync(header, mode: FileMode.write);
-    } catch (e) {
-      stdout.writeln('[Logger] No se pudo crear el log: $e');
-    }
-  }
-
-  void log(String msg, {bool isError = false}) {
-    final prefix = isError ? '[ERROR]' : '[INFO ]';
-    final line = '$prefix [${_ts()}] $msg';
-    stdout.writeln(line);
-    try {
-      _file.writeAsStringSync('$line\n', mode: FileMode.append);
-    } catch (_) {}
-  }
-
-  void err(String msg) => log(msg, isError: true);
-
-  String _ts() {
-    final n = DateTime.now();
-    return '${_pad(n.hour)}:${_pad(n.minute)}:${_pad(n.second)}.${n.millisecond.toString().padLeft(3, '0')}';
-  }
-
-  String _pad(int v) => v.toString().padLeft(2, '0');
-
-  void writeResult(bool success, {String? detail}) {
-    final line = success
-        ? '\n✅ RESULTADO FINAL: SUCCESS${detail != null ? ' — $detail' : ''}'
-        : '\n❌ RESULTADO FINAL: FAILED${detail != null ? ' — $detail' : ''}';
-    stdout.writeln(line);
-    try {
-      _file.writeAsStringSync('$line\n', mode: FileMode.append);
-    } catch (_) {}
-  }
-}
+import 'package:updater/updater_core.dart';
 
 // ─────────────────────────────────────────────────────────
 // MAIN
@@ -107,7 +40,8 @@ void main(List<String> args) async {
 
   // Validación de argumentos mínimos
   if (component == null || targetDir == null || zipPath == null) {
-    stdout.writeln('Uso: updater.exe --component=<frontend|backend> --target-dir=<ruta> --zip-path=<ruta>');
+    stdout.writeln(
+        'Uso: updater.exe --component=<frontend|backend> --target-dir=<ruta> --zip-path=<ruta>');
     stdout.writeln('Args recibidos: ${args.join(' | ')}');
     exit(1);
   }
@@ -116,30 +50,34 @@ void main(List<String> args) async {
   targetDir = targetDir.trim();
   zipPath = zipPath.trim();
   component = component.trim().toLowerCase();
+  final version = extractVersionFromZipPath(zipPath);
 
   // Inicializar logger ANTES de cualquier operación
-  final log = _Logger(targetDir);
+  final log = OtaLogger(targetDir);
   log.writeHeader(
     component: component,
-    version: _extractVersion(zipPath),
+    version: version,
     zipPath: zipPath,
     targetDir: targetDir,
   );
 
   log.log('Updater iniciado correctamente.');
   log.log('PID del proceso: $pid');
-  log.log('Plataforma: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+  log.log(
+      'Plataforma: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
 
   // ── PASO 1: Verificar que el ZIP existe ─────────────────
   final zipFile = File(zipPath);
   if (!zipFile.existsSync()) {
     log.err('El archivo ZIP no existe en: $zipPath');
-    log.err('Es posible que la descarga no se completó o el archivo fue eliminado.');
+    log.err(
+        'Es posible que la descarga no se completó o el archivo fue eliminado.');
     log.writeResult(false, detail: 'ZIP no encontrado');
-    _writeOtaResult(targetDir, false);
+    _writeOtaResult(targetDir, false, component: component, version: version);
     exit(1);
   }
-  log.log('ZIP verificado (${(zipFile.lengthSync() / 1024 / 1024).toStringAsFixed(2)} MB)');
+  log.log(
+      'ZIP verificado (${(zipFile.lengthSync() / 1024 / 1024).toStringAsFixed(2)} MB)');
 
   // ── PASO 2: Espera inteligente (solo frontend) ───────────
   if (component == 'frontend') {
@@ -164,116 +102,103 @@ void main(List<String> args) async {
       }
     }
     if (isLocked) {
-      log.log('Advertencia: El exe sigue bloqueado después de 20s — intentando de todas formas.');
+      log.log(
+          'Advertencia: El exe sigue bloqueado después de 20s — intentando de todas formas.');
     }
   } else {
-    log.log('Esperando 3 segundos para que el backend libere archivos...');
-    await Future.delayed(const Duration(seconds: 3));
+    log.log('Esperando 2 segundos para que el backend libere archivos...');
+    await Future.delayed(const Duration(seconds: 2));
   }
 
-  // ── PASO 3: Auto-renombrado del updater para poder sobreescribirse ──
-  if (component == 'frontend') {
-    try {
-      final updaterPath = p.join(targetDir, 'updater.exe');
-      final updaterOldPath = p.join(targetDir, 'updater_old.exe');
-      final updaterFile = File(updaterPath);
-      if (updaterFile.existsSync()) {
-        if (File(updaterOldPath).existsSync()) {
-          File(updaterOldPath).deleteSync();
-          log.log('updater_old.exe anterior eliminado.');
-        }
-        updaterFile.renameSync(updaterOldPath);
-        log.log('updater.exe renombrado a updater_old.exe (self-update listo).');
-      }
-    } catch (e) {
-      log.log('Advertencia: No se pudo renombrar updater.exe: $e');
-    }
-  }
-
-  // ── PASO 4: Extracción del ZIP ───────────────────────────
-  log.log('Iniciando extracción del ZIP...');
-  bool extractionOk = false;
-  int filesExtracted = 0;
-  int filesSkipped = 0;
-
+  // ── PASO 3 y 4: Decodificación del Central Directory y Extracción Diferencial ──
+  log.log('Iniciando lectura del directorio central del ZIP...');
+  late final Archive archive;
   try {
     final bytes = zipFile.readAsBytesSync();
     log.log('ZIP leído en memoria (${bytes.length} bytes).');
-    final archive = ZipDecoder().decodeBytes(bytes);
+    archive = ZipDecoder().decodeBytes(bytes);
     log.log('ZIP decodificado: ${archive.length} entradas encontradas.');
-
-    for (final file in archive) {
-      final filename = file.name;
-
-      if (file.isFile) {
-        final data = file.content as List<int>;
-        final filePath = p.join(targetDir, filename);
-        final outFile = File(filePath);
-
-        try {
-          outFile.createSync(recursive: true);
-          outFile.writeAsBytesSync(data);
-          filesExtracted++;
-          // Log cada 10 archivos para no saturar el log
-          if (filesExtracted % 10 == 0) {
-            log.log('  → $filesExtracted archivos extraídos...');
-          }
-        } catch (fileError) {
-          log.log('  Archivo bloqueado: $filename — intentando fallback de renombre...');
-          try {
-            if (outFile.existsSync()) {
-              final backupPath = '$filePath.bak-${DateTime.now().millisecondsSinceEpoch}';
-              outFile.renameSync(backupPath);
-              File(backupPath).delete().ignore();
-            }
-            outFile.createSync(recursive: true);
-            outFile.writeAsBytesSync(data);
-            filesExtracted++;
-            log.log('  ✓ $filename extraído vía fallback.');
-          } catch (fallbackErr) {
-            log.err('  BLOQUEADO SIN SOLUCIÓN: $filename ($fallbackErr)');
-            filesSkipped++;
-          }
-        }
-      } else {
-        // Es un directorio
-        final dirPath = p.join(targetDir, filename);
-        try {
-          Directory(dirPath).createSync(recursive: true);
-        } catch (e) {
-          log.err('Error creando directorio $filename: $e');
-        }
-      }
-    }
-
-    log.log('Extracción completada: $filesExtracted archivos extraídos, $filesSkipped omitidos.');
-    extractionOk = filesSkipped == 0;
-
-    if (filesSkipped > 0) {
-      log.err('$filesSkipped archivos no pudieron extraerse. La actualización puede estar incompleta.');
-    }
   } catch (e) {
     log.err('Error fatal decodificando el ZIP: $e');
     log.writeResult(false, detail: 'ZIP corrupto o ilegible');
-    _writeOtaResult(targetDir, false, component: component, version: _extractVersion(zipPath));
+    _writeOtaResult(targetDir, false, component: component, version: version);
     exit(1);
+  }
+
+  // ── PASO 3: Self-update condicional de updater.exe (Solo Frontend) ──
+  bool skipUpdaterExe = false;
+  if (component == 'frontend') {
+    final updaterChanged = hasUpdaterExeChangedInArchive(archive, targetDir);
+    if (!updaterChanged) {
+      skipUpdaterExe = true;
+      log.log(
+          'updater.exe sin cambios respecto al ZIP (CRC-32 idéntico) — se conserva sin renombrar.');
+    } else {
+      try {
+        final updaterPath = p.join(targetDir, 'updater.exe');
+        final updaterOldPath = p.join(targetDir, 'updater_old.exe');
+        final updaterFile = File(updaterPath);
+        if (updaterFile.existsSync()) {
+          if (File(updaterOldPath).existsSync()) {
+            File(updaterOldPath).deleteSync();
+            log.log('updater_old.exe anterior eliminado.');
+          }
+          updaterFile.renameSync(updaterOldPath);
+          log.log(
+              'updater.exe renombrado a updater_old.exe (self-update listo).');
+        }
+      } catch (e) {
+        log.log('Advertencia: No se pudo renombrar updater.exe: $e');
+      }
+    }
+  }
+
+  // ── PASO 4: Extracción Diferencial por Tamaño + CRC-32 ──
+  log.log('Iniciando extracción diferencial...');
+  final stats = extractArchiveDifferentially(
+    archive: archive,
+    targetDir: targetDir,
+    component: component,
+    log: log,
+    skipUpdaterExe: skipUpdaterExe,
+  );
+
+  // Salvaguarda crítica post-extracción para Frontend: garantizar que updater.exe siempre exista
+  if (component == 'frontend') {
+    final updaterFile = File(p.join(targetDir, 'updater.exe'));
+    final updaterOldFile = File(p.join(targetDir, 'updater_old.exe'));
+    if (!updaterFile.existsSync() && updaterOldFile.existsSync()) {
+      try {
+        updaterOldFile.renameSync(updaterFile.path);
+        log.log(
+            'Salvaguarda activada: updater_old.exe restaurado como updater.exe.');
+      } catch (e) {
+        log.err('No se pudo restaurar updater_old.exe: $e');
+      }
+    }
+  }
+
+  final bool extractionOk = stats.extractionOk;
+  if (!extractionOk) {
+    log.err(
+        '${stats.filesSkipped} archivos no pudieron extraerse. La actualización puede estar incompleta.');
   }
 
   // ── PASO 5: Lógica post-extracción por componente ────────
   if (component == 'backend') {
-    // ── Resolver la ruta absoluta de php.exe ──────────────────────────────
-    // CRÍTICO: Process.runSync('php', ...) falla si el PATH del proceso hijo
-    // no incluye el directorio de Laragon/PHP (común en contextos de instalador/elevado).
-    // Estrategia: 1) where.exe, 2) rutas conocidas de Laragon, 3) fallback 'php'.
+    // 1. Saneamiento idempotente de variables .env nuevas (para clientes que suben desde v1.8.5)
+    ensureBackendEnvVariables(targetDir: targetDir, log: log);
+
+    // 2. Resolver la ruta absoluta de php.exe
     String phpExe = 'php';
     String phpDir = '';
 
     try {
-      // Intento 1: buscar con where.exe (respeta el PATH del sistema actual)
-      final whereResult = Process.runSync('where.exe', ['php'],
-          runInShell: false);
+      final whereResult =
+          Process.runSync('where.exe', ['php'], runInShell: false);
       if (whereResult.exitCode == 0) {
-        final found = whereResult.stdout.toString().trim().split('\n').first.trim();
+        final found =
+            whereResult.stdout.toString().trim().split('\n').first.trim();
         if (found.isNotEmpty && File(found).existsSync()) {
           phpExe = found;
           phpDir = p.dirname(found);
@@ -283,7 +208,6 @@ void main(List<String> args) async {
     } catch (_) {}
 
     if (phpDir.isEmpty) {
-      // Intento 2: escanear rutas conocidas de Laragon
       final laragonPhpBase = Directory(r'C:\laragon\bin\php');
       if (laragonPhpBase.existsSync()) {
         try {
@@ -291,7 +215,7 @@ void main(List<String> args) async {
               .listSync()
               .whereType<Directory>()
               .toList()
-            ..sort((a, b) => b.path.compareTo(a.path)); // más reciente primero
+            ..sort((a, b) => b.path.compareTo(a.path));
           for (final dir in phpDirs) {
             final candidate = File(p.join(dir.path, 'php.exe'));
             if (candidate.existsSync()) {
@@ -308,10 +232,10 @@ void main(List<String> args) async {
     }
 
     if (phpDir.isEmpty) {
-      log.log('Advertencia: PHP no encontrado en rutas conocidas. Usando "php" del PATH.');
+      log.log(
+          'Advertencia: PHP no encontrado en rutas conocidas. Usando "php" del PATH.');
     }
 
-    // Construir entorno con PHP en el PATH para que extensiones funcionen
     final Map<String, String> phpEnv = {};
     if (phpDir.isNotEmpty) {
       final currentPath = Platform.environment['PATH'] ?? '';
@@ -355,7 +279,51 @@ void main(List<String> args) async {
       }
     }
 
-    // Eliminar ZIP temporal
+    // 3. Reiniciar workers de cola en segundo plano (no bloqueante)
+    if (!hasError) {
+      try {
+        final qResult = Process.runSync(
+          phpExe,
+          [artisanPath, 'queue:restart'],
+          workingDirectory: targetDir,
+          environment: phpEnv.isNotEmpty ? phpEnv : null,
+        );
+        if (qResult.exitCode == 0) {
+          log.log('  queue:restart: OK');
+        }
+      } catch (e) {
+        log.log('  Advertencia ejecutando queue:restart (no bloqueante): $e');
+      }
+    }
+
+    final success = extractionOk && !hasError;
+
+    // 4. Commit atómico final: escribir public/version.txt y podar obsoletos
+    // ÚNICAMENTE si la extracción y las migraciones fueron 100% exitosas.
+    if (success) {
+      if (stats.deferredVersionTxtBytes != null) {
+        try {
+          final versionFile = File(p.join(targetDir, 'public', 'version.txt'));
+          versionFile.createSync(recursive: true);
+          versionFile.writeAsBytesSync(stats.deferredVersionTxtBytes!);
+          log.log(
+              'public/version.txt actualizado tras migración exitosa (${utf8.decode(stats.deferredVersionTxtBytes!).trim()}).');
+        } catch (e) {
+          log.err('No se pudo escribir public/version.txt final: $e');
+        }
+      }
+
+      pruneDeletedFilesAndSaveManifest(
+        targetDir: targetDir,
+        newManifestBytes: stats.newManifestBytes,
+        log: log,
+      );
+    } else {
+      log.err(
+          'Se omitió la actualización de public/version.txt y la poda de obsoletos debido a errores previos (permite reintentar OTA).');
+    }
+
+    // 5. Eliminar ZIP temporal
     try {
       zipFile.deleteSync();
       log.log('ZIP temporal eliminado correctamente.');
@@ -363,62 +331,96 @@ void main(List<String> args) async {
       log.log('No se pudo eliminar el ZIP: $e');
     }
 
-    final success = extractionOk && !hasError;
     log.writeResult(success);
-    _writeOtaResult(targetDir, success, component: component, version: _extractVersion(zipPath));
-
+    _writeOtaResult(targetDir, success, component: component, version: version);
   } else if (component == 'frontend') {
-
-    // 1. Desbloquear Mark-of-the-Web (SmartScreen) en todos los archivos extraídos
-    log.log('Ejecutando Unblock-File para remover Mark-of-the-Web (SmartScreen)...');
-    try {
-      final unblockResult = Process.runSync('powershell', [
-        '-ExecutionPolicy', 'Bypass',
-        '-Command',
-        'Get-ChildItem -Path "${targetDir.replaceAll(r'\', r'\\')}" -Recurse | Unblock-File -ErrorAction SilentlyContinue',
-      ]);
-      if (unblockResult.exitCode == 0) {
-        log.log('Unblock-File ejecutado correctamente.');
-      } else {
-        log.log('Unblock-File retornó código ${unblockResult.exitCode} (puede ser normal si no había streams).');
-      }
-    } catch (e) {
-      log.log('Advertencia: No se pudo ejecutar Unblock-File: $e');
+    // 1. Poda de archivos obsoletos y guardado de manifiesto si la extracción fue exitosa
+    if (extractionOk) {
+      pruneDeletedFilesAndSaveManifest(
+        targetDir: targetDir,
+        newManifestBytes: stats.newManifestBytes,
+        log: log,
+      );
     }
 
-    // 2. Migrar preferencias locales y accesos directos (con privilegios de Admin)
+    // 2. Desbloquear Mark-of-the-Web (SmartScreen) solo si se escribieron binarios (.exe / .dll)
+    if (stats.wroteBinaries) {
+      log.log(
+          'Ejecutando Unblock-File para remover Mark-of-the-Web (SmartScreen)...');
+      try {
+        final unblockResult = Process.runSync('powershell', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          'Get-ChildItem -LiteralPath "$targetDir" -Recurse | Unblock-File -ErrorAction SilentlyContinue',
+        ]);
+        if (unblockResult.exitCode == 0) {
+          log.log('Unblock-File ejecutado correctamente.');
+        } else {
+          log.log(
+              'Unblock-File retornó código ${unblockResult.exitCode} (normal si no había streams).');
+        }
+      } catch (e) {
+        log.log('Advertencia: No se pudo ejecutar Unblock-File: $e');
+      }
+    } else {
+      log.log(
+          'No se escribieron binarios nuevos (.exe/.dll) — Unblock-File omitido.');
+    }
+
+    // 3. Migrar preferencias locales y accesos directos (solo si aún no se migró)
     _migrateBrandingAndPrefs(targetDir, log);
 
-    // 3. Eliminar ZIP (ya en el dir de instalación, no en temp)
+    // 4. Eliminar ZIP
     try {
       zipFile.deleteSync();
-      log.log('ZIP eliminado del directorio de instalación.');
+      log.log('ZIP temporal eliminado.');
     } catch (e) {
       log.log('No se pudo eliminar el ZIP: $e');
     }
 
-    // 4. Escribir resultado ANTES de relanzar la app
+    // 5. Escribir resultado ANTES de relanzar la app
     log.writeResult(extractionOk);
-    _writeOtaResult(targetDir, extractionOk, component: component, version: _extractVersion(zipPath));
+    _writeOtaResult(targetDir, extractionOk,
+        component: component, version: version);
 
-    // 5. Relanzar la app
+    // 6. Relanzar la app (con reintentos por si el antivirus Avast/Defender retiene el lock 1-3s tras extraer el nuevo .exe)
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     if (File(exePath).existsSync()) {
       log.log('Relanzando Sistema_POS.exe...');
-      try {
-        // Start-Process sin -Verb RunAs: la app debe correr como usuario normal,
-        // no heredar el token elevado del updater.
-        Process.runSync('powershell', [
-          '-ExecutionPolicy', 'Bypass',
-          '-Command',
-          'Start-Process -FilePath "${exePath.replaceAll(r'\', r'\\')}" -WorkingDirectory "${targetDir.replaceAll(r'\', r'\\')}"',
-        ]);
-        log.log('Sistema_POS.exe relanzado exitosamente.');
-      } catch (e) {
-        log.err('No se pudo relanzar Sistema_POS.exe: $e');
+      bool relaunched = false;
+      for (int attempt = 1; attempt <= 4; attempt++) {
+        try {
+          final res = Process.runSync('powershell', [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            'Start-Process -FilePath "$exePath" -WorkingDirectory "$targetDir" -ErrorAction Stop',
+          ]);
+          if (res.exitCode == 0) {
+            relaunched = true;
+            log.log('Sistema_POS.exe relanzado exitosamente (intento $attempt).');
+            break;
+          }
+          log.log(
+              'Intento $attempt de relanzar Sistema_POS.exe retornó código ${res.exitCode}: ${res.stderr.toString().trim()}');
+        } catch (e) {
+          log.log('Intento $attempt de relanzar Sistema_POS.exe falló: $e');
+        }
+        if (attempt < 4) {
+          await Future.delayed(Duration(seconds: attempt));
+        }
+      }
+      if (!relaunched) {
+        log.err('No se pudo relanzar Sistema_POS.exe tras 4 intentos.');
       }
     } else {
-      log.err('No se encontró $exePath — el exe no fue extraído correctamente.');
+      log.err(
+          'No se encontró $exePath — el exe no fue extraído correctamente.');
     }
   }
 
@@ -428,7 +430,6 @@ void main(List<String> args) async {
 
 /// Escribe ota_result.txt en el directorio destino como JSON.
 /// Formato: {"status":"SUCCESS","version":"1.3.0","component":"frontend"}
-/// La app Flutter lo lee al arrancar para mostrar el resultado.
 void _writeOtaResult(
   String targetDir,
   bool success, {
@@ -436,28 +437,25 @@ void _writeOtaResult(
   String version = 'desconocida',
 }) {
   try {
-    final json = '{"status":"${success ? 'SUCCESS' : 'FAILED'}","version":"$version","component":"$component"}';
+    final json =
+        '{"status":"${success ? 'SUCCESS' : 'FAILED'}","version":"$version","component":"$component"}';
     File(p.join(targetDir, 'ota_result.txt')).writeAsStringSync(json);
   } catch (_) {}
 }
 
-/// Extrae la versión del nombre del ZIP para el header del log.
-/// Soporta formatos: update_v1.3.0.zip, update_backend_v1.3.0.zip
-String _extractVersion(String zipPath) {
-  final name = p.basename(zipPath);
-  // Patrón estricto semver: solo captura dígitos y puntos entre dígitos
-  // Evita capturar el punto antes de la extensión .zip
-  final match = RegExp(r'v(\d+\.\d+[\.\d]*)').firstMatch(name);
-  if (match == null) return 'desconocida';
-  // Quitar cualquier punto al final por si el regex fue demasiado greedy
-  return match.group(1)!.replaceAll(RegExp(r'\.$'), '');
-}
-
 /// Migra las preferencias de usuario desde `com.example\frontend_desktop` hacia `Dev4U\Caja4U`
 /// en todos los perfiles de Windows (`C:\Users\*`), y actualiza los accesos directos del Escritorio
-/// Público y de Usuarios (`Sistema POS.lnk` -> `Caja4U.lnk`, `Servidor POS.lnk` -> `Servidor Caja4U.lnk`)
-/// aprovechando que `updater.exe` ya se ejecuta con privilegios de Administrador.
-void _migrateBrandingAndPrefs(String targetDir, _Logger log) {
+/// Público y de Usuarios (`Sistema POS.lnk` -> `Caja4U.lnk`, `Servidor POS.lnk` -> `Servidor Caja4U.lnk`).
+/// Una vez completada exitosamente por primera vez, escribe `.branding_caja4u_migrated` para no
+/// repetir el escaneo en cada actualización OTA futura.
+void _migrateBrandingAndPrefs(String targetDir, OtaLogger log) {
+  final markerFile = File(p.join(targetDir, '.branding_caja4u_migrated'));
+  if (markerFile.existsSync()) {
+    log.log(
+        'Migración de preferencias y accesos directos Caja4U ya aplicada previamente — omitiendo.');
+    return;
+  }
+
   log.log('Iniciando migración de preferencias y accesos directos Caja4U...');
 
   // A) Migrar shared_preferences.json en todos los perfiles de usuario
@@ -493,7 +491,8 @@ void _migrateBrandingAndPrefs(String targetDir, _Logger log) {
           } else {
             final legacyMap = jsonDecode(legacyFile.readAsStringSync());
             final newMap = jsonDecode(newFile.readAsStringSync());
-            if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
+            if (legacyMap is Map<String, dynamic> &&
+                newMap is Map<String, dynamic>) {
               bool changed = false;
               for (final entry in legacyMap.entries) {
                 if (!newMap.containsKey(entry.key)) {
@@ -520,7 +519,8 @@ void _migrateBrandingAndPrefs(String targetDir, _Logger log) {
   try {
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     final icoCandidate = p.join(targetDir, 'app_icon.ico');
-    final iconTarget = File(icoCandidate).existsSync() ? icoCandidate : exePath;
+    final iconTarget =
+        File(icoCandidate).existsSync() ? icoCandidate : exePath;
 
     final psContent = r'''
 $ErrorActionPreference = 'SilentlyContinue'
@@ -575,7 +575,8 @@ foreach ($dir in $uniqueFolders) {
 ie4uinit.exe -show
 ''';
 
-    final tempScript = File(p.join(Directory.systemTemp.path, 'caja4u_ota_shortcuts.ps1'));
+    final tempScript =
+        File(p.join(Directory.systemTemp.path, 'caja4u_ota_shortcuts.ps1'));
     tempScript.writeAsStringSync(psContent, flush: true);
 
     final psResult = Process.runSync(
@@ -601,8 +602,12 @@ ie4uinit.exe -show
 
     if (psResult.exitCode == 0) {
       log.log('  ✓ Accesos directos y caché de íconos actualizados a Caja4U.');
+      try {
+        markerFile.writeAsStringSync(DateTime.now().toUtc().toIso8601String());
+      } catch (_) {}
     } else {
-      log.log('  Advertencia actualizando accesos directos (exitCode=${psResult.exitCode}).');
+      log.log(
+          '  Advertencia actualizando accesos directos (exitCode=${psResult.exitCode}).');
     }
   } catch (e) {
     log.log('Advertencia en actualización de accesos directos: $e');
