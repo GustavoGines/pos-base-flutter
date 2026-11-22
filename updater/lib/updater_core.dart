@@ -10,6 +10,7 @@ class OtaExtractionStats {
   final int filesExtracted;
   final int filesUnchanged;
   final int filesSkipped;
+  final int filesRolledBack;
   final bool wroteBinaries;
   final Uint8List? deferredVersionTxtBytes;
   final Uint8List? newManifestBytes;
@@ -19,25 +20,46 @@ class OtaExtractionStats {
     required this.filesExtracted,
     required this.filesUnchanged,
     required this.filesSkipped,
+    this.filesRolledBack = 0,
     required this.wroteBinaries,
     this.deferredVersionTxtBytes,
     this.newManifestBytes,
   });
 }
 
-/// Logger: escribe en stdout Y en updater_log.txt del directorio destino.
-/// Soporta bufferización opcional durante loops intensivos (ej. 8.000+ archivos)
-/// para evitar miles de open/append/close síncronos en NTFS.
+/// Logger: escribe en stdout, en updater_log.txt del directorio destino,
+/// y en un historial persistente en C:\ProgramData\Dev4U\Caja4U\logs\updater_history.log
+/// que sobrevive a reinstalaciones o desinstalaciones.
 class OtaLogger {
   final File _file;
+  final File? _persistentFile;
   final String _sessionId;
   final StringBuffer _buffer = StringBuffer();
   DateTime _lastFlush = DateTime.now();
   bool _bufferedMode = false;
 
-  OtaLogger(String targetDir)
+  OtaLogger(String targetDir, {String? persistentLogDir})
       : _file = File(p.join(targetDir, 'updater_log.txt')),
+        _persistentFile = _resolvePersistentLogFile(persistentLogDir),
         _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+
+  static File? _resolvePersistentLogFile(String? customDir) {
+    try {
+      if (customDir != null && customDir.isNotEmpty) {
+        final dir = Directory(customDir);
+        dir.createSync(recursive: true);
+        return File(p.join(dir.path, 'updater_history.log'));
+      }
+      if (Platform.isWindows) {
+        final progData =
+            Platform.environment['ProgramData'] ?? r'C:\ProgramData';
+        final dir = Directory(p.join(progData, 'Dev4U', 'Caja4U', 'logs'));
+        dir.createSync(recursive: true);
+        return File(p.join(dir.path, 'updater_history.log'));
+      }
+    } catch (_) {}
+    return null;
+  }
 
   void writeHeader({
     required String component,
@@ -64,6 +86,9 @@ class OtaLogger {
     } catch (e) {
       stdout.writeln('[Logger] No se pudo crear el log: $e');
     }
+    try {
+      _persistentFile?.writeAsStringSync('\n$header', mode: FileMode.append);
+    } catch (_) {}
   }
 
   void setBufferedMode(bool enabled) {
@@ -75,11 +100,15 @@ class OtaLogger {
 
   void flush() {
     if (_buffer.isEmpty) return;
+    final chunk = _buffer.toString();
     try {
-      _file.writeAsStringSync(_buffer.toString(), mode: FileMode.append);
-      _buffer.clear();
-      _lastFlush = DateTime.now();
+      _file.writeAsStringSync(chunk, mode: FileMode.append);
     } catch (_) {}
+    try {
+      _persistentFile?.writeAsStringSync(chunk, mode: FileMode.append);
+    } catch (_) {}
+    _buffer.clear();
+    _lastFlush = DateTime.now();
   }
 
   void log(String msg, {bool isError = false, bool forceFlush = false}) {
@@ -114,6 +143,9 @@ class OtaLogger {
     stdout.writeln(line);
     try {
       _file.writeAsStringSync('$line\n', mode: FileMode.append);
+    } catch (_) {}
+    try {
+      _persistentFile?.writeAsStringSync('$line\n', mode: FileMode.append);
     } catch (_) {}
   }
 }
@@ -247,10 +279,17 @@ bool hasUpdaterExeChangedInArchive(Archive archive, String targetDir) {
   return true;
 }
 
-/// Ejecuta la extracción diferencial de un `Archive` sobre `targetDir`:
+/// Ejecuta la extracción diferencial y atómica de un `Archive` sobre `targetDir`:
 /// - Compara `size` y `crc32` del Central Directory contra el archivo local
 ///   ANTES de acceder a `file.content` (evitando descompresión ZLib y escrituras
 ///   NTFS en archivos idénticos).
+/// - Escribe primero en un archivo temporal `$filePath.ota_tmp` y verifica su tamaño
+///   antes de reemplazar el archivo original, resguardando una copia `.ota_bak` de
+///   cada archivo modificado durante la sesión.
+/// - Si algún archivo falla al extraerse (`filesSkipped > 0`) y [rollbackOnPartialFailure]
+///   es `true` (por defecto `true`), revierte todos los archivos `.ota_bak` y elimina
+///   los archivos nuevos creados en la sesión, garantizando que `vendor/` jamás quede
+///   a medias ni con archivos faltantes.
 /// - En `component == 'backend'`, retiene `public/version.txt` en memoria para
 ///   escribirlo recién cuando `php artisan migrate --force` termine sin errores.
 /// - Retiene `ota_manifest.json` en memoria para ejecutar la poda diferencial
@@ -261,13 +300,20 @@ OtaExtractionStats extractArchiveDifferentially({
   required String component,
   required OtaLogger log,
   bool skipUpdaterExe = false,
+  bool rollbackOnPartialFailure = true,
 }) {
   int filesExtracted = 0;
   int filesUnchanged = 0;
   int filesSkipped = 0;
+  int filesRolledBack = 0;
   bool wroteBinaries = false;
   Uint8List? deferredVersionTxtBytes;
   Uint8List? newManifestBytes;
+
+  // Registro transaccional para rollback seguro si algún archivo está bloqueado
+  final Map<String, String> sessionBackups = <String, String>{};
+  final List<String> newlyCreatedFiles = <String>[];
+  final String sessionTag = DateTime.now().millisecondsSinceEpoch.toString();
 
   log.setBufferedMode(true);
 
@@ -332,32 +378,86 @@ OtaExtractionStats extractArchiveDifferentially({
           }
         }
 
-        // 5. El archivo es nuevo o cambió -> descomprimir y escribir en disco
+        // 5. El archivo es nuevo o cambió -> descomprimir a archivo temporal .ota_tmp
+        //    y reemplazar de forma atómica preservando backup .ota_bak de la sesión
         final data = file.content;
         final isBinary =
             lowerName.endsWith('.exe') || lowerName.endsWith('.dll');
+        final bool existedBefore = outFile.existsSync();
+        final String tmpPath = '$filePath.ota_tmp_$sessionTag';
+        final File tmpFile = File(tmpPath);
 
         bool written = false;
         Object? lastWriteErr;
 
-        // En Windows con antivirus activos (Avast File Shield / CyberCapture / Defender),
-        // el handle de un archivo recién creado o inspeccionado puede quedar bloqueado
-        // durante 150-500 ms. Reintentamos hasta 3 veces antes de usar el fallback .bak.
+        // Paso 5a: Escribir bytes completos en el archivo temporal .ota_tmp
         for (int attempt = 1; attempt <= 3; attempt++) {
           try {
-            outFile.createSync(recursive: true);
-            outFile.writeAsBytesSync(data);
-            written = true;
+            tmpFile.parent.createSync(recursive: true);
+            tmpFile.writeAsBytesSync(data, flush: true);
+            if (tmpFile.existsSync() && tmpFile.lengthSync() == data.length) {
+              written = true;
+              break;
+            }
+          } catch (e) {
+            lastWriteErr = e;
+            if (attempt < 3) {
+              sleep(Duration(milliseconds: 200 * attempt));
+            }
+          }
+        }
+
+        if (!written) {
+          try {
+            if (tmpFile.existsSync()) tmpFile.deleteSync();
+          } catch (_) {}
+          log.err(
+              '  No se pudo escribir archivo temporal para $normName ($lastWriteErr)');
+          filesSkipped++;
+          file.clear();
+          continue;
+        }
+
+        // Paso 5b: Resguardar el archivo original en .ota_bak (sin eliminarlo todavía)
+        // y promover el temporal .ota_tmp a la ruta definitiva.
+        bool promoted = false;
+        final String backupPath = '$filePath.ota_bak_$sessionTag';
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+          try {
+            if (outFile.existsSync()) {
+              if (!sessionBackups.containsKey(filePath)) {
+                final bakFile = File(backupPath);
+                if (bakFile.existsSync()) bakFile.deleteSync();
+                outFile.renameSync(backupPath);
+                sessionBackups[filePath] = backupPath;
+              } else {
+                outFile.deleteSync();
+              }
+            }
+            tmpFile.renameSync(filePath);
+            promoted = true;
             break;
           } catch (e) {
             lastWriteErr = e;
+            // Si habíamos renombrado el original a backup pero falló mover el tmp,
+            // restaurar inmediatamente el original si aún no existe outFile
+            try {
+              if (!outFile.existsSync() && File(backupPath).existsSync()) {
+                File(backupPath).renameSync(filePath);
+                sessionBackups.remove(filePath);
+              }
+            } catch (_) {}
             if (attempt < 3) {
               sleep(Duration(milliseconds: 250 * attempt));
             }
           }
         }
 
-        if (written) {
+        if (promoted) {
+          if (!existedBefore) {
+            newlyCreatedFiles.add(filePath);
+          }
           filesExtracted++;
           if (isBinary) {
             wroteBinaries = true;
@@ -366,26 +466,11 @@ OtaExtractionStats extractArchiveDifferentially({
             log.log('  → $filesExtracted archivos actualizados/nuevos...');
           }
         } else {
-          log.log(
-              '  Archivo bloqueado ($lastWriteErr): $normName — intentando fallback de renombre...');
           try {
-            if (outFile.existsSync()) {
-              final backupPath =
-                  '$filePath.bak-${DateTime.now().millisecondsSinceEpoch}';
-              outFile.renameSync(backupPath);
-              File(backupPath).delete().ignore();
-            }
-            outFile.createSync(recursive: true);
-            outFile.writeAsBytesSync(data);
-            filesExtracted++;
-            if (isBinary) {
-              wroteBinaries = true;
-            }
-            log.log('  ✓ $normName extraído vía fallback.');
-          } catch (fallbackErr) {
-            log.err('  BLOQUEADO SIN SOLUCIÓN: $normName ($fallbackErr)');
-            filesSkipped++;
-          }
+            if (tmpFile.existsSync()) tmpFile.deleteSync();
+          } catch (_) {}
+          log.err('  BLOQUEADO SIN SOLUCIÓN: $normName ($lastWriteErr)');
+          filesSkipped++;
         }
         file.clear();
       } else {
@@ -398,6 +483,46 @@ OtaExtractionStats extractArchiveDifferentially({
         }
       }
     }
+
+    // 6. Commit o Rollback transaccional de los backups .ota_bak de esta sesión
+    if (filesSkipped == 0 || !rollbackOnPartialFailure) {
+      for (final bakPath in sessionBackups.values) {
+        try {
+          final f = File(bakPath);
+          if (f.existsSync()) f.deleteSync();
+        } catch (_) {}
+      }
+    } else {
+      log.err(
+          'Iniciando rollback transaccional debido a $filesSkipped archivo(s) bloqueado(s)...');
+      // Revertir archivos modificados desde su .ota_bak intacto
+      for (final entry in sessionBackups.entries) {
+        final origPath = entry.key;
+        final bakPath = entry.value;
+        try {
+          final bakFile = File(bakPath);
+          if (bakFile.existsSync()) {
+            final origFile = File(origPath);
+            if (origFile.existsSync()) {
+              origFile.deleteSync();
+            }
+            bakFile.renameSync(origPath);
+            filesRolledBack++;
+          }
+        } catch (e) {
+          log.err('  Error restaurando backup de $origPath: $e');
+        }
+      }
+      // Eliminar archivos nuevos creados en esta sesión fallida
+      for (final createdPath in newlyCreatedFiles) {
+        try {
+          final f = File(createdPath);
+          if (f.existsSync()) f.deleteSync();
+        } catch (_) {}
+      }
+      log.log(
+          'Rollback transaccional completado: $filesRolledBack archivo(s) restaurado(s) a su versión previa intacta.');
+    }
   } finally {
     log.setBufferedMode(false);
   }
@@ -406,7 +531,8 @@ OtaExtractionStats extractArchiveDifferentially({
     'Extracción diferencial completada: '
     '$filesExtracted actualizados/nuevos, '
     '$filesUnchanged sin cambios (omitidos por CRC-32), '
-    '$filesSkipped fallidos.',
+    '$filesSkipped fallidos'
+    '${filesRolledBack > 0 ? ', $filesRolledBack revertidos por rollback' : ''}.',
     forceFlush: true,
   );
 
@@ -415,6 +541,7 @@ OtaExtractionStats extractArchiveDifferentially({
     filesExtracted: filesExtracted,
     filesUnchanged: filesUnchanged,
     filesSkipped: filesSkipped,
+    filesRolledBack: filesRolledBack,
     wroteBinaries: wroteBinaries,
     deferredVersionTxtBytes: deferredVersionTxtBytes,
     newManifestBytes: newManifestBytes,
@@ -546,7 +673,7 @@ int pruneDeletedFilesAndSaveManifest({
 }
 
 /// Garantiza de forma idempotente que el archivo `.env` de un cliente que
-/// actualiza por OTA desde `v1.8.5` tenga definidas las variables críticas de
+/// actualiza por OTA desde `v1.4.4` o `v1.8.5` tenga definidas las variables críticas de
 /// colas y WebSockets Reverb introducidas en `v2.1.0+`, sin alterar ninguna
 /// variable existente del comercio (`DB_*`, `APP_KEY`, etc.).
 int ensureBackendEnvVariables({
@@ -603,6 +730,171 @@ int ensureBackendEnvVariables({
   } catch (e) {
     log.log('Advertencia verificando variables de .env: $e');
     return 0;
+  }
+}
+
+/// Genera un respaldo automático de la base de datos MySQL (`mysqldump`) en
+/// `C:\ProgramData\Dev4U\Caja4U\backups\pre_ota_v<version>_<timestamp>.sql`
+/// antes de ejecutar `php artisan migrate --force`, rotando los respaldos más
+/// antiguos para conservar los últimos 10 archivos.
+String? createPreMigrationDatabaseBackup({
+  required String targetDir,
+  required String version,
+  required OtaLogger log,
+  String? customBackupDir,
+}) {
+  try {
+    // 1. Leer credenciales DB_* del archivo .env del backend
+    String dbName = 'sistema_pos';
+    String dbUser = 'root';
+    String dbPass = '';
+    String dbHost = '127.0.0.1';
+    String dbPort = '3306';
+
+    final envFile = File(p.join(targetDir, '.env'));
+    if (envFile.existsSync()) {
+      for (final rawLine in envFile.readAsLinesSync()) {
+        final line = rawLine.trim();
+        if (line.isEmpty || line.startsWith('#')) continue;
+        final eqIdx = line.indexOf('=');
+        if (eqIdx <= 0) continue;
+        final k = line.substring(0, eqIdx).trim();
+        var v = line.substring(eqIdx + 1).trim();
+        if ((v.startsWith('"') && v.endsWith('"')) ||
+            (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.substring(1, v.length - 1);
+        }
+        if (k == 'DB_DATABASE' && v.isNotEmpty) dbName = v;
+        if (k == 'DB_USERNAME' && v.isNotEmpty) dbUser = v;
+        if (k == 'DB_PASSWORD') dbPass = v;
+        if (k == 'DB_HOST' && v.isNotEmpty) dbHost = v;
+        if (k == 'DB_PORT' && v.isNotEmpty) dbPort = v;
+      }
+    }
+
+    // 2. Localizar mysqldump.exe en Laragon o PATH
+    String? mysqldumpExe;
+    final laragonMysqlBase = Directory(r'C:\laragon\bin\mysql');
+    if (laragonMysqlBase.existsSync()) {
+      final mysqlDirs = laragonMysqlBase
+          .listSync()
+          .whereType<Directory>()
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+      for (final dir in mysqlDirs) {
+        final candidate = File(p.join(dir.path, 'bin', 'mysqldump.exe'));
+        if (candidate.existsSync()) {
+          mysqldumpExe = candidate.path;
+          break;
+        }
+      }
+    }
+
+    if (mysqldumpExe == null) {
+      try {
+        final whereRes =
+            Process.runSync('where.exe', ['mysqldump'], runInShell: false);
+        if (whereRes.exitCode == 0) {
+          final found =
+              whereRes.stdout.toString().trim().split('\n').first.trim();
+          if (found.isNotEmpty && File(found).existsSync()) {
+            mysqldumpExe = found;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (mysqldumpExe == null) {
+      log.log(
+          'Advertencia: mysqldump.exe no encontrado — se omite backup previo a migración.');
+      return null;
+    }
+
+    // 3. Resolver directorio persistente de backups
+    Directory backupDir;
+    if (customBackupDir != null && customBackupDir.isNotEmpty) {
+      backupDir = Directory(customBackupDir);
+    } else {
+      final progData =
+          Platform.environment['ProgramData'] ?? r'C:\ProgramData';
+      backupDir = Directory(p.join(progData, 'Dev4U', 'Caja4U', 'backups'));
+    }
+    try {
+      backupDir.createSync(recursive: true);
+    } catch (_) {
+      backupDir = Directory(p.join(targetDir, 'storage', 'app', 'backups'));
+      backupDir.createSync(recursive: true);
+    }
+
+    // Resguardar también copia de .env
+    if (envFile.existsSync()) {
+      try {
+        envFile.copySync(p.join(backupDir.path, '.env.backup'));
+      } catch (_) {}
+    }
+
+    final now = DateTime.now();
+    final ts =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    final safeVer = version.replaceAll(RegExp(r'[^0-9A-Za-z\._-]'), '_');
+    final dumpPath =
+        p.join(backupDir.path, 'pre_ota_v${safeVer}_$ts.sql');
+
+    final args = <String>[
+      '-h',
+      dbHost,
+      '-P',
+      dbPort,
+      '-u',
+      dbUser,
+      if (dbPass.isNotEmpty) '-p$dbPass',
+      '--single-transaction',
+      '--routines',
+      '--triggers',
+      '--result-file=$dumpPath',
+      dbName,
+    ];
+
+    log.log('Generando respaldo automático de BD ($dbName) en: $dumpPath');
+    final res = Process.runSync(mysqldumpExe, args, runInShell: false);
+    final dumpFile = File(dumpPath);
+
+    if (res.exitCode == 0 &&
+        dumpFile.existsSync() &&
+        dumpFile.lengthSync() > 0) {
+      final mb = (dumpFile.lengthSync() / 1024 / 1024).toStringAsFixed(2);
+      log.log('  ✓ Respaldo de BD completado exitosamente ($mb MB).');
+
+      // Rotación: conservar los 10 respaldos pre_ota_*.sql más recientes
+      try {
+        final dumps = backupDir
+            .listSync()
+            .whereType<File>()
+            .where((f) =>
+                p.basename(f.path).startsWith('pre_ota_') &&
+                f.path.endsWith('.sql'))
+            .toList()
+          ..sort((a, b) =>
+              b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+        if (dumps.length > 10) {
+          for (final oldDump in dumps.sublist(10)) {
+            try {
+              oldDump.deleteSync();
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      return dumpPath;
+    } else {
+      log.log(
+          '  Advertencia: mysqldump retornó código ${res.exitCode}: ${res.stderr.toString().trim()}');
+      return null;
+    }
+  } catch (e) {
+    log.log('  Advertencia generando respaldo automático de BD: $e');
+    return null;
   }
 }
 

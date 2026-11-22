@@ -97,6 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Developer Mode
   int _versionTaps = 0;
   String _currentChannel = 'stable';
+  bool _devChannelUnlocked = false;
 
   // Integraciones (Mercado Pago & ARCA/AFIP)
   final _mpAccessTokenCtrl = TextEditingController();
@@ -2083,36 +2084,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadChannel() async {
     final prefs = await SharedPreferences.getInstance();
+    final ch =
+        (prefs.getString('update_channel') ?? 'stable').toLowerCase() == 'beta'
+            ? 'beta'
+            : 'stable';
+    UpdateService.channelNotifier.value = ch;
     if (mounted) {
-      setState(() =>
-          _currentChannel = prefs.getString('update_channel') ?? 'stable');
+      setState(() {
+        _currentChannel = ch;
+        if (ch == 'beta') _devChannelUnlocked = true;
+      });
+    }
+  }
+
+  Future<void> _switchUpdateChannel(String newChannel) async {
+    final normalized = newChannel == 'beta' ? 'beta' : 'stable';
+    setState(() {
+      _currentChannel = normalized;
+      _isCheckingUpdate = true;
+    });
+    try {
+      final result = await UpdateService().setChannel(
+        normalized,
+        allowInDebug: true,
+      );
+      if (!mounted) return;
+      final label = normalized == 'beta' ? 'Beta' : 'Estable (Stable)';
+      if (result.hasAny) {
+        final targetVer =
+            (result.frontendUpdate ?? result.backendUpdate)!.version;
+        SnackBarService.success(
+          context,
+          'Canal $label activado · Actualización v$targetVer disponible en la barra superior.',
+        );
+      } else if (result.serverChecked) {
+        SnackBarService.success(
+          context,
+          'Canal $label activado · Sistema al día en este canal.',
+        );
+      } else {
+        SnackBarService.info(
+          context,
+          'Canal $label activado (sin conexión para verificar actualizaciones ahora).',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingUpdate = false);
+      }
     }
   }
 
   Future<void> _handleVersionTap() async {
+    if (_isCheckingUpdate) return;
     _versionTaps++;
     if (_versionTaps >= 7) {
       _versionTaps = 0;
-      final prefs = await SharedPreferences.getInstance();
+      setState(() => _devChannelUnlocked = true);
       final newChannel = _currentChannel == 'stable' ? 'beta' : 'stable';
-      await prefs.setString('update_channel', newChannel);
-      setState(() => _currentChannel = newChannel);
-
-      if (!mounted) return;
-      if (newChannel == 'beta') {
-        SnackBarService.success(
-            context, 'Modo Desarrollador: Canal Beta Activado 🐛');
-      } else {
-        SnackBarService.success(
-            context, 'Modo Producción: Canal Stable Activado 🚀');
-      }
+      await _switchUpdateChannel(newChannel);
     }
   }
 
   Future<void> _checkForUpdate() async {
     setState(() => _isCheckingUpdate = true);
     try {
-      final result = await UpdateService().checkUpdate(throwErrors: true);
+      final result = await UpdateService().checkUpdate(
+        throwErrors: true,
+        allowInDebug: true,
+      );
       if (!mounted) return;
 
       final frontendUpdate = result.frontendUpdate;
@@ -6056,6 +6096,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+            if (_devChannelUnlocked || _currentChannel == 'beta') ...[
+              const SizedBox(height: 12),
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      'Canal de actualizaciones (Modo Técnico)',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: 'stable',
+                          icon: Icon(Icons.verified_outlined, size: 16),
+                          label: Text('Estable'),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'beta',
+                          icon: Icon(Icons.science_outlined, size: 16),
+                          label: Text('Beta'),
+                        ),
+                      ],
+                      selected: {_currentChannel},
+                      onSelectionChanged: _isCheckingUpdate
+                          ? null
+                          : (selection) {
+                              final chosen = selection.first;
+                              if (chosen != _currentChannel) {
+                                _switchUpdateChannel(chosen);
+                              }
+                            },
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ] else ...[
           // --- ESTADO SIN LICENCIA ---

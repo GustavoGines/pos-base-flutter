@@ -79,7 +79,60 @@ void main(List<String> args) async {
   log.log(
       'ZIP verificado (${(zipFile.lengthSync() / 1024 / 1024).toStringAsFixed(2)} MB)');
 
-  // ── PASO 2: Espera inteligente (solo frontend) ───────────
+  // Resolver PHP de forma temprana si es backend para detener workers antes de extraer
+  String phpExe = 'php';
+  String phpDir = '';
+  final Map<String, String> phpEnv = {};
+
+  if (component == 'backend') {
+    try {
+      final whereResult =
+          Process.runSync('where.exe', ['php'], runInShell: false);
+      if (whereResult.exitCode == 0) {
+        final found =
+            whereResult.stdout.toString().trim().split('\n').first.trim();
+        if (found.isNotEmpty && File(found).existsSync()) {
+          phpExe = found;
+          phpDir = p.dirname(found);
+          log.log('PHP encontrado via where.exe: $phpExe');
+        }
+      }
+    } catch (_) {}
+
+    if (phpDir.isEmpty) {
+      final laragonPhpBase = Directory(r'C:\laragon\bin\php');
+      if (laragonPhpBase.existsSync()) {
+        try {
+          final phpDirs = laragonPhpBase
+              .listSync()
+              .whereType<Directory>()
+              .toList()
+            ..sort((a, b) => b.path.compareTo(a.path));
+          for (final dir in phpDirs) {
+            final candidate = File(p.join(dir.path, 'php.exe'));
+            if (candidate.existsSync()) {
+              phpExe = candidate.path;
+              phpDir = dir.path;
+              log.log('PHP encontrado en Laragon: $phpExe');
+              break;
+            }
+          }
+        } catch (e) {
+          log.log('Advertencia buscando Laragon PHP: $e');
+        }
+      }
+    }
+
+    if (phpDir.isEmpty) {
+      log.log(
+          'Advertencia: PHP no encontrado en rutas conocidas. Usando "php" del PATH.');
+    } else {
+      final currentPath = Platform.environment['PATH'] ?? '';
+      phpEnv['PATH'] = '$phpDir;$currentPath';
+    }
+  }
+
+  // ── PASO 2: Liberación previa de archivos / workers ──────
   if (component == 'frontend') {
     log.log('Esperando a que Sistema_POS.exe libere el lock de archivo...');
     final exeFile = File(p.join(targetDir, 'Sistema_POS.exe'));
@@ -106,7 +159,37 @@ void main(List<String> args) async {
           'Advertencia: El exe sigue bloqueado después de 20s — intentando de todas formas.');
     }
   } else {
-    log.log('Esperando 2 segundos para que el backend libere archivos...');
+    // BACKEND: Detener tareas programadas y workers PHP ANTES de tocar vendor/
+    log.log(
+        'Deteniendo temporalmente tareas y workers en segundo plano antes de extraer...');
+    final artisanPath = p.join(targetDir, 'artisan');
+    if (File(artisanPath).existsSync()) {
+      for (final stopCmd in ['queue:restart', 'reverb:restart']) {
+        try {
+          Process.runSync(
+            phpExe,
+            [artisanPath, stopCmd],
+            workingDirectory: targetDir,
+            environment: phpEnv.isNotEmpty ? phpEnv : null,
+          );
+        } catch (_) {}
+      }
+    }
+
+    for (final taskName in [
+      'SistemaPOS_Schedule',
+      'SistemaPOS_Queue',
+      'SistemaPOS_Reverb',
+    ]) {
+      try {
+        Process.runSync('schtasks', ['/end', '/tn', taskName]);
+      } catch (_) {}
+    }
+
+    try {
+      Process.runSync('taskkill', ['/F', '/IM', 'php-win.exe', '/T']);
+    } catch (_) {}
+
     await Future.delayed(const Duration(seconds: 2));
   }
 
@@ -153,14 +236,15 @@ void main(List<String> args) async {
     }
   }
 
-  // ── PASO 4: Extracción Diferencial por Tamaño + CRC-32 ──
-  log.log('Iniciando extracción diferencial...');
+  // ── PASO 4: Extracción Diferencial Atómica por Tamaño + CRC-32 + Rollback ──
+  log.log('Iniciando extracción diferencial atómica...');
   final stats = extractArchiveDifferentially(
     archive: archive,
     targetDir: targetDir,
     component: component,
     log: log,
     skipUpdaterExe: skipUpdaterExe,
+    rollbackOnPartialFailure: component == 'backend',
   );
 
   // Salvaguarda crítica post-extracción para Frontend: garantizar que updater.exe siempre exista
@@ -181,105 +265,61 @@ void main(List<String> args) async {
   final bool extractionOk = stats.extractionOk;
   if (!extractionOk) {
     log.err(
-        '${stats.filesSkipped} archivos no pudieron extraerse. La actualización puede estar incompleta.');
+        '${stats.filesSkipped} archivos no pudieron extraerse. Se revirtieron los cambios parciales.');
   }
 
   // ── PASO 5: Lógica post-extracción por componente ────────
   if (component == 'backend') {
-    // 1. Saneamiento idempotente de variables .env nuevas (para clientes que suben desde v1.8.5)
+    // 1. Saneamiento idempotente de variables .env nuevas (para clientes que suben desde v1.4.4 / v1.8.5)
     ensureBackendEnvVariables(targetDir: targetDir, log: log);
 
-    // 2. Resolver la ruta absoluta de php.exe
-    String phpExe = 'php';
-    String phpDir = '';
+    // 2. Respaldo automático de la Base de Datos (mysqldump) ANTES de correr migraciones
+    bool hasError = !extractionOk;
+    final artisanPath = p.join(targetDir, 'artisan');
 
-    try {
-      final whereResult =
-          Process.runSync('where.exe', ['php'], runInShell: false);
-      if (whereResult.exitCode == 0) {
-        final found =
-            whereResult.stdout.toString().trim().split('\n').first.trim();
-        if (found.isNotEmpty && File(found).existsSync()) {
-          phpExe = found;
-          phpDir = p.dirname(found);
-          log.log('PHP encontrado via where.exe: $phpExe');
-        }
-      }
-    } catch (_) {}
+    if (extractionOk) {
+      createPreMigrationDatabaseBackup(
+        targetDir: targetDir,
+        version: version,
+        log: log,
+      );
 
-    if (phpDir.isEmpty) {
-      final laragonPhpBase = Directory(r'C:\laragon\bin\php');
-      if (laragonPhpBase.existsSync()) {
+      final commands = [
+        [phpExe, artisanPath, 'optimize:clear'],
+        [phpExe, artisanPath, 'migrate', '--force'],
+        [phpExe, artisanPath, 'optimize'],
+      ];
+
+      for (final cmd in commands) {
+        final cmdString = cmd.join(' ');
+        log.log('Ejecutando: $cmdString');
         try {
-          final phpDirs = laragonPhpBase
-              .listSync()
-              .whereType<Directory>()
-              .toList()
-            ..sort((a, b) => b.path.compareTo(a.path));
-          for (final dir in phpDirs) {
-            final candidate = File(p.join(dir.path, 'php.exe'));
-            if (candidate.existsSync()) {
-              phpExe = candidate.path;
-              phpDir = dir.path;
-              log.log('PHP encontrado en Laragon: $phpExe');
-              break;
-            }
+          final result = Process.runSync(
+            cmd.first,
+            cmd.sublist(1),
+            workingDirectory: targetDir,
+            environment: phpEnv.isNotEmpty ? phpEnv : null,
+          );
+          if (result.stdout.toString().trim().isNotEmpty) {
+            log.log('  STDOUT: ${result.stdout.toString().trim()}');
+          }
+          if (result.stderr.toString().trim().isNotEmpty) {
+            log.err('  STDERR: ${result.stderr.toString().trim()}');
+          }
+          if (result.exitCode != 0) {
+            hasError = true;
+            log.err('  $cmdString retornó exitCode=${result.exitCode}');
+          } else {
+            log.log('  $cmdString: OK');
           }
         } catch (e) {
-          log.log('Advertencia buscando Laragon PHP: $e');
-        }
-      }
-    }
-
-    if (phpDir.isEmpty) {
-      log.log(
-          'Advertencia: PHP no encontrado en rutas conocidas. Usando "php" del PATH.');
-    }
-
-    final Map<String, String> phpEnv = {};
-    if (phpDir.isNotEmpty) {
-      final currentPath = Platform.environment['PATH'] ?? '';
-      phpEnv['PATH'] = '$phpDir;$currentPath';
-    }
-
-    final artisanPath = p.join(targetDir, 'artisan');
-    final commands = [
-      [phpExe, artisanPath, 'optimize:clear'],
-      [phpExe, artisanPath, 'migrate', '--force'],
-      [phpExe, artisanPath, 'optimize'],
-    ];
-
-    bool hasError = false;
-
-    for (final cmd in commands) {
-      final cmdString = cmd.join(' ');
-      log.log('Ejecutando: $cmdString');
-      try {
-        final result = Process.runSync(
-          cmd.first,
-          cmd.sublist(1),
-          workingDirectory: targetDir,
-          environment: phpEnv.isNotEmpty ? phpEnv : null,
-        );
-        if (result.stdout.toString().trim().isNotEmpty) {
-          log.log('  STDOUT: ${result.stdout.toString().trim()}');
-        }
-        if (result.stderr.toString().trim().isNotEmpty) {
-          log.err('  STDERR: ${result.stderr.toString().trim()}');
-        }
-        if (result.exitCode != 0) {
           hasError = true;
-          log.err('  $cmdString retornó exitCode=${result.exitCode}');
-        } else {
-          log.log('  $cmdString: OK');
+          log.err('  Excepción ejecutando $cmdString: $e');
         }
-      } catch (e) {
-        hasError = true;
-        log.err('  Excepción ejecutando $cmdString: $e');
       }
     }
 
-    // 3. Reiniciar workers de cola y WebSockets Reverb en segundo plano (no bloqueante)
+    // 3. Reiniciar workers de cola y WebSockets Reverb en segundo plano (siempre levantar tareas al terminar)
     if (!hasError) {
       for (final bgCmd in ['queue:restart', 'reverb:restart']) {
         try {
@@ -296,18 +336,18 @@ void main(List<String> args) async {
           log.log('  Advertencia ejecutando $bgCmd (no bloqueante): $e');
         }
       }
+    }
 
-      // Asegurar que las tareas programadas de Windows (Reverb, Queue, Schedule) vuelvan a
-      // levantar inmediatamente si se detuvieron al recibir la señal de restart.
-      for (final taskName in [
-        'SistemaPOS_Reverb',
-        'SistemaPOS_Queue',
-        'SistemaPOS_Schedule',
-      ]) {
-        try {
-          Process.runSync('schtasks', ['/run', '/tn', taskName]);
-        } catch (_) {}
-      }
+    // Asegurar que las tareas programadas de Windows (Reverb, Queue, Schedule) vuelvan a
+    // levantar inmediatamente tras la actualización.
+    for (final taskName in [
+      'SistemaPOS_Reverb',
+      'SistemaPOS_Queue',
+      'SistemaPOS_Schedule',
+    ]) {
+      try {
+        Process.runSync('schtasks', ['/run', '/tn', taskName]);
+      } catch (_) {}
     }
 
     final success = extractionOk && !hasError;

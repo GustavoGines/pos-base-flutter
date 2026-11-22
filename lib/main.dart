@@ -1330,6 +1330,9 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
       _startupReadyNotifier.value = true;
+      if (!AppConfig.isMobile) {
+        UpdateService().startPeriodicCheck();
+      }
 
       // ── CHECK DE RESULTADO OTA (Smart Chaining) ──
       // Si el updater corrió mientras la app estaba cerrada, mostrar el

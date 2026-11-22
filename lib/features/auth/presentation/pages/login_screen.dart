@@ -141,8 +141,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       }
 
       final result = await UpdateService().checkUpdate(throwErrors: true);
-      // ✨ Siempre: alimentar el notificador global para el badge de la AppBar ✨
-      UpdateService.updateNotifier.value = result;
 
       // Si el usuario sigue pacientemente en la pantalla de login:
       if (mounted) {
@@ -151,7 +149,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+            builder: (_) => UpdateDialog(
+              updateInfo: result.frontendUpdate!,
+              isFullSystemUpdate: result.isFullSystemUpdate,
+            ),
           );
           return;
         }
@@ -172,7 +173,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               showDialog(
                 context: globalContext,
                 barrierDismissible: !result.frontendUpdate!.isCritical,
-                builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+                builder: (_) => UpdateDialog(
+                  updateInfo: result.frontendUpdate!,
+                  isFullSystemUpdate: result.isFullSystemUpdate,
+                ),
               );
             } else if (result.backendUpdate != null) {
               showDialog(

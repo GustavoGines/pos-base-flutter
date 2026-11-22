@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +9,7 @@ import '../../../../core/config/app_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/update_info.dart';
+import '../../data/services/update_service.dart';
 
 class UpdateDialog extends StatefulWidget {
   final UpdateInfo updateInfo;
@@ -82,6 +85,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
   bool get _isFull => widget.isFullSystemUpdate;
 
   Future<void> _startUpdate() async {
+    if (kDebugMode) {
+      setState(() {
+        _isDownloading = false;
+        _status =
+            '🛡️ Modo Debug: vista previa segura activa. La descarga e instalación OTA real están bloqueadas en compilación debug para proteger tu entorno.';
+      });
+      return;
+    }
+
     setState(() {
       _isDownloading = true;
       _status = 'Descargando actualización...';
@@ -441,6 +453,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
           await prefs.setString('backend_version', widget.updateInfo.version);
           await _clearPendingState(installPath);
+          unawaited(UpdateService().checkUpdate(throwErrors: false));
         }
 
         if (mounted) {

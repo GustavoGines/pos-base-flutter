@@ -2425,70 +2425,69 @@ class _TerminalPeripheralsDialogState
 class UpdateBadgeWidget extends StatelessWidget {
   const UpdateBadgeWidget({super.key});
 
+  String _buildTooltipMessage(UpdateCheckResult result) {
+    final channelTag = result.isBeta ? ' [Canal BETA]' : '';
+    if (result.isFullSystemUpdate) {
+      return 'Actualización Integral disponible$channelTag '
+          '(App v${result.frontendUpdate!.version} + Servidor v${result.backendUpdate!.version})';
+    }
+    if (result.frontendUpdate != null) {
+      return 'Nueva versión de App disponible$channelTag '
+          '(v${result.frontendUpdate!.version})';
+    }
+    return 'Nueva actualización de Servidor disponible$channelTag '
+        '(v${result.backendUpdate!.version})';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<UpdateCheckResult?>(
-      valueListenable: UpdateService.updateNotifier,
-      builder: (context, result, child) {
-        if (result == null || !result.hasAny) return const SizedBox.shrink();
-
-        final isCritical = (result.frontendUpdate?.isCritical == true) || 
-                           (result.backendUpdate?.isCritical == true);
-
-        return Padding(
-          padding: const EdgeInsets.only(right: 6.0),
-          child: Tooltip(
-            message: '¡Nueva actualización disponible!',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () {
-                final update = result.frontendUpdate ?? result.backendUpdate!;
-                showDialog(
-                  context: context,
-                  barrierDismissible: !update.isCritical,
-                  builder: (_) => UpdateDialog(updateInfo: update),
-                );
-              },
+    return ValueListenableBuilder<bool>(
+      valueListenable: UpdateService.isSwitchingChannelNotifier,
+      builder: (context, isSwitching, _) {
+        if (isSwitching) {
+          final isBeta =
+              UpdateService.channelNotifier.value.toLowerCase() == 'beta';
+          return Padding(
+            padding: const EdgeInsets.only(right: 6.0),
+            child: Tooltip(
+              message: isBeta
+                  ? 'Buscando actualizaciones en canal BETA...'
+                  : 'Buscando actualizaciones en canal Estable...',
               child: Container(
                 height: 34,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: isCritical
-                      ? Colors.redAccent.withValues(alpha: 0.22)
-                      : const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                  color: (isBeta
+                          ? const Color(0xFFF59E0B)
+                          : const Color(0xFF38BDF8))
+                      .withValues(alpha: 0.16),
                   border: Border.all(
-                    color: isCritical
-                        ? Colors.redAccent
-                        : const Color(0xFFA78BFA),
+                    color: (isBeta
+                            ? const Color(0xFFF59E0B)
+                            : const Color(0xFF38BDF8))
+                        .withValues(alpha: 0.55),
                   ),
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isCritical
-                              ? Colors.redAccent
-                              : const Color(0xFF8B5CF6))
-                          .withValues(alpha: 0.25),
-                      blurRadius: 8,
-                      spreadRadius: 0.5,
-                    )
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.system_update_rounded,
-                      size: 16,
-                      color: isCritical
-                          ? const Color(0xFFFCA5A5)
-                          : const Color(0xFFDDD6FE),
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isBeta
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFBAE6FD),
+                      ),
                     ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Actualizar',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                    const SizedBox(width: 7),
+                    Text(
+                      isBeta ? 'Verificando Beta...' : 'Verificando...',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
                     ),
@@ -2496,7 +2495,118 @@ class UpdateBadgeWidget extends StatelessWidget {
                 ),
               ),
             ),
-          ),
+          );
+        }
+
+        return ValueListenableBuilder<UpdateCheckResult?>(
+          valueListenable: UpdateService.updateNotifier,
+          builder: (context, result, child) {
+            if (result == null || !result.hasAny) {
+              return const SizedBox.shrink();
+            }
+
+            final isCritical = (result.frontendUpdate?.isCritical == true) ||
+                (result.backendUpdate?.isCritical == true);
+            final isBeta = result.isBeta;
+
+            final Color bgColor = isCritical
+                ? Colors.redAccent.withValues(alpha: 0.22)
+                : (isBeta
+                    ? const Color(0xFFF59E0B).withValues(alpha: 0.22)
+                    : const Color(0xFF8B5CF6).withValues(alpha: 0.25));
+            final Color borderColor = isCritical
+                ? Colors.redAccent
+                : (isBeta
+                    ? const Color(0xFFF59E0B)
+                    : const Color(0xFFA78BFA));
+            final Color shadowColor = isCritical
+                ? Colors.redAccent
+                : (isBeta
+                    ? const Color(0xFFF59E0B)
+                    : const Color(0xFF8B5CF6));
+            final Color iconColor = isCritical
+                ? const Color(0xFFFCA5A5)
+                : (isBeta
+                    ? const Color(0xFFFDE68A)
+                    : const Color(0xFFDDD6FE));
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 6.0),
+              child: Tooltip(
+                message: _buildTooltipMessage(result),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    final update =
+                        result.frontendUpdate ?? result.backendUpdate!;
+                    showDialog(
+                      context: context,
+                      barrierDismissible: !update.isCritical,
+                      builder: (_) => UpdateDialog(
+                        updateInfo: update,
+                        isFullSystemUpdate: result.isFullSystemUpdate,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      border: Border.all(color: borderColor),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: shadowColor.withValues(alpha: 0.25),
+                          blurRadius: 8,
+                          spreadRadius: 0.5,
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.system_update_rounded,
+                          size: 16,
+                          color: iconColor,
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Actualizar',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (isBeta) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: const Text(
+                              'BETA',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF1E1B18),
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );

@@ -138,6 +138,101 @@ void main() {
       updaterFile.deleteSync();
       expect(hasUpdaterExeChangedInArchive(sameArchive, tempDir.path), isTrue);
     });
+
+    test(
+        'extracción atómica no deja archivos temporales (.ota_tmp_ / .ota_bak_) tras completar con éxito y espeja el log persistente',
+        () {
+      final persistentLogDir =
+          Directory(p.join(tempDir.path, 'persistent_logs'))
+            ..createSync(recursive: true);
+      final targetFile = File(p.join(tempDir.path, 'vendor', 'pkg', ' safe.php'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('<?php // v1');
+
+      final archive = _buildDecodedZipArchive({
+        'vendor/pkg/ safe.php': utf8.encode('<?php // v2'),
+        'vendor/pkg/new_helper.php': utf8.encode('<?php // helper'),
+      });
+
+      final log =
+          OtaLogger(tempDir.path, persistentLogDir: persistentLogDir.path);
+      log.writeHeader(
+        component: 'backend',
+        version: '2.1.2',
+        zipPath: 'update_backend_v2.1.2.zip',
+        targetDir: tempDir.path,
+      );
+
+      final stats = extractArchiveDifferentially(
+        archive: archive,
+        targetDir: tempDir.path,
+        component: 'backend',
+        log: log,
+      );
+      log.writeResult(stats.extractionOk);
+
+      expect(stats.extractionOk, isTrue);
+      expect(stats.filesExtracted, equals(2));
+      expect(stats.filesRolledBack, equals(0));
+      expect(targetFile.readAsStringSync(), equals('<?php // v2'));
+
+      // Verificar que no quedaron archivos .ota_tmp_ ni .ota_bak_ residuales
+      final remainingTempOrBak = Directory(p.join(tempDir.path, 'vendor'))
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) =>
+              f.path.contains('.ota_tmp_') || f.path.contains('.ota_bak_'))
+          .toList();
+      expect(remainingTempOrBak, isEmpty);
+
+      // Verificar que updater_history.log persistente fue escrito
+      final historyFile =
+          File(p.join(persistentLogDir.path, 'updater_history.log'));
+      expect(historyFile.existsSync(), isTrue);
+      expect(historyFile.readAsStringSync(),
+          contains('RESULTADO FINAL: SUCCESS'));
+    });
+
+    test(
+        'rollback transaccional revierte archivos modificados y nuevos si un archivo posterior falla',
+        () {
+      final firstFile =
+          File(p.join(tempDir.path, 'vendor', 'pkg', 'first.php'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('<?php // original_first');
+
+      // Creamos un DIRECTORIO donde el ZIP espera un ARCHIVO ('vendor/pkg/conflict.php')
+      // para forzar de forma determinista y multiplataforma que renameSync falle en el 3er archivo
+      Directory(p.join(tempDir.path, 'vendor', 'pkg', 'conflict.php'))
+          .createSync(recursive: true);
+
+      final archive = _buildDecodedZipArchive({
+        'vendor/pkg/first.php': utf8.encode('<?php // updated_first'),
+        'vendor/pkg/brand_new.php': utf8.encode('<?php // brand_new'),
+        'vendor/pkg/conflict.php': utf8.encode('<?php // fails_to_replace_dir'),
+      });
+
+      final log = OtaLogger(tempDir.path);
+      final stats = extractArchiveDifferentially(
+        archive: archive,
+        targetDir: tempDir.path,
+        component: 'backend',
+        log: log,
+        rollbackOnPartialFailure: true,
+      );
+
+      expect(stats.extractionOk, isFalse);
+      expect(stats.filesSkipped, equals(1));
+      expect(stats.filesRolledBack, equals(1));
+
+      // first.php debe haber vuelto a su contenido original intacto
+      expect(firstFile.readAsStringSync(), equals('<?php // original_first'));
+      // brand_new.php debe haberse limpiado durante el rollback
+      expect(
+          File(p.join(tempDir.path, 'vendor', 'pkg', 'brand_new.php'))
+              .existsSync(),
+          isFalse);
+    });
   });
 
   group('Poda Segura de Archivos Eliminados (pruneDeletedFilesAndSaveManifest)',
