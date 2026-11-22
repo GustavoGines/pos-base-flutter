@@ -135,9 +135,7 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
   }
 
   String _formatQty(double qty) {
-    return qty.truncateToDouble() == qty
-        ? qty.toInt().toString()
-        : qty.toStringAsFixed(1);
+    return qty.toQty();
   }
 
   @override
@@ -261,7 +259,8 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                                 splashRadius: 24,
                               ),
                               Container(
-                                width: 45,
+                                constraints: const BoxConstraints(minWidth: 48),
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
                                 alignment: Alignment.center,
                                 child: Text(
                                   _formatQty(currentQty),

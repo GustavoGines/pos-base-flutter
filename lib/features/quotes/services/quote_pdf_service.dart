@@ -530,6 +530,37 @@ class QuotePdfService {
         .trim();
   }
 
+  /// Normaliza símbolos Unicode que no soportan las fuentes Type1 (Helvetica) en PDF offline.
+  static String _sanitizePdfText(String text) {
+    if (text.isEmpty) return text;
+    const Map<String, String> replacements = {
+      '→': '->',
+      '←': '<-',
+      '²': '2',
+      '³': '3',
+      '·': '-',
+      '•': '-',
+      '×': 'x',
+      '–': '-',
+      '—': '-',
+      '“': '"',
+      '”': '"',
+      '‘': "'",
+      '’': "'",
+    };
+    final out = StringBuffer();
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final mapped = replacements[ch];
+      if (mapped != null) {
+        out.write(mapped);
+      } else if (rune == 10 || rune == 13 || (rune >= 0x20 && rune <= 0xFF)) {
+        out.write(ch);
+      }
+    }
+    return out.toString();
+  }
+
   static Future<Uint8List> generateQuotePdf({
     required Quote quote,
     required String businessName,
@@ -630,9 +661,11 @@ class QuotePdfService {
     final String? sanitizedNotes = _sanitizeNotes(quote.notes);
 
     final int totalUnits = quote.items.fold<int>(0, (sum, item) {
-      final isWeight =
-          item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
-      return sum + (isWeight ? 1 : item.quantity.toInt());
+      final isWeight = item.product?.isSoldByWeight == true;
+      return sum +
+          ((isWeight || item.quantity % 1 != 0)
+              ? 1
+              : item.quantity.toInt());
     });
 
     doc.addPage(
@@ -1010,8 +1043,7 @@ class QuotePdfService {
                   final item = entry.value;
                   final memImg = itemThumbnails[i];
 
-                  final isWeight = item.product?.isSoldByWeight ??
-                      (item.quantity % 1 != 0);
+                  final isWeight = item.product?.isSoldByWeight == true;
                   final qtyText = isWeight
                       ? '${item.quantity.toQty()} kg'
                       : (item.quantity % 1 == 0
@@ -1053,13 +1085,32 @@ class QuotePdfService {
                               ),
                             ],
                             pw.Expanded(
-                              child: pw.Text(
-                                item.productName.toUpperCase(),
-                                style: pw.TextStyle(
-                                  fontSize: 8.5,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black,
-                                ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                mainAxisSize: pw.MainAxisSize.min,
+                                children: [
+                                  pw.Text(
+                                    item.productName.toUpperCase(),
+                                    style: pw.TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.black,
+                                    ),
+                                  ),
+                                  if (item.customDetails != null &&
+                                      item.customDetails!.trim().isNotEmpty) ...[
+                                    pw.SizedBox(height: 1.5),
+                                    pw.Text(
+                                      _sanitizePdfText(
+                                          item.customDetails!.trim()),
+                                      style: pw.TextStyle(
+                                        fontSize: 7.2,
+                                        color: PdfColors.grey800,
+                                        fontStyle: pw.FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ],
@@ -1108,7 +1159,7 @@ class QuotePdfService {
                         if (sanitizedNotes != null &&
                             sanitizedNotes.isNotEmpty) ...[
                           pw.Text(
-                            sanitizedNotes,
+                            _sanitizePdfText(sanitizedNotes),
                             style: const pw.TextStyle(fontSize: 8),
                           ),
                           pw.SizedBox(height: 4),

@@ -140,7 +140,12 @@ class AfipFiscalPdfService {
       try {
         final font = await PdfGoogleFonts.robotoRegular();
         final fontBold = await PdfGoogleFonts.robotoBold();
-        effectiveTheme = pw.ThemeData.withFont(base: font, bold: fontBold);
+        final fontItalic = await PdfGoogleFonts.robotoItalic();
+        effectiveTheme = pw.ThemeData.withFont(
+          base: font,
+          bold: fontBold,
+          italic: fontItalic,
+        );
       } catch (_) {
         // Fallback to default Helvetica in offline or testing environments
       }
@@ -1243,17 +1248,19 @@ class AfipFiscalPdfService {
                 1.0;
             final isWeight = item['product']?['is_sold_by_weight'] == true ||
                 item['is_sold_by_weight'] == true;
-            final qtyText =
-                isWeight ? '${qty.toQty()} kg' : '${qty.toInt()} un';
+            final qtyText = isWeight
+                ? '${qty.toQty()} kg'
+                : (qty % 1 == 0 ? '${qty.toInt()} un' : '${qty.toQty()} un');
 
+            final safeDetails = _sanitizePdfText(customDetails);
             return pw.TableRow(
               children: [
                 _buildTableCell(pCode.trim().isEmpty ? '-' : pCode,
                     textAlign: pw.TextAlign.center),
                 _buildTableCell(qtyText, textAlign: pw.TextAlign.center),
                 _buildTableCell(
-                    customDetails.isNotEmpty
-                        ? '${pName.toUpperCase()} ($customDetails)'
+                    safeDetails.isNotEmpty
+                        ? '${pName.toUpperCase()} ($safeDetails)'
                         : pName.toUpperCase(),
                     textAlign: pw.TextAlign.left),
                 _buildTableCell(isDelivered ? 'ENTREGADO' : 'A RETIRAR',
@@ -1688,7 +1695,9 @@ class AfipFiscalPdfService {
                 1.0;
             final isWeight = item['product']?['is_sold_by_weight'] == true ||
                 item['is_sold_by_weight'] == true;
-            final qtyText = isWeight ? qty.toQty() : qty.toInt().toString();
+            final qtyText = (isWeight || qty % 1 != 0)
+                ? qty.toQty()
+                : qty.toInt().toString();
 
             final subtotal = double.tryParse(
                     (item['subtotal'] ?? item['total'] ?? 0).toString()) ??
@@ -1757,7 +1766,7 @@ class AfipFiscalPdfService {
                         pw.Padding(
                           padding: const pw.EdgeInsets.only(top: 1.0),
                           child: pw.Text(
-                            customDetails,
+                            _sanitizePdfText(customDetails),
                             style: pw.TextStyle(
                               fontSize: 6.8,
                               fontStyle: pw.FontStyle.italic,
@@ -1826,7 +1835,9 @@ class AfipFiscalPdfService {
                 1.0;
             final isWeight = item['product']?['is_sold_by_weight'] == true ||
                 item['is_sold_by_weight'] == true;
-            final qtyText = isWeight ? qty.toQty() : qty.toInt().toString();
+            final qtyText = (isWeight || qty % 1 != 0)
+                ? qty.toQty()
+                : qty.toInt().toString();
 
             final subtotal = double.tryParse(
                     (item['subtotal'] ?? item['total'] ?? 0).toString()) ??
@@ -1877,7 +1888,7 @@ class AfipFiscalPdfService {
                         pw.Padding(
                           padding: const pw.EdgeInsets.only(top: 1.0),
                           child: pw.Text(
-                            customDetails,
+                            _sanitizePdfText(customDetails),
                             style: pw.TextStyle(
                               fontSize: 6.8,
                               fontStyle: pw.FontStyle.italic,
@@ -2419,5 +2430,36 @@ class AfipFiscalPdfService {
 
     traverse(root);
     return results;
+  }
+
+  /// Normaliza símbolos Unicode que no soportan las fuentes Type1 (Helvetica) en PDF offline.
+  static String _sanitizePdfText(String text) {
+    if (text.isEmpty) return text;
+    const Map<String, String> replacements = {
+      '→': '->',
+      '←': '<-',
+      '²': '2',
+      '³': '3',
+      '·': '-',
+      '•': '-',
+      '×': 'x',
+      '–': '-',
+      '—': '-',
+      '“': '"',
+      '”': '"',
+      '‘': "'",
+      '’': "'",
+    };
+    final out = StringBuffer();
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final mapped = replacements[ch];
+      if (mapped != null) {
+        out.write(mapped);
+      } else if (rune == 10 || rune == 13 || (rune >= 0x20 && rune <= 0xFF)) {
+        out.write(ch);
+      }
+    }
+    return out.toString();
   }
 }

@@ -1732,16 +1732,20 @@ class _FakeBatchCatalogProvider extends ChangeNotifier implements CatalogProvide
   Future<List<Product>> searchProductsRemote(
     String query, {
     int perPage = 40,
+    bool activeOnly = true,
   }) async {
     final q = query.trim().toLowerCase();
-    if (q.isEmpty) return [sample];
     final pool = [sample, ...remoteMatches];
+    if (q.isEmpty) {
+      return pool.where((p) => !activeOnly || p.active).toList();
+    }
     return pool
         .where(
           (p) =>
-              p.name.toLowerCase().contains(q) ||
-              p.internalCode.toLowerCase().contains(q) ||
-              (p.barcode?.toLowerCase().contains(q) ?? false),
+              (!activeOnly || p.active) &&
+              (p.name.toLowerCase().contains(q) ||
+                  p.internalCode.toLowerCase().contains(q) ||
+                  (p.barcode?.toLowerCase().contains(q) ?? false)),
         )
         .toList();
   }

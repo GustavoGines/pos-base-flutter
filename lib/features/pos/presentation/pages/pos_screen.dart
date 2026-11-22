@@ -26,6 +26,7 @@ import '../widgets/pos_quick_customer_dialog.dart';
 import '../widgets/pos_quick_item_dialog.dart';
 import '../widgets/pos_price_lookup_dialog.dart';
 import '../widgets/pos_rename_cart_item_dialog.dart';
+import '../widgets/pos_hardware_calculator_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -34,6 +35,7 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/cash_movements/presentation/widgets/movement_form_dialog.dart' as frontend_desktop_cash_movements_dialog;
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
+import 'package:frontend_desktop/features/quotes/presentation/widgets/quote_success_dialog.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -69,6 +71,11 @@ class _PosScreenState extends State<PosScreen> {
   bool _isPendingPinned = false; // Modo Híbrido
   bool _onlyCurrentRegisterPending = false; // MC-03: Filtro de órdenes en espera por caja activa
 
+  // Controladores para el Popover flotante de Historial de Búsquedas
+  final _searchHistoryPortalController = OverlayPortalController();
+  static const Object _searchHistoryTapGroupId = 'pos_search_history_popover';
+  bool _suppressNextFocusPopover = false;
+
   // Filtro rápido en memoria para el Acceso Rápido
   String _quickAccessFilter = 'all'; // 'all', 'pinned', 'top_sellers', 'offers', 'weight', o 'cat_<id>'
 
@@ -92,10 +99,11 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_handleSearchFocusChange);
     HardwareKeyboard.instance.addHandler(_handlePosHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initPrintLabelListener();
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
       // búsqueda u ordenamiento que el módulo de Catálogo haya dejado activo.
       Provider.of<CatalogProvider>(context, listen: false)
@@ -202,15 +210,185 @@ class _PosScreenState extends State<PosScreen> {
     _printLabelSub?.cancel();
     _pendingOrdersTimer?.cancel();
     _debounceSearchTimer?.cancel();
+    _searchFocusNode.removeListener(_handleSearchFocusChange);
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleSearchFocusChange() {
+    if (!mounted) return;
+    if (!_searchFocusNode.hasFocus) {
+      _hideSearchHistoryPopover();
+      return;
+    }
+    if (_suppressNextFocusPopover) {
+      _suppressNextFocusPopover = false;
+      return;
+    }
+    if (_searchController.text.trim().isEmpty &&
+        _posRoute?.isCurrent == true &&
+        !_isCheckingOut) {
+      _showSearchHistoryPopoverIfAvailable();
+    }
+  }
+
+  void _requestSearchFocusSilently() {
+    _suppressNextFocusPopover = true;
+    _searchFocusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _suppressNextFocusPopover = false;
+    });
+  }
+
+  List<Product> _resolveActiveRecentProducts(
+    CatalogProvider catalog,
+    LocalTerminalProvider localTerminal,
+  ) {
+    final activeById = <int, Product>{};
+    for (final p in catalog.activeProducts) {
+      activeById[p.id] = p;
+    }
+    for (final p in catalog.pinnedExtraProducts) {
+      activeById.putIfAbsent(p.id, () => p);
+    }
+    for (final p in catalog.weightOnlyProducts) {
+      activeById.putIfAbsent(p.id, () => p);
+    }
+    final resolved = <Product>[];
+    for (final id in localTerminal.recentSearchProductIds) {
+      final prod = activeById[id];
+      if (prod != null && prod.active) {
+        resolved.add(prod);
+      }
+    }
+    return resolved;
+  }
+
+  bool _hasSearchHistoryEntries(
+    CatalogProvider catalog,
+    LocalTerminalProvider localTerminal,
+  ) {
+    if (localTerminal.recentSearchTerms.isNotEmpty) return true;
+    return _resolveActiveRecentProducts(catalog, localTerminal).isNotEmpty;
+  }
+
+  void _showSearchHistoryPopoverIfAvailable() {
+    if (!mounted || _isCheckingOut) return;
+    if (_searchController.text.trim().isNotEmpty) return;
+    final catalog = Provider.of<CatalogProvider>(context, listen: false);
+    final localTerminal =
+        Provider.of<LocalTerminalProvider>(context, listen: false);
+    if (!_hasSearchHistoryEntries(catalog, localTerminal)) return;
+    if (!_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.show();
+    }
+  }
+
+  void _hideSearchHistoryPopover() {
+    if (_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.hide();
+    }
+  }
+
+  void _recordRecentSearchIfValid(String term, {int? selectedProductId}) {
+    if (!LocalTerminalProvider.isValidRecentSearchTerm(term)) return;
+    try {
+      final localTerminal =
+          Provider.of<LocalTerminalProvider>(context, listen: false);
+      unawaited(localTerminal.recordRecentSearch(
+        term: term,
+        selectedProductId: selectedProductId,
+      ));
+    } catch (_) {}
+  }
+
+  Future<void> _applyRecentSearchTerm(String term) async {
+    final clean = term.trim();
+    if (clean.isEmpty || !mounted) return;
+    _hideSearchHistoryPopover();
+    _debounceSearchTimer?.cancel();
+    _searchController.text = clean;
+    _searchController.selection = TextSelection.collapsed(offset: clean.length);
+    setState(() {
+      _searchQuery = clean;
+      _isSearching = true;
+    });
+    _requestSearchFocusSilently();
+
+    final results = (await Provider.of<PosProvider>(context, listen: false)
+            .search(clean))
+        .where((p) => p.active)
+        .toList();
+    if (!mounted || _searchQuery != clean) return;
+    setState(() {
+      _searchResults = results;
+      _isSearching = false;
+    });
+    _recordRecentSearchIfValid(clean);
+  }
+
+  /// Verifica si un código escaneado corresponde a un producto dado de baja (`active == false`),
+  /// consultando primero memoria y, si el catálogo supera 500 ítems, con fallback al servidor.
+  Future<Product?> _findInactiveProductByCode(
+    String code, {
+    String? scalePlu,
+  }) async {
+    final catalog = Provider.of<CatalogProvider>(context, listen: false);
+    final inactiveInMemory = catalog.products.where((p) => !p.active);
+
+    Product? match = RemoteScannerService.findExactProductMatch(
+      inactiveInMemory,
+      code,
+      activeOnly: false,
+    );
+    if (match == null && scalePlu != null && scalePlu.isNotEmpty) {
+      match = RemoteScannerService.findExactProductMatch(
+        inactiveInMemory,
+        scalePlu,
+        activeOnly: false,
+      );
+    }
+    if (match != null) return match;
+
+    final lookupCode = (scalePlu != null && scalePlu.isNotEmpty) ? scalePlu : code;
+    if (!RegExp(r'^[A-Za-z0-9\-_]{3,32}$').hasMatch(lookupCode)) {
+      return null;
+    }
+
+    try {
+      final remoteAll = await catalog.searchProductsRemote(
+        lookupCode,
+        perPage: 10,
+        activeOnly: false,
+      );
+      if (!mounted) return null;
+      final inactiveRemote = remoteAll.where((p) => !p.active);
+      return RemoteScannerService.findExactProductMatch(
+            inactiveRemote,
+            code,
+            activeOnly: false,
+          ) ??
+          (scalePlu != null && scalePlu.isNotEmpty
+              ? RemoteScannerService.findExactProductMatch(
+                  inactiveRemote,
+                  scalePlu,
+                  activeOnly: false,
+                )
+              : null);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Búsqueda en vivo vía API con debounce de 400ms
   void _onPosSearchChanged(String value) {
     final query = value.trim();
     _debounceSearchTimer?.cancel();
+
+    if (query.isNotEmpty) {
+      _hideSearchHistoryPopover();
+    }
 
     if (query.isEmpty) {
       setState(() {
@@ -224,11 +402,13 @@ class _PosScreenState extends State<PosScreen> {
     setState(() => _searchQuery = query);
 
     _debounceSearchTimer = Timer(const Duration(milliseconds: 400), () async {
-      if (!mounted || _searchQuery.isEmpty) return;
+      if (!mounted || _searchQuery != query || _searchQuery.isEmpty) return;
       setState(() => _isSearching = true);
-      final results =
-          await Provider.of<PosProvider>(context, listen: false).search(query);
-      if (!mounted) return;
+      final results = (await Provider.of<PosProvider>(context, listen: false)
+              .search(query))
+          .where((p) => p.active)
+          .toList();
+      if (!mounted || _searchQuery != query) return;
       setState(() {
         _searchResults = results;
         _isSearching = false;
@@ -237,6 +417,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _onProductScannedOrSearched(String query) async {
+    _hideSearchHistoryPopover();
     if (query.trim().isEmpty) {
       final posProvider = Provider.of<PosProvider>(context, listen: false);
       if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
@@ -244,7 +425,8 @@ class _PosScreenState extends State<PosScreen> {
       }
       return;
     }
-    String cleanQuery = query.trim().toUpperCase();
+    final rawQuery = query.trim();
+    String cleanQuery = rawQuery.toUpperCase();
 
     // FT-02: Limpiar inmediatamente el debounce y el controlador antes de cualquier await.
     // Evita la concatenación de códigos cuando el lector láser dispara en ráfaga
@@ -319,17 +501,20 @@ class _PosScreenState extends State<PosScreen> {
       }
 
       if (mounted) {
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
       }
       return;
     }
 
     // 1. Intentamos buscar el código exactamente como se escaneó primero.
     // Esto es crucial por si el producto es unitario y su código EAN normal comienza con '2'.
-    List<Product> results = await posProvider.search(cleanQuery);
+    List<Product> results = (await posProvider.search(cleanQuery))
+        .where((p) => p.active)
+        .toList();
 
     bool appliedScaleLogic = false;
     double embeddedPrice = 0.0;
+    String? scalePlu;
 
     // 2. Si no hubo coincidencias exactas, verificamos si es una etiqueta de balanza (13 dígitos, empieza en '2')
     if (results.isEmpty &&
@@ -339,10 +524,13 @@ class _PosScreenState extends State<PosScreen> {
       final itemCodeStr = cleanQuery.substring(1, 6);
       final priceStr = cleanQuery.substring(6, 12);
       final pluQuery = int.parse(itemCodeStr).toString();
+      scalePlu = pluQuery;
       embeddedPrice = double.parse(priceStr);
 
       // Hacemos una segunda búsqueda usando solamente el PLU extraído
-      results = await posProvider.search(pluQuery);
+      results = (await posProvider.search(pluQuery))
+          .where((p) => p.active)
+          .toList();
 
       if (results.isNotEmpty) {
         if (results.first.isSoldByWeight) {
@@ -355,7 +543,7 @@ class _PosScreenState extends State<PosScreen> {
                 'Etiqueta de balanza inválida (precio \$0) para "${results.first.name}". '
                 'Revise la etiqueta o ingrese el peso manualmente.',
               );
-              _searchFocusNode.requestFocus();
+              _requestSearchFocusSilently();
             }
             return;
           }
@@ -369,7 +557,7 @@ class _PosScreenState extends State<PosScreen> {
             if (mounted) {
               SnackBarService.error(context,
                   'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
-              _searchFocusNode.requestFocus();
+              _requestSearchFocusSilently();
             }
             return;
           }
@@ -380,9 +568,23 @@ class _PosScreenState extends State<PosScreen> {
     if (!mounted) return;
 
     if (results.isEmpty) {
+      // Antes de darlo por inexistente o abrir el diálogo de alta rápida, verificar si está dado de baja
+      final inactiveProduct =
+          await _findInactiveProductByCode(cleanQuery, scalePlu: scalePlu);
+      if (!mounted) return;
+      if (inactiveProduct != null) {
+        SnackBarService.warning(
+          context,
+          'El producto "${inactiveProduct.name}" está dado de baja (inactivo) y no puede agregarse al carrito.',
+        );
+        _requestSearchFocusSilently();
+        return;
+      }
+
       final existingQuickItem = posProvider.cart.cast<CartItem?>().firstWhere(
         (it) =>
             it != null &&
+            it.product.active &&
             it.product.barcode != null &&
             it.product.barcode!.trim().toUpperCase() == cleanQuery &&
             !it.product.isSoldByWeight,
@@ -394,7 +596,7 @@ class _PosScreenState extends State<PosScreen> {
           existingQuickItem.quantity + 1,
         );
         if (mounted) {
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
         }
         return;
       }
@@ -405,6 +607,14 @@ class _PosScreenState extends State<PosScreen> {
       }
     } else if (appliedScaleLogic) {
       final product = results.first;
+      if (!product.active) {
+        SnackBarService.warning(
+          context,
+          'El producto "${product.name}" está dado de baja (inactivo) y no puede agregarse al carrito.',
+        );
+        _requestSearchFocusSilently();
+        return;
+      }
       double calcWeight = 0.0;
 
       if (product.sellingPrice > 0) {
@@ -425,13 +635,15 @@ class _PosScreenState extends State<PosScreen> {
         promotionalPeriodType: promoOffer?.periodType,
       );
     } else if (results.length == 1) {
+      _recordRecentSearchIfValid(rawQuery, selectedProductId: results.first.id);
       _handleProductSelection(results.first);
     } else {
-      await _showProductPickerDialog(results, cleanQuery);
+      _recordRecentSearchIfValid(rawQuery);
+      await _showProductPickerDialog(results, rawQuery);
     }
 
     if (mounted) {
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
     }
   }
 
@@ -489,6 +701,7 @@ class _PosScreenState extends State<PosScreen> {
                     const Icon(Icons.add_circle_outline, color: Colors.green),
                 onTap: () {
                   Navigator.pop(ctx);
+                  _recordRecentSearchIfValid(query, selectedProductId: p.id);
                   _handleProductSelection(p);
                 },
               );
@@ -644,10 +857,23 @@ class _PosScreenState extends State<PosScreen> {
     String? batchCode,
     String? batchExpirationDate,
   }) {
+    if (!product.active) {
+      SnackBarService.warning(
+        context,
+        'El producto "${product.name}" está dado de baja (inactivo) y no puede venderse.',
+      );
+      _requestSearchFocusSilently();
+      return;
+    }
+
+    if (_searchQuery.trim().isNotEmpty) {
+      _recordRecentSearchIfValid(_searchQuery, selectedProductId: product.id);
+    }
+
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     if (!product.isSoldByWeight) {
       final catalogProducts =
-          Provider.of<CatalogProvider>(context, listen: false).products;
+          Provider.of<CatalogProvider>(context, listen: false).activeProducts;
       final blockMsg = posProvider.validateUnitStockConstraint(
         product,
         1.0,
@@ -655,7 +881,7 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (blockMsg != null) {
         SnackBarService.error(context, blockMsg);
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
     }
@@ -673,7 +899,7 @@ class _PosScreenState extends State<PosScreen> {
       batchExpirationDate: batchExpirationDate,
     );
     if (success) {
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
     } else {
       // Es producto por peso, pedir peso por Modal
       _showWeightModal(
@@ -1422,6 +1648,26 @@ class _PosScreenState extends State<PosScreen> {
                             onPressed: () => Navigator.pop(ctx),
                             child: const Text('Cerrar'),
                           ),
+                          if (context
+                              .read<SettingsProvider>()
+                              .canUseHardwareCalculator) ...[
+                            const SizedBox(width: 6),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.straighten_rounded,
+                                  size: 17),
+                              label: const Text('Calcular (F7)'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF0F766E),
+                                side:
+                                    const BorderSide(color: Color(0xFF0F766E)),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _openHardwareCalculatorDialog(
+                                    initialProduct: product);
+                              },
+                            ),
+                          ],
                           const SizedBox(width: 8),
                           ElevatedButton.icon(
                             icon: const Icon(Icons.add_shopping_cart, size: 18),
@@ -1641,6 +1887,11 @@ class _PosScreenState extends State<PosScreen> {
                     _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
                     _shortcutRow(['F5'], 'Consultar precio y stock sin agregar al carrito'),
                     _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
+                    if (context
+                        .read<SettingsProvider>()
+                        .canUseHardwareCalculator)
+                      _shortcutRow(['F7'],
+                          'Calculadora Rápida Ferretera (Machimbre / Chapas / Pintura)'),
                     _shortcutRow([
                       'Esc'
                     ], 'Cierra ventana de Cobro, limpia buscador o vuelve a "Todos"'),
@@ -1957,6 +2208,7 @@ class _PosScreenState extends State<PosScreen> {
       value == null ? 0.0 : double.tryParse(value.toString()) ?? 0.0;
 
   void _handleCheckout() async {
+    _hideSearchHistoryPopover();
     if (_isCheckingOut) return;
     _isCheckingOut = true;
 
@@ -3228,6 +3480,7 @@ class _PosScreenState extends State<PosScreen> {
       debugLabel: 'PosScreen',
       onBarcodeScanned: (barcode) {
         if (!mounted || _isCheckingOut) return;
+        _hideSearchHistoryPopover();
         _searchController.text = barcode;
         _onProductScannedOrSearched(barcode);
       },
@@ -4116,7 +4369,78 @@ class _PosScreenState extends State<PosScreen> {
                                                     );
                                                   },
                                                 )
-                                              else ...[
+                                              else if ((item.quantity % 1).abs() >
+                                                      1e-6 ||
+                                                  (item.customDetails != null &&
+                                                      item.customDetails!
+                                                          .trim()
+                                                          .isNotEmpty)) ...[
+                                                InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  onTap: () =>
+                                                      _openRenameCartItemDialog(
+                                                    item,
+                                                    focusQuantityInitially:
+                                                        true,
+                                                  ),
+                                                  child: Container(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                      horizontal: isCompactCart
+                                                          ? 5
+                                                          : 7,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          Colors.teal.shade50,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6),
+                                                      border: Border.all(
+                                                        color: Colors
+                                                            .teal.shade200,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      qtyDisplay,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12.5,
+                                                        color: Colors
+                                                            .teal.shade900,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (context
+                                                        .read<SettingsProvider>()
+                                                        .canUseHardwareCalculator &&
+                                                    !item.isTemporary &&
+                                                    item.product.id > 0) ...[
+                                                  const SizedBox(width: 4),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.straighten_rounded,
+                                                      size: 18,
+                                                      color: Color(0xFF0F766E),
+                                                    ),
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints(),
+                                                    tooltip:
+                                                        'Recalcular medidas (F7)',
+                                                    onPressed: () =>
+                                                        _openHardwareCalculatorDialog(
+                                                      initialProduct:
+                                                          item.product,
+                                                      replacingCartItem: item,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ] else ...[
                                                 InkWell(
                                                   borderRadius:
                                                       BorderRadius.circular(12),
@@ -4482,15 +4806,16 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
-  /// OF-01: Productos candidatos para el filtro "Ofertas": el catálogo en memoria (primeros 500)
+  /// OF-01: Productos candidatos para el filtro "Ofertas": el catálogo activo en memoria (primeros 500)
   /// más los productos en oferta vigente que no entraron en ese bloque, traídos completos aparte.
   /// Si un producto está en ambos, prevalece el del catálogo (stock y contadores en caliente).
   List<Product> _offerCandidateProducts(CatalogProvider catalog, OfferProvider offerProv) {
-    final extra = offerProv.offerOnlyProducts;
-    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    final activeBase = catalog.activeProducts;
+    final extra = offerProv.offerOnlyProducts.where((p) => p.active).toList();
+    if (extra.isEmpty) return List<Product>.from(activeBase);
     final loadedIds = catalog.products.map((p) => p.id).toSet();
     return [
-      ...catalog.products,
+      ...activeBase,
       ...extra.where((p) => !loadedIds.contains(p.id)),
     ];
   }
@@ -4506,11 +4831,12 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<Product> _categoryCandidateProducts(CatalogProvider catalog, int categoryId) {
+    final activeBase = catalog.activeProducts;
     final extra = catalog.getCategoryExtraProducts(categoryId);
-    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    if (extra.isEmpty) return List<Product>.from(activeBase);
     final loadedIds = catalog.products.map((p) => p.id).toSet();
     return [
-      ...catalog.products,
+      ...activeBase,
       ...extra.where((p) => !loadedIds.contains(p.id)),
     ];
   }
@@ -4562,11 +4888,12 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<Product> _weightCandidateProducts(CatalogProvider catalog) {
+    final activeBase = catalog.activeProducts;
     final extra = catalog.weightOnlyProducts;
-    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    if (extra.isEmpty) return List<Product>.from(activeBase);
     final loadedIds = catalog.products.map((p) => p.id).toSet();
     return [
-      ...catalog.products,
+      ...activeBase,
       ...extra.where((p) => !loadedIds.contains(p.id)),
     ];
   }
@@ -4580,11 +4907,12 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<Product> _pinnedCandidateProducts(CatalogProvider catalog) {
+    final activeBase = catalog.activeProducts;
     final extra = catalog.pinnedExtraProducts;
-    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    if (extra.isEmpty) return List<Product>.from(activeBase);
     final loadedIds = catalog.products.map((p) => p.id).toSet();
     return [
-      ...catalog.products,
+      ...activeBase,
       ...extra.where((p) => !loadedIds.contains(p.id)),
     ];
   }
@@ -4599,13 +4927,13 @@ class _PosScreenState extends State<PosScreen> {
 
   List<Product> _getFilteredProducts(CatalogProvider catalog, OfferProvider offerProv, LocalTerminalProvider localTerminal) {
     if (_searchQuery.isNotEmpty) {
-      return _searchResults;
+      return _searchResults.where((p) => p.active).toList();
     }
 
     final settingsProv = Provider.of<SettingsProvider?>(context, listen: false);
     final demoteOutOfStock = settingsProv?.settings?.posDemoteOutOfStock ?? false;
 
-    List<Product> filtered = List<Product>.from(catalog.products);
+    List<Product> filtered = List<Product>.from(catalog.activeProducts);
 
     if (_quickAccessFilter == 'pinned') {
       _schedulePinnedProductsSync(catalog, localTerminal.pinnedProductIds);
@@ -4773,22 +5101,37 @@ class _PosScreenState extends State<PosScreen> {
       return true;
     }
 
-    // Escape → Cerrar overlay de órdenes pendientes o limpiar buscador/resetear filtro
+    // F7 → Calculadora Rápida de Mostrador para Ferretería (Machimbre / Chapas / Pintura)
+    if (event.logicalKey == LogicalKeyboardKey.f7) {
+      final settingsProv =
+          Provider.of<SettingsProvider>(context, listen: false);
+      if (settingsProv.canUseHardwareCalculator) {
+        _openHardwareCalculatorDialog();
+        return true;
+      }
+    }
+
+    // Escape → Cerrar overlay de órdenes pendientes o historial de búsqueda o limpiar buscador/resetear filtro
     if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_searchHistoryPortalController.isShowing) {
+        _hideSearchHistoryPopover();
+        _requestSearchFocusSilently();
+        return true;
+      }
       if (_pendingOrdersPortalController.isShowing) {
         _pendingOrdersPortalController.hide();
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return true;
       }
       if (_searchController.text.isNotEmpty) {
         _searchController.clear();
         _onPosSearchChanged('');
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
       } else if (_quickAccessFilter != 'all') {
         setState(() {
           _quickAccessFilter = 'all';
         });
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
       }
       return true;
     }
@@ -4851,9 +5194,13 @@ class _PosScreenState extends State<PosScreen> {
           event.character == '+') {
         if (posProvider.cart.isNotEmpty) {
           final lastItem = posProvider.cart.last;
-          if (!lastItem.product.isSoldByWeight) {
+          final isCalculatedOrFractional =
+              (lastItem.quantity % 1).abs() > 1e-6 ||
+                  (lastItem.customDetails != null &&
+                      lastItem.customDetails!.trim().isNotEmpty);
+          if (!lastItem.product.isSoldByWeight && !isCalculatedOrFractional) {
             final catalogProducts =
-                Provider.of<CatalogProvider>(context, listen: false).products;
+                Provider.of<CatalogProvider>(context, listen: false).activeProducts;
             final blockMsg = posProvider.validateUnitStockConstraint(
               lastItem.product,
               lastItem.quantity + 1,
@@ -4876,7 +5223,11 @@ class _PosScreenState extends State<PosScreen> {
           event.character == '-') {
         if (posProvider.cart.isNotEmpty) {
           final lastItem = posProvider.cart.last;
-          if (!lastItem.product.isSoldByWeight) {
+          final isCalculatedOrFractional =
+              (lastItem.quantity % 1).abs() > 1e-6 ||
+                  (lastItem.customDetails != null &&
+                      lastItem.customDetails!.trim().isNotEmpty);
+          if (!lastItem.product.isSoldByWeight && !isCalculatedOrFractional) {
             if (lastItem.quantity > 1) {
               posProvider.updateQuantity(lastItem, lastItem.quantity - 1);
             } else {
@@ -4900,6 +5251,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _openQuickItemDialog({String? initialQuery}) async {
+    _hideSearchHistoryPopover();
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final result = await PosQuickItemDialog.show(
       context,
@@ -4926,16 +5278,19 @@ class _PosScreenState extends State<PosScreen> {
                 : '⚡ "${newItem.effectiveDisplayName}" agregado como ítem temporal.'),
       );
     }
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
   }
 
   Future<void> _openPriceLookupDialog() async {
+    _hideSearchHistoryPopover();
     String? followUpQuickCreateQuery;
     String? followUpAssociateBarcode;
+    Product? followUpHardwareCalcProduct;
     final selectedProduct = await PosPriceLookupDialog.show(
       context,
       onQuickCreateRequested: (q) => followUpQuickCreateQuery = q,
       onAssociateBarcodeRequested: (code) => followUpAssociateBarcode = code,
+      onHardwareCalculatorRequested: (p) => followUpHardwareCalcProduct = p,
     );
     if (!mounted) return;
     if (followUpQuickCreateQuery != null) {
@@ -4946,10 +5301,61 @@ class _PosScreenState extends State<PosScreen> {
       await _showUnrecognizedBarcodeDialog(followUpAssociateBarcode!);
       return;
     }
+    if (followUpHardwareCalcProduct != null) {
+      await _openHardwareCalculatorDialog(
+        initialProduct: followUpHardwareCalcProduct,
+      );
+      return;
+    }
     if (selectedProduct != null) {
       _handleProductSelection(selectedProduct);
     }
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
+  }
+
+  Future<void> _openHardwareCalculatorDialog({
+    Product? initialProduct,
+    CartItem? replacingCartItem,
+  }) async {
+    _hideSearchHistoryPopover();
+    final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
+    if (!settingsProv.canUseHardwareCalculator) return;
+
+    final out = await PosHardwareCalculatorDialog.show(
+      context,
+      initialProduct: initialProduct,
+      replacingCartItem: replacingCartItem,
+      target: HardwareCalculatorTarget.pos,
+    );
+    if (!mounted) return;
+    if (out?.createdQuote != null) {
+      final quote = out!.createdQuote!;
+      final settings = settingsProv.settings;
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final vendorName = auth.currentUser?['name']?.toString() ?? 'Vendedor';
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => QuoteSuccessDialog(
+          quote: quote,
+          businessName: settings?.companyName ?? 'Mi Negocio',
+          businessAddress: settings?.address,
+          businessPhone: settings?.phone,
+          customerPhone: quote.customerPhone,
+          vendorName: vendorName,
+        ),
+      );
+      if (!mounted) return;
+    }
+    if (out != null &&
+        out.searchComplementKeyword != null &&
+        out.searchComplementKeyword!.trim().isNotEmpty) {
+      final kw = out.searchComplementKeyword!.trim();
+      _searchController.text = kw;
+      _searchController.selection = TextSelection.collapsed(offset: kw.length);
+      _onPosSearchChanged(kw);
+    }
+    _requestSearchFocusSilently();
   }
 
   Future<void> _openRenameCartItemDialog(
@@ -4958,13 +5364,25 @@ class _PosScreenState extends State<PosScreen> {
   }) async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final catalogProvider = Provider.of<CatalogProvider>(context, listen: false);
+    var followUpOpenHardwareCalc = false;
     final res = await PosRenameCartItemDialog.show(
       context,
       item: item,
       focusQuantityInitially: focusQuantityInitially,
+      onOpenHardwareCalculator: () {
+        followUpOpenHardwareCalc = true;
+      },
     );
-    if (!mounted || res == null) {
-      if (mounted) _searchFocusNode.requestFocus();
+    if (!mounted) return;
+    if (followUpOpenHardwareCalc) {
+      await _openHardwareCalculatorDialog(
+        initialProduct: item.product,
+        replacingCartItem: item,
+      );
+      return;
+    }
+    if (res == null) {
+      _searchFocusNode.requestFocus();
       return;
     }
 
@@ -5284,6 +5702,394 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  Widget _buildSearchHistoryOverlay(
+    BuildContext overlayContext,
+    OverlayChildLayoutInfo info,
+  ) {
+    final Offset targetBottomLeft = MatrixUtils.transformPoint(
+      info.childPaintTransform,
+      Offset(0, info.childSize.height),
+    );
+    final double width = info.childSize.width
+        .clamp(300.0, (info.overlaySize.width - 16.0).clamp(300.0, 900.0));
+    final double maxLeft = (info.overlaySize.width - width - 8.0) < 8.0
+        ? 8.0
+        : (info.overlaySize.width - width - 8.0);
+    final double left = targetBottomLeft.dx.clamp(8.0, maxLeft);
+    final double top = targetBottomLeft.dy + 6.0;
+    final double maxHeight =
+        (info.overlaySize.height - top - 16.0).clamp(180.0, 360.0);
+
+    return Positioned(
+      top: top,
+      left: left,
+      width: width,
+      child: TapRegion(
+        groupId: _searchHistoryTapGroupId,
+        onTapOutside: (_) => _hideSearchHistoryPopover(),
+        child: Focus(
+          canRequestFocus: false,
+          descendantsAreFocusable: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Material(
+              key: const ValueKey('pos_search_history_overlay'),
+              elevation: 12,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              color: Colors.white,
+              shadowColor: Colors.black.withValues(alpha: 0.22),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Consumer4<LocalTerminalProvider, CatalogProvider,
+                    PosProvider, OfferProvider>(
+                  builder: (ctx, localTerminal, catalog, pos, offerProv, _) {
+                    final terms = localTerminal.recentSearchTerms;
+                    final recentProducts =
+                        _resolveActiveRecentProducts(catalog, localTerminal);
+
+                    if (terms.isEmpty && recentProducts.isEmpty) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _hideSearchHistoryPopover();
+                      });
+                      return const SizedBox.shrink();
+                    }
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            border: Border(
+                              bottom: BorderSide(color: Colors.grey.shade200),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.history_rounded,
+                                  size: 16, color: Colors.blueGrey.shade700),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Búsquedas recientes',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.blueGrey.shade800,
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  foregroundColor: Colors.grey.shade600,
+                                ),
+                                onPressed: () {
+                                  unawaited(
+                                      localTerminal.clearRecentSearches());
+                                  _hideSearchHistoryPopover();
+                                  _requestSearchFocusSilently();
+                                },
+                                icon:
+                                    const Icon(Icons.delete_sweep_outlined, size: 15),
+                                label: const Text(
+                                  'Limpiar',
+                                  style: TextStyle(fontSize: 11.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (terms.isNotEmpty) ...[
+                                  Text(
+                                    'TÉRMINOS RECIENTES',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: terms.map((term) {
+                                      return Material(
+                                        color: const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: InkWell(
+                                          canRequestFocus: false,
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () =>
+                                              _applyRecentSearchTerm(term),
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                                10, 5, 6, 5),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.history_rounded,
+                                                    size: 13,
+                                                    color: Colors
+                                                        .blueGrey.shade600),
+                                                const SizedBox(width: 5),
+                                                ConstrainedBox(
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                          maxWidth: 180),
+                                                  child: Text(
+                                                    term,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Color(0xFF1E293B),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                InkWell(
+                                                  canRequestFocus: false,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  onTap: () {
+                                                    final willBeEmpty =
+                                                        terms.length <= 1 &&
+                                                            recentProducts
+                                                                .isEmpty;
+                                                    unawaited(localTerminal
+                                                        .removeRecentSearchTerm(
+                                                            term));
+                                                    if (willBeEmpty) {
+                                                      _hideSearchHistoryPopover();
+                                                    }
+                                                  },
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.all(2),
+                                                    child: Icon(
+                                                      Icons.close_rounded,
+                                                      size: 14,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                                if (terms.isNotEmpty &&
+                                    recentProducts.isNotEmpty)
+                                  const Divider(height: 18),
+                                if (recentProducts.isNotEmpty) ...[
+                                  Text(
+                                    'PRODUCTOS CONSULTADOS',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ...recentProducts.map((p) {
+                                    final promoPrice =
+                                        offerProv.getDiscountedPrice(p);
+                                    final hasOffer = promoPrice != null &&
+                                        promoPrice > 0 &&
+                                        promoPrice < p.sellingPrice;
+                                    final calc =
+                                        ProductPricingCalculator.calculate(
+                                      product: p,
+                                      activeTier: pos.activeTier,
+                                      wholesaleFactor: pos.wholesaleFactor,
+                                      cardFactor: pos.cardFactor,
+                                      customFactor: pos.currentCustomFactor,
+                                      promotionalPrice: promoPrice,
+                                      hasExplicitOffer: hasOffer,
+                                      cardSurchargeOnOffersMode:
+                                          pos.cardSurchargeOnOffersMode,
+                                      discountTierOnOffersMode:
+                                          pos.discountTierOnOffersMode,
+                                      ignoreFixedPrices:
+                                          pos.ignoreProductFixedPrices,
+                                    );
+                                    final unitPrice = calc.finalUnitPrice;
+                                    final priceStr = p.isSoldByWeight
+                                        ? '\$${unitPrice.toCurrency()}/Kg'
+                                        : '\$${unitPrice.toCurrency()}';
+
+                                    return InkWell(
+                                      canRequestFocus: false,
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () {
+                                        _hideSearchHistoryPopover();
+                                        unawaited(localTerminal
+                                            .recordRecentSearch(
+                                                selectedProductId: p.id));
+                                        _handleProductSelection(p);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 6),
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 14,
+                                              backgroundColor: p.isSoldByWeight
+                                                  ? Colors.orange.shade50
+                                                  : Colors.indigo.shade50,
+                                              child: Icon(
+                                                p.isSoldByWeight
+                                                    ? Icons.scale_rounded
+                                                    : Icons.inventory_2_outlined,
+                                                size: 15,
+                                                color: p.isSoldByWeight
+                                                    ? Colors.orange.shade700
+                                                    : Colors.indigo.shade700,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    p.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 12.5,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  if (p.internalCode
+                                                          .isNotEmpty ||
+                                                      p.category?.name != null)
+                                                    Text(
+                                                      [
+                                                        if (p.internalCode
+                                                            .isNotEmpty)
+                                                          p.internalCode,
+                                                        if (p.category?.name !=
+                                                            null)
+                                                          p.category!.name,
+                                                      ].join(' · '),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 10.5,
+                                                        color: Colors
+                                                            .grey.shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            if (calc.crossedOutPrice != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    right: 6),
+                                                child: Text(
+                                                  '\$${calc.crossedOutPrice!.toCurrency()}${p.isSoldByWeight ? '/Kg' : ''}',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade500,
+                                                    decoration: TextDecoration
+                                                        .lineThrough,
+                                                  ),
+                                                ),
+                                              ),
+                                            Text(
+                                              priceStr,
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: calc.hasActiveOffer
+                                                    ? const Color(0xFF7B1FA2)
+                                                    : const Color(0xFF1B873A),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            InkWell(
+                                              canRequestFocus: false,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap: () {
+                                                final willBeEmpty =
+                                                    recentProducts.length <=
+                                                            1 &&
+                                                        terms.isEmpty;
+                                                unawaited(localTerminal
+                                                    .removeRecentSearchProductId(
+                                                        p.id));
+                                                if (willBeEmpty) {
+                                                  _hideSearchHistoryPopover();
+                                                }
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(4),
+                                                child: Icon(
+                                                  Icons.close_rounded,
+                                                  size: 15,
+                                                  color: Colors.grey.shade500,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRightPanel() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -5293,64 +6099,137 @@ class _PosScreenState extends State<PosScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Barra de búsqueda con búsqueda server-side vía API + Botón Ítem/Combo Rápido (F3)
+              // Barra de búsqueda con búsqueda server-side vía API + Popover historial + Botón Ítem/Combo Rápido (F3)
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.deny(
-                          RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
+                    child: TapRegion(
+                      groupId: _searchHistoryTapGroupId,
+                      child: OverlayPortal.overlayChildLayoutBuilder(
+                        controller: _searchHistoryPortalController,
+                        overlayChildBuilder: _buildSearchHistoryOverlay,
+                        child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          onTap: () {
+                            if (_searchController.text.trim().isEmpty) {
+                              _showSearchHistoryPopoverIfAvailable();
+                            }
+                          },
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(
+                              RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
+                            ),
+                            TextInputFormatter.withFunction((oldValue, newValue) {
+                              if (oldValue.text.isEmpty &&
+                                  (newValue.text == '+' || newValue.text == '-')) {
+                                final hasCart =
+                                    Provider.of<PosProvider>(context, listen: false)
+                                        .cart
+                                        .isNotEmpty;
+                                if (hasCart) return oldValue;
+                              }
+                              return newValue;
+                            }),
+                          ],
+                          decoration: InputDecoration(
+                            hintText: isCompact
+                                ? 'Buscar o escanear código... (Enter: Cobrar)'
+                                : 'Escribir nombre o escanear código... (Enter: Cobrar · F3: Ítem Rápido · F1: Atajos)',
+                            prefixIcon: _isSearching
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2)),
+                                  )
+                                : const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      _onPosSearchChanged('');
+                                      _requestSearchFocusSilently();
+                                    },
+                                  )
+                                : Consumer2<LocalTerminalProvider,
+                                    CatalogProvider>(
+                                    builder: (ctx, localTerminal, catalog, _) {
+                                      if (!_hasSearchHistoryEntries(
+                                          catalog, localTerminal)) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Focus(
+                                        canRequestFocus: false,
+                                        descendantsAreFocusable: false,
+                                        child: Tooltip(
+                                          message: 'Búsquedas recientes',
+                                          child: IconButton(
+                                            icon: Icon(
+                                              Icons.history_rounded,
+                                              size: 20,
+                                              color: Colors.blueGrey.shade600,
+                                            ),
+                                            onPressed: () {
+                                              if (_searchHistoryPortalController
+                                                  .isShowing) {
+                                                _hideSearchHistoryPopover();
+                                              } else {
+                                                _showSearchHistoryPopoverIfAvailable();
+                                              }
+                                              _requestSearchFocusSilently();
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                            border:
+                                OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            filled: true,
+                            fillColor: Colors.grey.shade100,
+                          ),
+                          // Búsqueda en tiempo real con debounce → API completa
+                          onChanged: _onPosSearchChanged,
+                          // Enter: para códigos de barras (API call + agregar al carrito)
+                          onSubmitted: _onProductScannedOrSearched,
                         ),
-                        TextInputFormatter.withFunction((oldValue, newValue) {
-                          if (oldValue.text.isEmpty &&
-                              (newValue.text == '+' || newValue.text == '-')) {
-                            final hasCart =
-                                Provider.of<PosProvider>(context, listen: false)
-                                    .cart
-                                    .isNotEmpty;
-                            if (hasCart) return oldValue;
-                          }
-                          return newValue;
-                        }),
-                      ],
-                      decoration: InputDecoration(
-                        hintText: isCompact
-                            ? 'Buscar o escanear código... (Enter: Cobrar)'
-                            : 'Escribir nombre o escanear código... (Enter: Cobrar · F3: Ítem Rápido · F1: Atajos)',
-                        prefixIcon: _isSearching
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2)),
-                              )
-                            : const Icon(Icons.search),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _onPosSearchChanged('');
-                                  _searchFocusNode.requestFocus();
-                                },
-                              )
-                            : null,
-                        border:
-                            OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
                       ),
-                      // Búsqueda en tiempo real con debounce → API completa
-                      onChanged: _onPosSearchChanged,
-                      // Enter: para códigos de barras (API call + agregar al carrito)
-                      onSubmitted: _onProductScannedOrSearched,
                     ),
                   ),
                   const SizedBox(width: 10),
+                  if (context
+                      .watch<SettingsProvider>()
+                      .canUseHardwareCalculator) ...[
+                    Tooltip(
+                      message:
+                          'Calculadora Rápida Ferretera: Machimbre, Chapas y Pintura (F7)',
+                      child: ElevatedButton.icon(
+                        onPressed: () => _openHardwareCalculatorDialog(),
+                        icon: const Icon(Icons.straighten_rounded, size: 18),
+                        label: Text(
+                          isCompact ? 'Calc (F7)' : 'Calculadora (F7)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 12.5),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isCompact ? 10 : 14,
+                            vertical: 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Tooltip(
                     message: 'Crear Producto o Combo Rápido en mostrador (F3)',
                     child: ElevatedButton.icon(
@@ -5517,7 +6396,7 @@ class _PosScreenState extends State<PosScreen> {
                     }
 
                     if (displayItems.isEmpty) {
-                      if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.products.isNotEmpty) {
+                      if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.activeProducts.isNotEmpty) {
                         // Filtro activo devuelve 0 ítems pero el catálogo tiene productos
                         String filterName = 'este filtro';
                         if (_quickAccessFilter == 'pinned') {
@@ -5815,32 +6694,20 @@ class _PosScreenState extends State<PosScreen> {
     final catalog = context.watch<CatalogProvider>();
     final offerProv = context.watch<OfferProvider>();
 
-    final hasPinned = localTerminal.pinnedProductIds.isNotEmpty;
-    final hasTopSellers = catalog.products.any((p) => p.salesCount > 0);
+    final activeCatalogProducts = catalog.activeProducts;
+    final hasPinned = localTerminal.pinnedProductIds.any(
+      (id) => !catalog.products.any((p) => p.id == id && !p.active),
+    );
+    final hasTopSellers = activeCatalogProducts.any((p) => p.salesCount > 0);
     // OF-01: considerar también los productos en oferta fuera del bloque inicial del catálogo
     _scheduleOfferOnlyProductsSync(catalog, offerProv);
-    final hasOffers = offerProv.currentlyActiveOfferProductIds.isNotEmpty ||
-        _offerCandidateProducts(catalog, offerProv)
-            .any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
+    final hasOffers = _offerCandidateProducts(catalog, offerProv)
+        .any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
 
-    final hasWeight = catalog.products.any((p) => p.isSoldByWeight) || catalog.weightOnlyProducts.isNotEmpty;
-
-    // Si un filtro dinámico queda sin productos asociados, regresar automáticamente a 'all'
-    if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||
-        (_quickAccessFilter == 'pinned' && !hasPinned) ||
-        (_quickAccessFilter == 'offers' && !hasOffers) ||
-        (_quickAccessFilter == 'weight' && !hasWeight)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _quickAccessFilter = 'all';
-          });
-        }
-      });
-    }
+    final hasWeight = activeCatalogProducts.any((p) => p.isSoldByWeight) || catalog.weightOnlyProducts.isNotEmpty;
 
     final localCounts = <String, int>{};
-    for (final p in catalog.products) {
+    for (final p in activeCatalogProducts) {
       final catName = p.category?.name.trim();
       if (catName != null && catName.isNotEmpty) {
         localCounts[catName] = (localCounts[catName] ?? 0) + 1;
@@ -5849,14 +6716,17 @@ class _PosScreenState extends State<PosScreen> {
 
     final categories = <String, int>{};
     if (catalog.categories.isNotEmpty) {
+      final catalogFullyInMemory = catalog.lastPage <= 1;
       for (final cat in catalog.categories) {
         final name = cat.name.trim();
         final serverCount = cat.productsCount ?? 0;
         final localCount = localCounts[name] ?? 0;
         final extraCount = catalog.getCategoryExtraProducts(cat.id).length;
-        final totalCount = serverCount > (localCount + extraCount)
-            ? serverCount
-            : (localCount + extraCount);
+        final totalCount = catalogFullyInMemory
+            ? (localCount + extraCount)
+            : (serverCount > (localCount + extraCount)
+                ? serverCount
+                : (localCount + extraCount));
         if (totalCount > 0) {
           categories[name] = totalCount;
         }
@@ -5866,6 +6736,26 @@ class _PosScreenState extends State<PosScreen> {
       if (!categories.containsKey(entry.key) && entry.value > 0) {
         categories[entry.key] = entry.value;
       }
+    }
+
+    final selectedCatMissing = _quickAccessFilter.startsWith('cat_') &&
+        !categories.keys.any(
+          (k) => k.toLowerCase() == _quickAccessFilter.substring(4).trim().toLowerCase(),
+        );
+
+    // Si un filtro dinámico o categoría queda sin productos activos asociados, regresar automáticamente a 'all'
+    if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||
+        (_quickAccessFilter == 'pinned' && !hasPinned) ||
+        (_quickAccessFilter == 'offers' && !hasOffers) ||
+        (_quickAccessFilter == 'weight' && !hasWeight) ||
+        selectedCatMissing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _quickAccessFilter = 'all';
+          });
+        }
+      });
     }
     final allCategories = categories.entries.toList()
       ..sort((a, b) {

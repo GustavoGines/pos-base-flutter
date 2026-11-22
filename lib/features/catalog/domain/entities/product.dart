@@ -31,6 +31,7 @@ class Product {
   final double? minStock;
   final int salesCount;
   final String unitType;
+  final Map<String, dynamic>? calcConfig;
   final double ivaRate;
   final bool needsCatalogReview;
   final String? imageUrl;
@@ -67,6 +68,7 @@ class Product {
     this.recipeYieldQuantity = 1.0,
     this.recipeIngredients,
     this.unitType = 'un',
+    this.calcConfig,
     this.ivaRate = 21.0,
     this.needsCatalogReview = false,
     this.imageUrl,
@@ -105,6 +107,8 @@ class Product {
     double? recipeYieldQuantity,
     List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
+    Map<String, dynamic>? calcConfig,
+    bool clearCalcConfig = false,
     double? ivaRate,
     bool? needsCatalogReview,
     String? imageUrl,
@@ -145,6 +149,7 @@ class Product {
       recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
+      calcConfig: clearCalcConfig ? null : (calcConfig ?? this.calcConfig),
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),

@@ -154,4 +154,5 @@ abstract class CatalogRepository {
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
   Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename});
   Future<void> deleteProductImage(int productId);
+  Future<Product> updateProductCalcConfig(int productId, Map<String, dynamic>? calcConfig);
 }

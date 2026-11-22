@@ -7,6 +7,7 @@ import '../../catalog/data/models/product_model.dart';
 class QuoteItem {
   final int? productId;
   final String productName;
+  final String? customDetails;
   final double unitPrice;
   final double quantity;
   final double subtotal;
@@ -16,6 +17,7 @@ class QuoteItem {
   QuoteItem({
     this.productId,
     required this.productName,
+    this.customDetails,
     required this.unitPrice,
     required this.quantity,
     required this.subtotal,
@@ -26,6 +28,8 @@ class QuoteItem {
   Map<String, dynamic> toJson() => {
     if (productId != null) 'product_id': productId,
     'product_name': productName,
+    if (customDetails != null && customDetails!.trim().isNotEmpty)
+      'custom_details': customDetails!.trim(),
     'unit_price': unitPrice,
     'quantity': quantity,
     'subtotal': subtotal,
@@ -97,6 +101,10 @@ class Quote {
               return QuoteItem(
                 productId: i['product_id'] as int?,
                 productName: i['product_name']?.toString() ?? '',
+                customDetails: (i['custom_details'] != null &&
+                        i['custom_details'].toString().trim().isNotEmpty)
+                    ? i['custom_details'].toString().trim()
+                    : null,
                 unitPrice:
                     double.tryParse(i['unit_price']?.toString() ?? '0') ?? 0,
                 quantity: double.tryParse(i['quantity']?.toString() ?? '1') ?? 1,

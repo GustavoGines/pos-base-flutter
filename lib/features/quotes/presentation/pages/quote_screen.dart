@@ -1,6 +1,7 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
@@ -10,6 +11,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
+import 'package:frontend_desktop/features/pos/presentation/widgets/pos_hardware_calculator_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import '../providers/quote_provider.dart';
@@ -42,6 +44,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleQuoteHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchFocus.requestFocus();
       // Inyectar los factores globales de precios al provider de presupuestos
@@ -53,13 +56,18 @@ class _QuoteScreenState extends State<QuoteScreen> {
         final card = settings.globalCardPercentage != 0
             ? settings.cardPriceFactor
             : 1.0;
-        context.read<QuoteProvider>().setGlobalFactors(wholesale: ws, card: card);
+        context.read<QuoteProvider>().setGlobalFactors(
+              wholesale: ws,
+              card: card,
+              ignoreFixedPrices: settings.ignoreProductFixedPrices,
+            );
       }
     });
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleQuoteHardwareKey);
     _debounceTimer?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
@@ -67,6 +75,41 @@ class _QuoteScreenState extends State<QuoteScreen> {
     _customerPhoneCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
+  }
+
+  bool _handleQuoteHardwareKey(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.f7) {
+      if (context.read<SettingsProvider>().canUseHardwareCalculator) {
+        _openHardwareCalculator();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _openHardwareCalculator({
+    Product? initialProduct,
+    CartItem? replacingCartItem,
+  }) async {
+    if (!context.read<SettingsProvider>().canUseHardwareCalculator) return;
+    final out = await PosHardwareCalculatorDialog.show(
+      context,
+      initialProduct: initialProduct,
+      replacingCartItem: replacingCartItem,
+      target: HardwareCalculatorTarget.quote,
+    );
+    if (!mounted) return;
+    if (out != null &&
+        out.searchComplementKeyword != null &&
+        out.searchComplementKeyword!.trim().isNotEmpty) {
+      final kw = out.searchComplementKeyword!.trim();
+      _searchCtrl.text = kw;
+      _searchCtrl.selection = TextSelection.collapsed(offset: kw.length);
+      _onSearchChanged(kw);
+    }
+    _searchFocus.requestFocus();
   }
 
   void _onSearchChanged(String value) {
@@ -80,7 +123,9 @@ class _QuoteScreenState extends State<QuoteScreen> {
     _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted || _searchQuery.isEmpty) return;
       setState(() => _isSearching = true);
-      final results = await context.read<PosProvider>().search(q);
+      final results = (await context.read<PosProvider>().search(q))
+          .where((p) => p.active)
+          .toList();
       if (!mounted) return;
       setState(() { _searchResults = results; _isSearching = false; });
     });
@@ -98,8 +143,9 @@ class _QuoteScreenState extends State<QuoteScreen> {
     });
 
     try {
-      final results = await context.read<PosProvider>().search(q);
+      final rawResults = await context.read<PosProvider>().search(q);
       if (!mounted) return;
+      final results = rawResults.where((p) => p.active).toList();
       final exact = RemoteScannerService.findExactProductMatch(results, q);
       final Product? match = exact ??
           (results.length == 1 && results.first.active ? results.first : null);
@@ -107,6 +153,39 @@ class _QuoteScreenState extends State<QuoteScreen> {
         setState(() => _isSearching = false);
         _addProduct(match);
         return;
+      }
+      if (results.isEmpty) {
+        final catalog = context.read<CatalogProvider>();
+        var inactiveExact = RemoteScannerService.findExactProductMatch(
+          catalog.products.where((p) => !p.active),
+          q,
+          activeOnly: false,
+        );
+        if (inactiveExact == null &&
+            RegExp(r'^[A-Za-z0-9\-_]{3,32}$').hasMatch(q)) {
+          final remoteAll = await catalog.searchProductsRemote(
+            q,
+            perPage: 10,
+            activeOnly: false,
+          );
+          if (!mounted) return;
+          inactiveExact = RemoteScannerService.findExactProductMatch(
+            remoteAll.where((p) => !p.active),
+            q,
+            activeOnly: false,
+          );
+        }
+        if (inactiveExact != null) {
+          setState(() {
+            _searchResults = [];
+            _isSearching = false;
+          });
+          SnackBarService.warning(
+            context,
+            'El producto "${inactiveExact.name}" está dado de baja (inactivo) y no puede agregarse.',
+          );
+          return;
+        }
       }
       setState(() {
         _searchResults = results;
@@ -124,6 +203,13 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   void _addProduct(Product product) {
+    if (!product.active) {
+      SnackBarService.warning(
+        context,
+        'El producto "${product.name}" está dado de baja (inactivo).',
+      );
+      return;
+    }
     if (product.isSoldByWeight) {
       _showWeightDialog(product);
     } else {
@@ -361,6 +447,34 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   ),
                 ),
               ),
+              if (context.watch<SettingsProvider>().canUseHardwareCalculator) ...[
+                const SizedBox(width: 10),
+                Tooltip(
+                  message:
+                      'Calculadora Ferretera: Machimbre, Chapas y Pintura (F7)',
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openHardwareCalculator(),
+                    icon: const Icon(Icons.straighten_rounded, size: 18),
+                    label: const Text(
+                      'Calculadora (F7)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               if (hasMultiPrice) ...[
                 const SizedBox(width: 10),
                 Container(
@@ -453,7 +567,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
 
   Widget _buildQuickAccessGrid() {
     final qProvider = context.watch<QuoteProvider>();
-    final products = context.watch<CatalogProvider>().products;
+    final products = context.watch<CatalogProvider>().activeProducts;
     if (products.isEmpty) {
       return Center(
         child: Column(
@@ -691,35 +805,59 @@ class _QuoteScreenState extends State<QuoteScreen> {
     final tierColor = provider.activePriceListColor;
     final tierLabel = provider.activePriceListLabel;
     final isBase = item.activeTier == PriceTier.base;
+    final isFractional = (item.quantity - item.quantity.roundToDouble()).abs() > 0.001;
+    final qtyDisplay = item.product.isSoldByWeight
+        ? '${item.quantity.toQty()} kg'
+        : (isFractional ? item.quantity.toQty() : '${item.quantity.toInt()}');
     return ListTile(
       dense: true,
-      title: Text(item.product.name,
+      title: Text(item.effectiveDisplayName,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           overflow: TextOverflow.ellipsis),
-      subtitle: Row(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${fmt.format(item.unitPrice)} x ${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : item.quantity.toInt()}',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-          if (!isBase) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: tierColor.withValues(alpha: 0.1),
-                border: Border.all(color: tierColor.withValues(alpha: 0.3)),
-                borderRadius: BorderRadius.circular(4),
-              ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${fmt.format(item.unitPrice)} x $qtyDisplay',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+              if (!isBase) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: tierColor.withValues(alpha: 0.1),
+                    border: Border.all(color: tierColor.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    item.customTierLabel ?? tierLabel,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: tierColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (item.customDetails != null && item.customDetails!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
               child: Text(
-                item.customTierLabel ?? tierLabel,
+                '📝 ${item.customDetails!.trim()}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  color: tierColor,
+                  fontSize: 10.5,
+                  color: Colors.indigo.shade700,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ),
-          ],
         ],
       ),
       trailing: Row(
@@ -734,13 +872,15 @@ class _QuoteScreenState extends State<QuoteScreen> {
           ),
         ],
       ),
-      onTap: () {
+      onTap: () async {
         final ctrl = TextEditingController(
-          text: item.product.isSoldByWeight
+          text: (item.product.isSoldByWeight || isFractional)
               ? item.quantity.toQty()
               : item.quantity.toInt().toString(),
         );
-        showDialog(
+        final canCalc = context.read<SettingsProvider>().canUseHardwareCalculator;
+        bool openCalc = false;
+        await showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text('Editar cantidad - ${item.product.name}'),
@@ -753,11 +893,25 @@ class _QuoteScreenState extends State<QuoteScreen> {
               ),
             ),
             actions: [
+              if (canCalc && item.product.id > 0)
+                TextButton.icon(
+                  onPressed: () {
+                    openCalc = true;
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.straighten_rounded, size: 17),
+                  label: const Text('Recalcular (F7)'),
+                ),
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               FilledButton(
                 onPressed: () {
                   final qty = double.tryParse(ctrl.text.replaceAll(',', '.'));
                   if (qty != null && qty > 0) {
+                    if ((qty - item.quantity).abs() > 0.0005 &&
+                        item.customDetails != null &&
+                        item.customDetails!.trim().isNotEmpty) {
+                      item.customDetails = null;
+                    }
                     provider.updateQuantity(item, qty);
                     Navigator.pop(ctx);
                   }
@@ -767,6 +921,13 @@ class _QuoteScreenState extends State<QuoteScreen> {
             ],
           ),
         );
+        ctrl.dispose();
+        if (openCalc && mounted) {
+          await _openHardwareCalculator(
+            initialProduct: item.product,
+            replacingCartItem: item,
+          );
+        }
       },
     );
   }

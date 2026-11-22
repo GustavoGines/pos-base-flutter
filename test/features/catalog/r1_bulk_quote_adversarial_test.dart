@@ -103,6 +103,7 @@ class AdversarialSettingsProvider extends ChangeNotifier implements SettingsProv
   @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
+        ignoreProductFixedPrices: false,
         features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true),
       );
   @override

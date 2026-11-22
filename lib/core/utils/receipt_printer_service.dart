@@ -422,15 +422,14 @@ class ReceiptPrinterService {
     // ── Detalle de Artículos (Formato 2 líneas POS unificado) ─────────────
     int totalItemsQty = 0;
     for (final item in quote.items) {
-      final isWeight =
-          item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
+      final isWeight = item.product?.isSoldByWeight == true;
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
           : (item.quantity % 1 == 0
               ? '${item.quantity.toInt()}'
               : item.quantity.toQty());
 
-      if (!isWeight) {
+      if (!isWeight && item.quantity % 1 == 0) {
         totalItemsQty += item.quantity.toInt();
       } else {
         totalItemsQty += 1;
@@ -446,6 +445,13 @@ class ReceiptPrinterService {
         productName,
         styles: const PosStyles(bold: true),
       );
+      final customDetails = item.customDetails?.trim();
+      if (customDetails != null && customDetails.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText('  $customDetails'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
 
       // Línea 2: [CANT x $PRECIO_UNIT] a la izquierda y [$SUBTOTAL] a la derecha
       bytes += generator.row([
@@ -925,7 +931,10 @@ class ReceiptPrinterService {
           ? '${item.quantity.toQty()} kg'
           : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
 
-      if (!isWeight) totalItemsQty += item.quantity.toInt();
+      if (!isWeight) {
+        totalItemsQty +=
+            (item.quantity % 1 != 0) ? 1 : item.quantity.toInt();
+      }
 
       final double price = item.unitPrice;
       final double subtotal = item.subtotal;
@@ -1488,7 +1497,10 @@ class ReceiptPrinterService {
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
           : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
-      if (!isWeight) totalItemsQty += item.quantity.toInt();
+      if (!isWeight) {
+        totalItemsQty +=
+            (item.quantity % 1 != 0) ? 1 : item.quantity.toInt();
+      }
 
       final ivaRateVal = item.product.ivaRate;
       final ivaRateFormatted = ivaRateVal.truncateToDouble() == ivaRateVal
@@ -1812,7 +1824,11 @@ class ReceiptPrinterService {
 
     for (final item in items) {
       final isWeight = item.product.isSoldByWeight;
-      final qtyStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
+      final qtyStr = isWeight
+          ? '${item.quantity.toQty()} kg'
+          : (item.quantity % 1 == 0
+              ? '${item.quantity.toInt()} un'
+              : '${item.quantity.toQty()} un');
       bytes += generator.row([
         PosColumn(text: _cleanText(item.effectiveDisplayName.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
         PosColumn(text: qtyStr, width: 3, styles: const PosStyles(align: PosAlign.right)),
@@ -2782,23 +2798,38 @@ class ReceiptPrinterService {
   /// Elimina acentos y caracteres especiales que no soportan las impresoras térmicas chinas (CP437).
   String _cleanText(String text) {
     if (text.isEmpty) return text;
-        const Map<String, String> accents = {
-      'Á':'A', 'À':'A', 'Â':'A', 'Ä':'A', 'Ã':'A', 'Å':'A',
-      'á':'a', 'à':'a', 'â':'a', 'ä':'a', 'ã':'a', 'å':'a',
-      'Ó':'O', 'Ò':'O', 'Ô':'O', 'Ö':'O', 'Õ':'O', 'Ø':'O',
-      'ó':'o', 'ò':'o', 'ô':'o', 'ö':'o', 'õ':'o', 'ø':'o',
-      'É':'E', 'È':'E', 'Ê':'E', 'Ë':'E',
-      'é':'e', 'è':'e', 'ê':'e', 'ë':'e',
-      'Ç':'C', 'ç':'c',
-      'Í':'I', 'Ì':'I', 'Î':'I', 'Ï':'I',
-      'í':'i', 'ì':'i', 'î':'i', 'ï':'i',
-      'Ú':'U', 'Ù':'U', 'Û':'U', 'Ü':'U',
-      'ú':'u', 'ù':'u', 'û':'u', 'ü':'u',
-      'Ñ':'N', 'ñ':'n',
-      '°':'o', 'º':'o',
-      '¡':'', '¿':'',
+    const Map<String, String> replacements = {
+      'Á': 'A', 'À': 'A', 'Â': 'A', 'Ä': 'A', 'Ã': 'A', 'Å': 'A',
+      'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+      'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Ö': 'O', 'Õ': 'O', 'Ø': 'O',
+      'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o', 'ø': 'o',
+      'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'Ç': 'C', 'ç': 'c',
+      'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'Ñ': 'N', 'ñ': 'n',
+      '°': 'o', 'º': 'o',
+      '¡': '', '¿': '',
+      '→': '->', '←': '<-',
+      '²': '2', '³': '3',
+      '·': '-', '•': '-', '×': 'x',
+      '–': '-', '—': '-',
+      '“': '"', '”': '"', '‘': "'", '’': "'",
     };
-    return text.split('').map((char) => accents[char] ?? char).join();
+    final out = StringBuffer();
+    for (final rune in text.runes) {
+      final char = String.fromCharCode(rune);
+      final mapped = replacements[char];
+      if (mapped != null) {
+        out.write(mapped);
+      } else if (rune == 10 || rune == 13 || (rune >= 0x20 && rune <= 0x7E)) {
+        out.write(char);
+      }
+    }
+    return out.toString();
   }
 
   String _formatCuit(String raw) {

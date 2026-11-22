@@ -725,3 +725,11 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 }
+
+extension SettingsProviderHardwareCalcX on SettingsProvider {
+  /// Verifica rubro Ferretería, licencia válida y heartbeat DRM sin exigir
+  /// implementación extra en mocks de tests que heredan `implements SettingsProvider`.
+  bool get canUseHardwareCalculator =>
+      (settings?.canUseHardwareCalculator == true) &&
+      !LicenseHeartbeatService().isBlocked;
+}

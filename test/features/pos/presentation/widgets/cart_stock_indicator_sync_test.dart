@@ -105,6 +105,8 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   @override
   int get catalogOrderVersion => 1;
   @override
+  int get lastPage => 1;
+  @override
   List<Product> get products => _products;
   @override
   List<Category> get categories => const [];

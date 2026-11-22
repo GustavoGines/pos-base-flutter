@@ -243,7 +243,7 @@ class DeliveryNotePdfService {
           double.tryParse(item['quantity_purchased']?.toString() ?? '') ?? 0.0;
       final isWeight = item['product']?['is_sold_by_weight'] == true ||
           item['is_sold_by_weight'] == true;
-      return sum + (isWeight ? 0 : qty.toInt());
+      return sum + (isWeight ? 0 : (qty % 1 != 0 ? 1 : qty.toInt()));
     });
 
     final deliveredNowSum =
@@ -934,8 +934,9 @@ class DeliveryNotePdfService {
               effectiveItemStatus = 'partial';
             }
 
-            String fmt(double v) =>
-                isByWeight ? '${v.toQty()} kg' : '${v.toInt()} un';
+            String fmt(double v) => isByWeight
+                ? '${v.toQty()} kg'
+                : (v % 1 == 0 ? '${v.toInt()} un' : '${v.toQty()} un');
 
             final valToShow =
                 deliveredNow.isNotEmpty ? deliveredQtyNow : deliveredQtyDb;

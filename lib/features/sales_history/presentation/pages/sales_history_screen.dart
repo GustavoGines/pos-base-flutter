@@ -2223,6 +2223,18 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                                           style: textStyle.copyWith(fontWeight: FontWeight.w500),
                                         ),
                                       ),
+                                      if (item.customDetails != null &&
+                                          item.customDetails!.trim().isNotEmpty)
+                                        Text(
+                                          item.customDetails!.trim(),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontStyle: FontStyle.italic,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
                                       if (item.hasDiscount && item.discountLabel != null)
                                         Text(
                                           '(${item.discountLabel}) Reg: \$${item.regularPrice.toCurrency()}',
@@ -2242,7 +2254,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                               DataCell(Text(
                                   item.isSoldByWeight
                                       ? '${item.quantity.toQty()} Kg'
-                                      : '${item.quantity.toInt()} u',
+                                      : '${item.quantity.toQty()} u',
                                   style: textStyle)),
                               DataCell(Text(
                                   '\$${item.unitPrice.toCurrency()}',

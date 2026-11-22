@@ -123,6 +123,9 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   int get catalogOrderVersion => 1;
 
   @override
+  int get lastPage => 1;
+
+  @override
   Future<void> fetchCriticalAlerts() async {}
 
   @override

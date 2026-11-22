@@ -111,9 +111,8 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
 
     int totalItemsQty = 0;
     for (final item in quote.items) {
-      final isWeight =
-          item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
-      if (!isWeight) {
+      final isWeight = item.product?.isSoldByWeight == true;
+      if (!isWeight && item.quantity % 1 == 0) {
         totalItemsQty += item.quantity.toInt();
       } else {
         totalItemsQty += 1;
@@ -354,7 +353,7 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
   }
 
   Widget _buildItemRow(QuoteItem item, double factor) {
-    final isWeight = item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
+    final isWeight = item.product?.isSoldByWeight == true;
     final cantStr = isWeight
         ? '${item.quantity.toQty()} kg'
         : (item.quantity % 1 == 0
@@ -381,6 +380,20 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
               color: Colors.black,
             ),
           ),
+          if (item.customDetails != null &&
+              item.customDetails!.trim().isNotEmpty) ...[
+            const SizedBox(height: 1),
+            Text(
+              '  * ${item.customDetails!.trim()}',
+              softWrap: true,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 8.8 * factor,
+                fontStyle: FontStyle.italic,
+                color: Colors.black87,
+              ),
+            ),
+          ],
           const SizedBox(height: 1.5),
           // Línea 2: [CANT x $UNIT] a la izq y [$SUBTOTAL] a la der
           Row(

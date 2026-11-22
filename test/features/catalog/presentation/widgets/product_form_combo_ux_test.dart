@@ -47,8 +47,14 @@ class _ComboFakeCatalogProvider extends ChangeNotifier implements CatalogProvide
   }
 
   @override
-  Future<List<Product>> searchProductsRemote(String query, {int perPage = 30}) =>
-      searchProductsForCombo(query);
+  Future<List<Product>> searchProductsRemote(
+    String query, {
+    int perPage = 30,
+    bool activeOnly = true,
+  }) async {
+    final matches = await searchProductsForCombo(query);
+    return activeOnly ? matches.where((p) => p.active).toList() : matches;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

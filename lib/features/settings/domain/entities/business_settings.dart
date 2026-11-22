@@ -158,6 +158,37 @@ class BusinessSettings extends Equatable {
   /// Alias legado — mantenido para retrocompatibilidad durante la transición.
   bool get isHardwareStore => businessType == 'hardware_store';
 
+  /// Indica si la Calculadora Rápida de Mostrador para Ferretería (Machimbre, Chapas, Pintura)
+  /// está disponible. Requiere explícitamente rubro Ferretería (`hardware_store`),
+  /// licencia activa y un plan Básico o Premium válido (SaaS o Lifetime).
+  bool get canUseHardwareCalculator {
+    if (!isHardwareStore) return false;
+    final rawKeyOrStatus = (licenseStatus ?? '').trim();
+    if (rawKeyOrStatus.isEmpty) return false;
+    final statusLower = rawKeyOrStatus.toLowerCase();
+    if (statusLower == 'suspended' ||
+        statusLower == 'expired' ||
+        statusLower == 'error' ||
+        statusLower == 'blocked') {
+      return false;
+    }
+    final plan = (licensePlanType ?? 'basic').trim().toLowerCase();
+    if (plan == 'blocked' ||
+        plan == 'none' ||
+        plan == 'suspended' ||
+        plan == 'expired') {
+      return false;
+    }
+    return isLifetime ||
+        plan.isEmpty ||
+        plan == 'basic' ||
+        plan == 'basico' ||
+        plan == 'básico' ||
+        plan == 'pro' ||
+        plan == 'premium' ||
+        plan == 'lifetime';
+  }
+
   /// True cuando la Condición frente al IVA del comercio es Responsable Inscripto
   /// (ej. 'responsable_inscripto' o 'IVA Responsable Inscripto').
   bool get isResponsableInscripto =>

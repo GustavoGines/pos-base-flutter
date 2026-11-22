@@ -414,4 +414,12 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename) async {
     return await remoteDataSource.importProducts(fileBytes, filename);
   }
+
+  @override
+  Future<Product> updateProductCalcConfig(
+    int productId,
+    Map<String, dynamic>? calcConfig,
+  ) async {
+    return await remoteDataSource.updateProductCalcConfig(productId, calcConfig);
+  }
 }

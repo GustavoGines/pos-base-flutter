@@ -17,12 +17,14 @@ class PosPriceLookupDialog extends StatefulWidget {
   final bool canAddToCart;
   final ValueChanged<String>? onQuickCreateRequested;
   final ValueChanged<String>? onAssociateBarcodeRequested;
+  final ValueChanged<Product>? onHardwareCalculatorRequested;
 
   const PosPriceLookupDialog({
     super.key,
     this.canAddToCart = true,
     this.onQuickCreateRequested,
     this.onAssociateBarcodeRequested,
+    this.onHardwareCalculatorRequested,
   });
 
   static Future<Product?> show(
@@ -30,6 +32,7 @@ class PosPriceLookupDialog extends StatefulWidget {
     bool canAddToCart = true,
     ValueChanged<String>? onQuickCreateRequested,
     ValueChanged<String>? onAssociateBarcodeRequested,
+    ValueChanged<Product>? onHardwareCalculatorRequested,
   }) {
     return showDialog<Product>(
       context: context,
@@ -38,6 +41,7 @@ class PosPriceLookupDialog extends StatefulWidget {
         canAddToCart: canAddToCart,
         onQuickCreateRequested: onQuickCreateRequested,
         onAssociateBarcodeRequested: onAssociateBarcodeRequested,
+        onHardwareCalculatorRequested: onHardwareCalculatorRequested,
       ),
     );
   }
@@ -108,6 +112,15 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
       _triggerQuickCreate();
       return true;
     }
+    if (event.logicalKey == LogicalKeyboardKey.f7 &&
+        _selectedProduct != null &&
+        widget.onHardwareCalculatorRequested != null &&
+        context.read<SettingsProvider>().canUseHardwareCalculator) {
+      final prod = _selectedProduct!;
+      Navigator.of(context).pop();
+      widget.onHardwareCalculatorRequested!(prod);
+      return true;
+    }
     return false;
   }
 
@@ -120,7 +133,7 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
       final seenIds = <int>{};
       final combined = <Product>[];
       for (final source in [
-        catalog.products,
+        catalog.activeProducts,
         catalog.pinnedExtraProducts,
         catalog.weightOnlyProducts,
       ]) {
@@ -923,6 +936,29 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
                           onPressed: () => Navigator.of(context).pop(),
                           child: const Text('Cerrar (Esc)'),
                         ),
+                        if (product != null &&
+                            widget.onHardwareCalculatorRequested != null &&
+                            context
+                                .read<SettingsProvider>()
+                                .canUseHardwareCalculator)
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              widget.onHardwareCalculatorRequested!(product);
+                            },
+                            icon: const Icon(Icons.straighten_rounded,
+                                size: 17),
+                            label: const Text('Calcular Superficie (F7)'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF0F766E),
+                              side: const BorderSide(color: Color(0xFF0F766E)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
                         if (product != null && widget.canAddToCart)
                           ElevatedButton.icon(
                             onPressed: () =>

@@ -17,6 +17,10 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _customersSplitRatioKey = 'local_customers_split_ratio';
   static const String _salesHistorySplitRatioKey = 'local_sales_history_split_ratio';
   static const String _pinnedProductsKey = 'local_pinned_product_ids';
+  static const String _recentSearchTermsKey = 'local_pos_recent_search_terms_v1';
+  static const String _recentSearchProductIdsKey = 'local_pos_recent_search_product_ids_v1';
+  static const int maxRecentSearchTerms = 8;
+  static const int maxRecentSearchProducts = 5;
 
   // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
   String _printerFormat = 'thermal_80';
@@ -40,6 +44,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   double _salesHistorySplitRatio = 0.28;
 
   Set<int> _pinnedProductIds = {};
+  List<String> _recentSearchTerms = [];
+  List<int> _recentSearchProductIds = [];
 
   bool _isInitialized = false;
 
@@ -58,6 +64,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   double get customersSplitRatio => _customersSplitRatio;
   double get salesHistorySplitRatio => _salesHistorySplitRatio;
   Set<int> get pinnedProductIds => _pinnedProductIds;
+  List<String> get recentSearchTerms => List<String>.unmodifiable(_recentSearchTerms);
+  List<int> get recentSearchProductIds => List<int>.unmodifiable(_recentSearchProductIds);
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -93,6 +101,25 @@ class LocalTerminalProvider extends ChangeNotifier {
           .map((idStr) => int.tryParse(idStr))
           .whereType<int>()
           .toSet();
+    }
+
+    final savedTerms = prefs.getStringList(_recentSearchTermsKey);
+    if (savedTerms != null) {
+      _recentSearchTerms = savedTerms
+          .map((t) => t.trim())
+          .where((t) => isValidRecentSearchTerm(t))
+          .take(maxRecentSearchTerms)
+          .toList();
+    }
+
+    final savedProdIds = prefs.getStringList(_recentSearchProductIdsKey);
+    if (savedProdIds != null) {
+      _recentSearchProductIds = savedProdIds
+          .map((idStr) => int.tryParse(idStr))
+          .whereType<int>()
+          .where((id) => id > 0)
+          .take(maxRecentSearchProducts)
+          .toList();
     }
 
     _isInitialized = true;
@@ -228,5 +255,87 @@ class LocalTerminalProvider extends ChangeNotifier {
     );
 
     notifyListeners();
+  }
+
+  /// Filtro anti-basura para historial de búsquedas del mostrador POS:
+  /// - Ignora términos vacíos o de menos de 2 caracteres.
+  /// - Ignora códigos internos de lote (`L#...`) o presupuestos (`PRES-...`).
+  /// - Ignora cualquier cadena puramente numérica de 5 o más dígitos (EAN-13, EAN-8, UPC, PLU).
+  static bool isValidRecentSearchTerm(String raw) {
+    final cleaned = raw.trim();
+    if (cleaned.length < 2) return false;
+    final upper = cleaned.toUpperCase();
+    if (upper.startsWith('L#') || upper.startsWith('PRES-')) return false;
+    if (RegExp(r'^\d{5,}$').hasMatch(cleaned)) return false;
+    return true;
+  }
+
+  Future<void> recordRecentSearch({
+    String? term,
+    int? selectedProductId,
+  }) async {
+    bool changed = false;
+
+    if (term != null && isValidRecentSearchTerm(term)) {
+      final cleanTerm = term.trim();
+      final lower = cleanTerm.toLowerCase();
+      _recentSearchTerms.removeWhere((t) => t.toLowerCase() == lower);
+      _recentSearchTerms.insert(0, cleanTerm);
+      if (_recentSearchTerms.length > maxRecentSearchTerms) {
+        _recentSearchTerms =
+            _recentSearchTerms.sublist(0, maxRecentSearchTerms);
+      }
+      changed = true;
+    }
+
+    if (selectedProductId != null && selectedProductId > 0) {
+      _recentSearchProductIds.remove(selectedProductId);
+      _recentSearchProductIds.insert(0, selectedProductId);
+      if (_recentSearchProductIds.length > maxRecentSearchProducts) {
+        _recentSearchProductIds =
+            _recentSearchProductIds.sublist(0, maxRecentSearchProducts);
+      }
+      changed = true;
+    }
+
+    if (!changed) return;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentSearchTermsKey, _recentSearchTerms);
+    await prefs.setStringList(
+      _recentSearchProductIdsKey,
+      _recentSearchProductIds.map((id) => id.toString()).toList(),
+    );
+  }
+
+  Future<void> removeRecentSearchTerm(String term) async {
+    final lower = term.trim().toLowerCase();
+    final before = _recentSearchTerms.length;
+    _recentSearchTerms.removeWhere((t) => t.toLowerCase() == lower);
+    if (_recentSearchTerms.length == before) return;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentSearchTermsKey, _recentSearchTerms);
+  }
+
+  Future<void> removeRecentSearchProductId(int productId) async {
+    if (!_recentSearchProductIds.remove(productId)) return;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _recentSearchProductIdsKey,
+      _recentSearchProductIds.map((id) => id.toString()).toList(),
+    );
+  }
+
+  Future<void> clearRecentSearches() async {
+    if (_recentSearchTerms.isEmpty && _recentSearchProductIds.isEmpty) return;
+    _recentSearchTerms = [];
+    _recentSearchProductIds = [];
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_recentSearchTermsKey);
+    await prefs.remove(_recentSearchProductIdsKey);
   }
 }

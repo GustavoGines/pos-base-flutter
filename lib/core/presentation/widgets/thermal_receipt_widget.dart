@@ -698,7 +698,8 @@ class ThermalReceiptWidget extends StatelessWidget {
     for (final rawItem in items) {
       if (rawItem is CartItem) {
         if (!rawItem.product.isSoldByWeight) {
-          totalUnits += rawItem.quantity.toInt();
+          totalUnits +=
+              (rawItem.quantity % 1 != 0) ? 1 : rawItem.quantity.toInt();
         }
       } else if (rawItem is Map<String, dynamic>) {
         final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
@@ -706,7 +707,7 @@ class ThermalReceiptWidget extends StatelessWidget {
             prod['is_sold_by_weight'] == true;
         if (!isWeight) {
           final q = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
-          totalUnits += q.toInt();
+          totalUnits += (q % 1 != 0) ? 1 : q.toInt();
         }
       }
     }
@@ -1315,11 +1316,13 @@ class ThermalReceiptWidget extends StatelessWidget {
 
   Widget _buildDeliveryItemRow(dynamic rawItem, double factor) {
     String name = 'PRODUCTO';
+    String? customDetails;
     double quantity = 1.0;
     bool isSoldByWeight = false;
 
     if (rawItem is CartItem) {
       name = rawItem.effectiveDisplayName;
+      customDetails = rawItem.customDetails?.trim();
       quantity = rawItem.quantity;
       isSoldByWeight = rawItem.product.isSoldByWeight;
     } else if (rawItem is Map<String, dynamic>) {
@@ -1331,6 +1334,7 @@ class ThermalReceiptWidget extends StatelessWidget {
               prod['name']?.toString() ??
               rawItem['name']?.toString() ??
               'PRODUCTO');
+      customDetails = rawItem['custom_details']?.toString().trim();
       quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
       isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
           prod['is_sold_by_weight'] == true;
@@ -1338,32 +1342,51 @@ class ThermalReceiptWidget extends StatelessWidget {
 
     final qtyStr = isSoldByWeight
         ? '${quantity.toQty()} kg'
-        : '${quantity.toInt()} un';
+        : (quantity % 1 == 0
+            ? '${quantity.toInt()} un'
+            : '${quantity.toQty()} un');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Text(
-              name.toUpperCase(),
-              softWrap: true,
-              style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 10.5 * factor,
-                fontWeight: FontWeight.bold,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  name.toUpperCase(),
+                  softWrap: true,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 10.5 * factor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                qtyStr,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 10.5 * factor,
+                ),
+              ),
+            ],
+          ),
+          if (customDetails != null && customDetails.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, top: 1),
+              child: Text(
+                '* $customDetails',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 9.0 * factor,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            qtyStr,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 10.5 * factor,
-            ),
-          ),
         ],
       ),
     );

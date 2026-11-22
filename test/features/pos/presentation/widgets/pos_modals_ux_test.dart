@@ -87,14 +87,18 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   Future<void> loadMetadata({bool force = false}) async {}
 
   @override
-  Future<List<Product>> searchProductsRemote(String query,
-      {int perPage = 30}) async {
+  Future<List<Product>> searchProductsRemote(
+    String query, {
+    int perPage = 30,
+    bool activeOnly = true,
+  }) async {
     final q = query.trim().toLowerCase();
     return remoteProducts
         .where((p) =>
-            p.name.toLowerCase().contains(q) ||
-            (p.barcode?.toLowerCase().contains(q) ?? false) ||
-            p.internalCode.toLowerCase().contains(q))
+            (!activeOnly || p.active) &&
+            (p.name.toLowerCase().contains(q) ||
+                (p.barcode?.toLowerCase().contains(q) ?? false) ||
+                p.internalCode.toLowerCase().contains(q)))
         .toList();
   }
 

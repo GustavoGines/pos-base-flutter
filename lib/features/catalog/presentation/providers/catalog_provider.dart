@@ -13,6 +13,8 @@ import '../../domain/entities/brand.dart';
 import '../../domain/entities/rubro.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
+import '../../data/datasources/catalog_remote_datasource.dart'
+    show CatalogHttpException;
 import '../../data/models/product_model.dart';
 import '../../data/models/product_batch_model.dart';
 import '../../data/models/production_order_model.dart';
@@ -64,9 +66,14 @@ class CatalogProvider with ChangeNotifier {
   // Generación de caché: invalida respuestas en vuelo iniciadas antes de un refresco.
   int _quickAccessCacheGeneration = 0;
 
-  List<Product> getCategoryExtraProducts(int categoryId) => _categoryExtraProducts[categoryId] ?? const [];
-  List<Product> get weightOnlyProducts => _weightOnlyProducts;
-  List<Product> get pinnedExtraProducts => _pinnedExtraProducts;
+  List<Product> getCategoryExtraProducts(int categoryId) =>
+      (_categoryExtraProducts[categoryId] ?? const [])
+          .where((p) => p.active)
+          .toList(growable: false);
+  List<Product> get weightOnlyProducts =>
+      _weightOnlyProducts.where((p) => p.active).toList(growable: false);
+  List<Product> get pinnedExtraProducts =>
+      _pinnedExtraProducts.where((p) => p.active).toList(growable: false);
 
   /// La categoría ya tiene su catálogo completo disponible en memoria (sin red pendiente).
   /// Si el servidor informa `productsCount` y ya hay esa cantidad de activos cargados en
@@ -335,7 +342,7 @@ class CatalogProvider with ChangeNotifier {
   }
 
   Future<List<Product>> searchProductsRemote(String query,
-      {int perPage = 30}) async {
+      {int perPage = 30, bool activeOnly = true}) async {
     final q = query.trim();
     if (q.isEmpty) return [];
     try {
@@ -345,8 +352,10 @@ class CatalogProvider with ChangeNotifier {
         sortBy: 'name',
         sortDirection: 'asc',
         perPage: perPage,
+        active: activeOnly ? true : null,
       );
-      return List<Product>.from(result['data'] as List);
+      final list = List<Product>.from(result['data'] as List);
+      return activeOnly ? list.where((p) => p.active).toList() : list;
     } catch (e) {
       debugPrint('Error en searchProductsRemote: $e');
       return [];
@@ -931,6 +940,7 @@ class CatalogProvider with ChangeNotifier {
         _lastUpdatedProduct = _products[idx];
       }
       invalidateQuickAccessExtraCaches();
+      unawaited(loadMetadata(force: true));
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -1011,6 +1021,7 @@ class CatalogProvider with ChangeNotifier {
       await repository.deleteProduct(id);
       _products.removeWhere((p) => p.id == id);
       invalidateQuickAccessExtraCaches();
+      unawaited(loadMetadata(force: true));
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -1028,6 +1039,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       final result = await repository.bulkDeleteProducts(ids);
       await loadProducts(page: _currentPage);
+      unawaited(loadMetadata(force: true));
       return result['message'] as String?;
     } catch (e) {
       _errorMessage = e.toString();
@@ -1063,6 +1075,7 @@ class CatalogProvider with ChangeNotifier {
         clearSupplier: clearSupplier,
       );
       await loadProducts(page: _currentPage);
+      unawaited(loadMetadata(force: true));
       return result['message'] as String?;
     } catch (e) {
       _errorMessage = e.toString();
@@ -1205,6 +1218,7 @@ class CatalogProvider with ChangeNotifier {
       recipeYieldQuantity: incoming.recipeYieldQuantity,
       recipeIngredients: incoming.recipeIngredients ?? existing.recipeIngredients,
       unitType: incoming.unitType,
+      calcConfig: incoming.calcConfig,
       ivaRate: incoming.ivaRate,
       needsCatalogReview: incoming.needsCatalogReview,
       imageUrl: incoming.imageUrl ?? existing.imageUrl,
@@ -1218,6 +1232,51 @@ class CatalogProvider with ChangeNotifier {
   void syncProductSnapshot(Product updatedProduct) {
     _syncProductSnapshotInCaches(updatedProduct);
     notifyListeners();
+  }
+
+  /// Actualiza la configuración de la Calculadora Ferretera (`calc_config`) en el backend
+  /// sin requerir PIN de administrador y sincroniza la instancia en memoria en todas las listas.
+  /// Ante rechazo 4xx del servidor (excepto 404/408), no contamina la caché en memoria.
+  Future<Product?> updateProductCalcConfigFromPos(
+    int productId,
+    Map<String, dynamic>? calcConfig,
+  ) async {
+    if (productId <= 0) return null;
+    try {
+      final updated = await repository.updateProductCalcConfig(productId, calcConfig);
+      _syncProductSnapshotInCaches(updated);
+      notifyListeners();
+      return updated;
+    } on CatalogHttpException catch (e) {
+      if (e.isClientError && e.statusCode != 404 && e.statusCode != 408) {
+        debugPrint(
+          'updateProductCalcConfigFromPos rejected (${e.statusCode}): ${e.message}',
+        );
+        return null;
+      }
+      debugPrint('updateProductCalcConfigFromPos fallback (${e.statusCode}): $e');
+      return _applyLocalCalcConfigFallback(productId, calcConfig);
+    } catch (e) {
+      debugPrint('updateProductCalcConfigFromPos warning (fallback offline activo): $e');
+      return _applyLocalCalcConfigFallback(productId, calcConfig);
+    }
+  }
+
+  Product? _applyLocalCalcConfigFallback(
+    int productId,
+    Map<String, dynamic>? calcConfig,
+  ) {
+    final idx = _products.indexWhere((p) => p.id == productId);
+    if (idx != -1) {
+      final localUpdated = _products[idx].copyWith(
+        calcConfig: calcConfig,
+        clearCalcConfig: calcConfig == null,
+      );
+      _syncProductSnapshotInCaches(localUpdated);
+      notifyListeners();
+      return localUpdated;
+    }
+    return null;
   }
 
   void _syncProductSnapshotInCaches(Product updatedProduct) {
@@ -1237,26 +1296,33 @@ class CatalogProvider with ChangeNotifier {
     );
     if (_categoryExtraProducts.isNotEmpty) {
       for (final key in _categoryExtraProducts.keys.toList()) {
-        _categoryExtraProducts[key] = applyStockUpdatesToProductList(
+        final updatedList = applyStockUpdatesToProductList(
           _categoryExtraProducts[key]!,
           stockMap,
           updatedExpirationById: expMap,
         );
+        _categoryExtraProducts[key] = updatedList
+            .map((p) => p.id == merged.id ? merged : p)
+            .toList();
       }
     }
     if (_weightOnlyProducts.isNotEmpty) {
-      _weightOnlyProducts = applyStockUpdatesToProductList(
+      final updatedList = applyStockUpdatesToProductList(
         _weightOnlyProducts,
         stockMap,
         updatedExpirationById: expMap,
       );
+      _weightOnlyProducts =
+          updatedList.map((p) => p.id == merged.id ? merged : p).toList();
     }
     if (_pinnedExtraProducts.isNotEmpty) {
-      _pinnedExtraProducts = applyStockUpdatesToProductList(
+      final updatedList = applyStockUpdatesToProductList(
         _pinnedExtraProducts,
         stockMap,
         updatedExpirationById: expMap,
       );
+      _pinnedExtraProducts =
+          updatedList.map((p) => p.id == merged.id ? merged : p).toList();
     }
   }
 
@@ -1851,4 +1917,11 @@ class CatalogProvider with ChangeNotifier {
       debugPrint('Error loading brands: $e');
     }
   }
+}
+
+extension CatalogProviderActiveProductsX on CatalogProvider {
+  /// Productos activos en memoria (`active == true`).
+  /// Única fuente de verdad para mostrador (Terminal POS, Presupuestos, F5, F7).
+  List<Product> get activeProducts =>
+      products.where((p) => p.active).toList(growable: false);
 }

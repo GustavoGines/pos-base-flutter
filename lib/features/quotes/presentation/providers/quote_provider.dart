@@ -27,17 +27,26 @@ class QuoteProvider extends ChangeNotifier {
   double _wholesaleFactor = 1.0; // Hardcode removido
   double _cardFactor = 1.0;      // Hardcode removido
   double _customFactor = 1.0;
+  bool _ignoreFixedPrices = false;
 
   // Getters públicos para que la UI pueda leer los factores en preview
   double get wholesaleFactor => _wholesaleFactor;
   double get cardFactor => _cardFactor;
   double get customFactor => _customFactor;
+  bool get ignoreFixedPrices => _ignoreFixedPrices;
 
   /// Inyecta externamente los factores globales desde SettingsProvider.
   /// Llamar una vez al abrir la pantalla de presupuestos.
-  void setGlobalFactors({double? wholesale, double? card}) {
+  void setGlobalFactors({
+    double? wholesale,
+    double? card,
+    bool? ignoreFixedPrices,
+  }) {
     _wholesaleFactor = wholesale ?? 1.0;
     _cardFactor = card ?? 1.0;
+    if (ignoreFixedPrices != null) {
+      _ignoreFixedPrices = ignoreFixedPrices;
+    }
     // Actualizar items ya en el carrito
     _applyTierToCart();
     notifyListeners();
@@ -71,6 +80,7 @@ class QuoteProvider extends ChangeNotifier {
       item.cardFactor = _cardFactor;
       item.customFactor = _customFactor;
       item.customTierLabel = _customTierLabel;
+      item.ignoreFixedPrices = _ignoreFixedPrices;
     }
   }
 
@@ -103,11 +113,45 @@ class QuoteProvider extends ChangeNotifier {
     }
   }
 
-  void addToCart(Product product, {double quantity = 1}) {
-    // Si ya existe el mismo producto con el mismo tier, sumar cantidad
-    final existingIdx = _cart.indexWhere(
-      (i) => i.product.id == product.id && i.activeTier == _activeTier,
-    );
+  void addToCart(
+    Product product, {
+    double quantity = 1,
+    String? customDetails,
+    bool? ignoreFixedPrices,
+    CartItem? replacingItem,
+  }) {
+    if (ignoreFixedPrices != null) {
+      _ignoreFixedPrices = ignoreFixedPrices;
+    }
+    final cleanDetails = customDetails?.trim();
+    final hasCustomDetails = cleanDetails != null && cleanDetails.isNotEmpty;
+
+    if (replacingItem != null) {
+      final idx = _cart.indexOf(replacingItem);
+      if (idx >= 0) {
+        _cart[idx].product = product;
+        _cart[idx].quantity = quantity;
+        _cart[idx].customDetails = hasCustomDetails ? cleanDetails : null;
+        _cart[idx].activeTier = _activeTier;
+        _cart[idx].wholesaleFactor = _wholesaleFactor;
+        _cart[idx].cardFactor = _cardFactor;
+        _cart[idx].customFactor = _customFactor;
+        _cart[idx].customTierLabel = _customTierLabel;
+        _cart[idx].ignoreFixedPrices = _ignoreFixedPrices;
+        notifyListeners();
+        return;
+      }
+    }
+
+    // Si ya existe el mismo producto con el mismo tier y sin desglose específico, sumar cantidad
+    final existingIdx = hasCustomDetails
+        ? -1
+        : _cart.indexWhere(
+            (i) =>
+                i.product.id == product.id &&
+                i.activeTier == _activeTier &&
+                (i.customDetails == null || i.customDetails!.trim().isEmpty),
+          );
 
     if (existingIdx >= 0) {
       _cart[existingIdx].quantity += quantity;
@@ -120,6 +164,8 @@ class QuoteProvider extends ChangeNotifier {
         cardFactor: _cardFactor,
         customFactor: _customFactor,
         customTierLabel: _customTierLabel,
+        ignoreFixedPrices: _ignoreFixedPrices,
+        customDetails: hasCustomDetails ? cleanDetails : null,
       ));
     }
     notifyListeners();
@@ -178,7 +224,8 @@ class QuoteProvider extends ChangeNotifier {
       // Serializar CartItem → QuoteItem usando precios calculados por el motor híbrido
       final items = _cart.map((c) => QuoteItem(
         productId: c.product.id,
-        productName: c.product.name,
+        productName: c.effectiveDisplayName,
+        customDetails: c.customDetails,
         unitPrice: c.unitPrice,    // Motor híbrido: override o % global
         quantity: c.quantity,
         subtotal: c.subtotal,
@@ -206,6 +253,7 @@ class QuoteProvider extends ChangeNotifier {
           return QuoteItem(
             productId: it.productId ?? match.product.id,
             productName: it.productName,
+            customDetails: it.customDetails ?? match.customDetails,
             unitPrice: it.unitPrice,
             quantity: it.quantity,
             subtotal: it.subtotal,

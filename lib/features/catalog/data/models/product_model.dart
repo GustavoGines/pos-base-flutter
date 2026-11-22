@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'category_model.dart';
@@ -33,6 +34,7 @@ class ProductModel extends Product {
     super.recipeYieldQuantity,
     super.recipeIngredients,
     super.unitType,
+    super.calcConfig,
     super.ivaRate,
     super.needsCatalogReview,
     super.imageUrl,
@@ -72,6 +74,8 @@ class ProductModel extends Product {
     double? recipeYieldQuantity,
     List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
+    Map<String, dynamic>? calcConfig,
+    bool clearCalcConfig = false,
     double? ivaRate,
     bool? needsCatalogReview,
     String? imageUrl,
@@ -112,6 +116,7 @@ class ProductModel extends Product {
       recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
+      calcConfig: clearCalcConfig ? null : (calcConfig ?? this.calcConfig),
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
@@ -250,6 +255,7 @@ class ProductModel extends Product {
       recipeYieldQuantity: double.tryParse(json['recipe_yield_quantity']?.toString() ?? '1') ?? 1.0,
       recipeIngredients: parsedRecipe,
       unitType: json['unit_type']?.toString() ?? 'un',
+      calcConfig: parseCalcConfig(json['calc_config']),
       ivaRate: json['iva_rate'] != null
           ? (double.tryParse(json['iva_rate'].toString()) ?? 21.0)
           : 21.0,
@@ -270,6 +276,22 @@ class ProductModel extends Product {
           ? Supplier.fromJson(json['supplier'] as Map<String, dynamic>)
           : null,
     );
+  }
+
+  static Map<String, dynamic>? parseCalcConfig(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    if (raw is String && raw.trim().isNotEmpty && raw.trim() != 'null') {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
+    return null;
   }
 
   static double _resolveComboAwareCost(

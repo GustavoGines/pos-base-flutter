@@ -10,6 +10,7 @@ import '../../data/datasources/pos_remote_datasource.dart';
 import '../../data/repositories/pos_repository_impl.dart';
 import 'package:frontend_desktop/core/network/api_client.dart'
     show SessionExpiredException;
+import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
@@ -805,6 +806,9 @@ class PosProvider with ChangeNotifier {
     String? batchCode,
     String? batchExpirationDate,
   }) {
+    if (!product.active) {
+      return false;
+    }
     if (product.isSoldByWeight) {
       return false;
     }
@@ -889,7 +893,8 @@ class PosProvider with ChangeNotifier {
         product.isService ||
         product.isCombo ||
         product.id <= 0 ||
-        requestedQuantity <= 0) {
+        requestedQuantity <= 0 ||
+        (product.calcConfig != null && product.calcConfig!.isNotEmpty)) {
       return null;
     }
 
@@ -956,6 +961,7 @@ class PosProvider with ChangeNotifier {
     String? batchCode,
     String? batchExpirationDate,
   }) {
+    if (!product.active) return;
     _addToCartDirectly(
       product,
       weightInKg,
@@ -1049,7 +1055,8 @@ class PosProvider with ChangeNotifier {
             !item.product.isSoldByWeight &&
             !item.isTemporary &&
             !item.saveToCatalog &&
-            !item.isRenamed,
+            !item.isRenamed &&
+            (item.customDetails == null || item.customDetails!.trim().isEmpty),
       );
       if (index >= 0) {
         final existing = _cart[index];
@@ -1099,6 +1106,109 @@ class PosProvider with ChangeNotifier {
         ));
       }
     }
+    notifyListeners();
+  }
+
+  /// Agrega o actualiza un ítem proveniente de la Calculadora Ferretera (Machimbre, Chapas, Pintura)
+  /// conservando la cantidad calculada (entera o decimal m² / ml) y la nota técnica en `customDetails`.
+  void addCalculatedHardwareItem(
+    Product product, {
+    required double quantity,
+    required String customDetails,
+    PriceTier? overrideTier,
+    double? overrideCustomFactor,
+    String? overrideCustomLabel,
+    double? promotionalPrice,
+    String? promotionalLabel,
+    String? promotionalPeriodType,
+    CartItem? replacingItem,
+  }) {
+    if (!product.active || quantity <= 0) return;
+
+    double? resolvedPromoPrice = promotionalPrice;
+    String? resolvedPromoLabel = promotionalLabel;
+    String? resolvedPromoPeriodType = promotionalPeriodType;
+
+    if (resolvedPromoPrice == null && _cachedActiveOffers.isNotEmpty) {
+      final bestOffer = _findBestCachedOfferForProduct(product);
+      if (bestOffer != null) {
+        resolvedPromoPrice = bestOffer.calculateDiscountedPrice(
+          product.sellingPrice,
+          productId: product.id,
+        ) as double;
+        resolvedPromoLabel = bestOffer.name as String?;
+        resolvedPromoPeriodType = bestOffer.periodType as String?;
+      }
+    }
+
+    final effectiveTier = overrideTier ?? _activeTier;
+    final effectiveCustomFactor = effectiveTier == PriceTier.custom
+        ? (overrideCustomFactor ?? _currentCustomFactor)
+        : 1.0;
+    final effectiveCustomLabel = effectiveTier == PriceTier.custom
+        ? (overrideCustomLabel ?? _customTierLabel)
+        : null;
+
+    if (replacingItem != null) {
+      final idx = _cart.indexOf(replacingItem);
+      if (idx >= 0) {
+        final bool productChanged = _cart[idx].product.id != product.id;
+        final bool tierChanged =
+            overrideTier != null && overrideTier != _cart[idx].activeTier;
+        _cart[idx].product = product;
+        _cart[idx].quantity = quantity;
+        _cart[idx].customDetails = customDetails.trim();
+        _cart[idx].manualSubtotal = null;
+        _cart[idx].promotionalPrice = resolvedPromoPrice;
+        _cart[idx].promotionalLabel = resolvedPromoLabel;
+        _cart[idx].promotionalPeriodType = resolvedPromoPeriodType;
+        _cart[idx].cardSurchargeOnOffersMode = _cardSurchargeOnOffersMode;
+        _cart[idx].discountTierOnOffersMode = _discountTierOnOffersMode;
+        _cart[idx].ignoreFixedPrices = _ignoreProductFixedPrices;
+        if (overrideTier != null) {
+          _cart[idx].activeTier = effectiveTier;
+          _cart[idx].wholesaleFactor = _currentWholesaleFactor;
+          _cart[idx].cardFactor = _currentCardFactor;
+          _cart[idx].customFactor = effectiveCustomFactor;
+          _cart[idx].customTierLabel = effectiveCustomLabel;
+        }
+        if (productChanged) {
+          _cart[idx].manualUnitPrice = null;
+          _cart[idx].manualCostPrice = null;
+          _cart[idx].agreedUnitPrice = null;
+          _cart[idx].customDescription = null;
+          _cart[idx].batchId = null;
+          _cart[idx].batchCode = null;
+          _cart[idx].batchExpirationDate = null;
+          _cart[idx].isTemporary = false;
+          _cart[idx].saveToCatalog = false;
+          _cart[idx].hasManualIvaOverride = false;
+        } else if (tierChanged) {
+          _cart[idx].agreedUnitPrice = null;
+        }
+        notifyListeners();
+        return;
+      }
+    }
+
+    _cart.add(
+      CartItem(
+        product: product,
+        quantity: quantity,
+        activeTier: effectiveTier,
+        wholesaleFactor: _currentWholesaleFactor,
+        cardFactor: _currentCardFactor,
+        customFactor: effectiveCustomFactor,
+        customTierLabel: effectiveCustomLabel,
+        promotionalPrice: resolvedPromoPrice,
+        promotionalLabel: resolvedPromoLabel,
+        promotionalPeriodType: resolvedPromoPeriodType,
+        cardSurchargeOnOffersMode: _cardSurchargeOnOffersMode,
+        discountTierOnOffersMode: _discountTierOnOffersMode,
+        ignoreFixedPrices: _ignoreProductFixedPrices,
+        customDetails: customDetails.trim(),
+      ),
+    );
     notifyListeners();
   }
 
@@ -1336,6 +1446,7 @@ class PosProvider with ChangeNotifier {
     final items = _cart.map((c) => QuoteItem(
       productId: c.product.id > 0 ? c.product.id : null,
       productName: c.effectiveDisplayName,
+      customDetails: c.customDetails,
       unitPrice: c.unitPrice,
       quantity: c.quantity,
       subtotal: c.subtotal,
@@ -1539,6 +1650,7 @@ class PosProvider with ChangeNotifier {
           discountTierOnOffersMode: _discountTierOnOffersMode,
           ignoreFixedPrices: _ignoreProductFixedPrices,
           customDescription: customDesc,
+          customDetails: item.customDetails,
         ));
       } else {
         final tempName = item.productName.trim().isNotEmpty
@@ -1563,6 +1675,7 @@ class PosProvider with ChangeNotifier {
           customFactor: 1.0,
           isTemporary: true,
           customDescription: tempName,
+          customDetails: item.customDetails,
         ));
       }
     }
@@ -1643,6 +1756,7 @@ class PosProvider with ChangeNotifier {
         isSoldByWeight:
             prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
         isService: resolvedIsService,
+        calcConfig: ProductModel.parseCalcConfig(prod['calc_config']),
       );
 
       // Calcular el factor real solo cuando estamos en lista custom y el precio pactado difiere.

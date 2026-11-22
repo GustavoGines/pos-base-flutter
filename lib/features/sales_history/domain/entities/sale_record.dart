@@ -56,6 +56,7 @@ class SaleItemRecord {
   final bool isSoldByWeight;
   final bool isService;
   final String? discountLabel;
+  final String? customDetails;
 
   const SaleItemRecord({
     required this.id,
@@ -70,6 +71,7 @@ class SaleItemRecord {
     this.isSoldByWeight = false,
     this.isService = false,
     this.discountLabel,
+    this.customDetails,
   }) : regularPrice = (regularPrice != null && regularPrice > 0) ? regularPrice : unitPrice;
 
   /// Monto de ahorro / descuento unitario * cantidad
@@ -111,6 +113,7 @@ class SaleItemRecord {
     }
 
     final customDesc = json['custom_description']?.toString().trim();
+    final rawCustomDetails = json['custom_details']?.toString().trim();
     final effectiveName = (customDesc != null && customDesc.isNotEmpty)
         ? customDesc
         : (json['product_name'] as String? ?? product?['name'] as String? ?? '');
@@ -131,6 +134,9 @@ class SaleItemRecord {
           product?['is_service'] == true ||
           product?['is_service'] == 1,
       discountLabel: discountLabel,
+      customDetails: (rawCustomDetails != null && rawCustomDetails.isNotEmpty)
+          ? rawCustomDetails
+          : null,
     );
   }
 }

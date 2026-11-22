@@ -59,17 +59,20 @@ class PosRenameCartItemResult {
 class PosRenameCartItemDialog extends StatefulWidget {
   final CartItem item;
   final bool focusQuantityInitially;
+  final VoidCallback? onOpenHardwareCalculator;
 
   const PosRenameCartItemDialog({
     super.key,
     required this.item,
     this.focusQuantityInitially = false,
+    this.onOpenHardwareCalculator,
   });
 
   static Future<PosRenameCartItemResult?> show(
     BuildContext context, {
     required CartItem item,
     bool focusQuantityInitially = false,
+    VoidCallback? onOpenHardwareCalculator,
   }) {
     return showDialog<PosRenameCartItemResult>(
       context: context,
@@ -77,6 +80,7 @@ class PosRenameCartItemDialog extends StatefulWidget {
       builder: (_) => PosRenameCartItemDialog(
         item: item,
         focusQuantityInitially: focusQuantityInitially,
+        onOpenHardwareCalculator: onOpenHardwareCalculator,
       ),
     );
   }
@@ -2530,6 +2534,28 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (widget.onOpenHardwareCalculator != null &&
+                  !_isTempOrUnregistered &&
+                  context
+                      .read<SettingsProvider>()
+                      .canUseHardwareCalculator)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onOpenHardwareCalculator!();
+                  },
+                  icon: const Icon(Icons.straighten_rounded, size: 17),
+                  label: const Text('Recalcular por m² / Medidas'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F766E),
+                    side: const BorderSide(color: Color(0xFF0F766E)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancelar (Esc)'),

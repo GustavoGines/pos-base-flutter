@@ -98,7 +98,12 @@ class A4SplitPdfService {
     try {
       final font = await PdfGoogleFonts.robotoRegular();
       final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
+      final fontItalic = await PdfGoogleFonts.robotoItalic();
+      theme = pw.ThemeData.withFont(
+        base: font,
+        bold: fontBold,
+        italic: fontItalic,
+      );
     } catch (_) {
       // Fallback a fuentes estándar PDF en modo offline
     }
@@ -302,7 +307,12 @@ class A4SplitPdfService {
     try {
       final font = await PdfGoogleFonts.robotoRegular();
       final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
+      final fontItalic = await PdfGoogleFonts.robotoItalic();
+      theme = pw.ThemeData.withFont(
+        base: font,
+        bold: fontBold,
+        italic: fontItalic,
+      );
     } catch (_) {}
 
     final pdf = pw.Document(theme: theme);
@@ -818,7 +828,9 @@ class A4SplitPdfService {
                 item['product']?['is_sold_by_weight'] == true ||
                     item['product']?['is_sold_by_weight'] == 1 ||
                     item['is_sold_by_weight'] == true;
-            final qtyText = isWeight ? qty.toQty() : qty.toInt().toString();
+            final qtyText = (isWeight || qty % 1 != 0)
+                ? qty.toQty()
+                : qty.toInt().toString();
 
             final customDesc = item['custom_description']?.toString().trim() ?? '';
             final pName = customDesc.isNotEmpty
@@ -886,7 +898,7 @@ class A4SplitPdfService {
                       if (customDetails.isNotEmpty) ...[
                         pw.SizedBox(height: 1),
                         pw.Text(
-                          customDetails,
+                          _sanitizePdfText(customDetails),
                           style: pw.TextStyle(
                             fontSize: isCompact ? 6.0 : 7.0,
                             fontStyle: pw.FontStyle.italic,
@@ -1263,7 +1275,9 @@ class A4SplitPdfService {
       final qty = double.tryParse(qtyStr) ?? 1.0;
       final isWeight = item['product']?['is_sold_by_weight'] == true ||
           item['is_sold_by_weight'] == true;
-      if (!isWeight) totalUnits += qty.toInt();
+      if (!isWeight) {
+        totalUnits += (qty % 1 != 0) ? 1 : qty.toInt();
+      }
     }
 
     final documentTitle =
@@ -1577,8 +1591,9 @@ class A4SplitPdfService {
             final isWeight =
                 item['product']?['is_sold_by_weight'] == true ||
                     item['is_sold_by_weight'] == true;
-            final qtyText =
-                isWeight ? '${qty.toQty()} kg' : '${qty.toInt()} un';
+            final qtyText = isWeight
+                ? '${qty.toQty()} kg'
+                : (qty % 1 == 0 ? '${qty.toInt()} un' : '${qty.toQty()} un');
             final customDesc = item['custom_description']?.toString().trim() ?? '';
             final pName = customDesc.isNotEmpty
                 ? customDesc
@@ -1587,6 +1602,7 @@ class A4SplitPdfService {
                         'Producto')
                     .toString();
             final customDetails = item['custom_details']?.toString().trim() ?? '';
+            final safeDetails = _sanitizePdfText(customDetails);
             final pCode = (item['product']?['internal_code'] ??
                     item['internal_code'] ??
                     '-')
@@ -1600,8 +1616,8 @@ class A4SplitPdfService {
                   isCompact: isCompact,
                 ),
                 _td(
-                  customDetails.isNotEmpty
-                      ? '${pName.toUpperCase()} ($customDetails)'
+                  safeDetails.isNotEmpty
+                      ? '${pName.toUpperCase()} ($safeDetails)'
                       : pName.toUpperCase(),
                   align: pw.TextAlign.left,
                   bold: true,
@@ -1815,5 +1831,36 @@ class A4SplitPdfService {
         ),
       ],
     );
+  }
+
+  /// Normaliza símbolos Unicode que no soportan las fuentes Type1 (Helvetica) en PDF offline.
+  static String _sanitizePdfText(String text) {
+    if (text.isEmpty) return text;
+    const Map<String, String> replacements = {
+      '→': '->',
+      '←': '<-',
+      '²': '2',
+      '³': '3',
+      '·': '-',
+      '•': '-',
+      '×': 'x',
+      '–': '-',
+      '—': '-',
+      '“': '"',
+      '”': '"',
+      '‘': "'",
+      '’': "'",
+    };
+    final out = StringBuffer();
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final mapped = replacements[ch];
+      if (mapped != null) {
+        out.write(mapped);
+      } else if (rune == 10 || rune == 13 || (rune >= 0x20 && rune <= 0xFF)) {
+        out.write(ch);
+      }
+    }
+    return out.toString();
   }
 }

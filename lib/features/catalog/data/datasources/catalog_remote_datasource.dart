@@ -10,6 +10,18 @@ import '../models/category_model.dart';
 import '../models/brand_model.dart';
 import '../models/rubro_model.dart';
 
+class CatalogHttpException implements Exception {
+  final int statusCode;
+  final String message;
+
+  const CatalogHttpException(this.statusCode, this.message);
+
+  bool get isClientError => statusCode >= 400 && statusCode < 500;
+
+  @override
+  String toString() => message;
+}
+
 abstract class CatalogRemoteDataSource {
   /// Returns a map with 'data' (`List<ProductModel>`), 'current_page', 'last_page'.
   Future<Map<String, dynamic>> fetchProducts({
@@ -146,6 +158,7 @@ abstract class CatalogRemoteDataSource {
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
   Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename});
   Future<void> deleteProductImage(int productId);
+  Future<ProductModel> updateProductCalcConfig(int productId, Map<String, dynamic>? calcConfig);
 }
 
 class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
@@ -1201,6 +1214,34 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       debugPrint('=== API Error en importProducts: $e ===');
       rethrow;
     }
+  }
+
+  @override
+  Future<ProductModel> updateProductCalcConfig(
+    int productId,
+    Map<String, dynamic>? calcConfig,
+  ) async {
+    final uri = Uri.parse('$baseUrl/catalog/products/$productId/calc-config');
+    final response = await client.patch(
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({'calc_config': calcConfig}),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final decoded = json.decode(response.body) as Map<String, dynamic>;
+      final rawProd = decoded['product'] ?? decoded;
+      return ProductModel.fromJson(Map<String, dynamic>.from(rawProd as Map));
+    }
+    throw CatalogHttpException(
+      response.statusCode,
+      _parseApiError(
+        response.body,
+        'Error al guardar configuración de calculadora.',
+      ),
+    );
   }
 }
 
