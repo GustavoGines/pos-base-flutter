@@ -1,3 +1,5 @@
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+
 /// Un pago individual dentro de una venta con split tender.
 class SalePayment {
   final int id;
@@ -54,6 +56,7 @@ class SaleItemRecord {
   final double subtotal;
   final double ivaRate;
   final bool isSoldByWeight;
+  final String unitType;
   final bool isService;
   final String? discountLabel;
   final String? customDetails;
@@ -69,10 +72,19 @@ class SaleItemRecord {
     required this.subtotal,
     this.ivaRate = 21.0,
     this.isSoldByWeight = false,
+    this.unitType = 'un',
     this.isService = false,
     this.discountLabel,
     this.customDetails,
   }) : regularPrice = (regularPrice != null && regularPrice > 0) ? regularPrice : unitPrice;
+
+  String get effectiveUnitLabel {
+    final norm = unitType.trim().toLowerCase();
+    if (norm.isNotEmpty && norm != 'un') {
+      return Product.shortLabelFor(norm);
+    }
+    return isSoldByWeight ? 'Kg' : 'u';
+  }
 
   /// Monto de ahorro / descuento unitario * cantidad
   double get discountSavings =>
@@ -129,6 +141,7 @@ class SaleItemRecord {
       subtotal: double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
       ivaRate: double.tryParse(rawIvaRate.toString()) ?? 21.0,
       isSoldByWeight: product?['is_sold_by_weight'] == true || product?['is_sold_by_weight'] == 1,
+      unitType: (json['unit_type'] ?? product?['unit_type'])?.toString() ?? 'un',
       isService: json['is_service'] == true ||
           json['is_service'] == 1 ||
           product?['is_service'] == true ||

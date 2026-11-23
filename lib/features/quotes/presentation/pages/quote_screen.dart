@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/pos_search_history_popover.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -29,6 +33,10 @@ class QuoteScreen extends StatefulWidget {
 class _QuoteScreenState extends State<QuoteScreen> {
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
+  final _searchHistoryPortalController = OverlayPortalController();
+  static const Object _searchHistoryTapGroupId =
+      'quote_search_history_popover';
+  int _historyHighlightIndex = -1;
 
   String _searchQuery = '';
   List<Product> _searchResults = [];
@@ -80,13 +88,241 @@ class _QuoteScreenState extends State<QuoteScreen> {
   bool _handleQuoteHardwareKey(KeyEvent event) {
     if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
     if (event is! KeyDownEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
+        _searchHistoryPortalController.isShowing) {
+      _hideSearchHistoryPopover();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        _searchHistoryPortalController.isShowing) {
+      _hideSearchHistoryPopover();
+      return false;
+    }
+    if (_searchCtrl.text.trim().isEmpty &&
+        (_searchFocus.hasFocus || _searchHistoryPortalController.isShowing)) {
+      final localTerminal =
+          tryGetLocalTerminalProvider(context, listen: false);
+      final catalog = context.read<CatalogProvider>();
+      final terms = localTerminal?.recentTermsForScope(
+            LocalTerminalProvider.scopeQuotes,
+          ) ??
+          const <String>[];
+      final products = _resolveRecentQuoteProducts(catalog, localTerminal);
+      final total = terms.length + products.length;
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown && total > 0) {
+        if (!_searchHistoryPortalController.isShowing) {
+          _showSearchHistoryPopoverIfAvailable(initialHighlightIndex: 0);
+        } else {
+          setState(() {
+            _historyHighlightIndex =
+                (_historyHighlightIndex + 1).clamp(0, total - 1);
+          });
+        }
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+          _searchHistoryPortalController.isShowing) {
+        setState(() {
+          _historyHighlightIndex =
+              _historyHighlightIndex <= 0 ? -1 : _historyHighlightIndex - 1;
+        });
+        return true;
+      }
+      if ((event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+          _searchHistoryPortalController.isShowing &&
+          _historyHighlightIndex >= 0) {
+        if (_historyHighlightIndex < terms.length) {
+          _applyRecentQuoteTerm(terms[_historyHighlightIndex]);
+          return true;
+        }
+        final pIdx = _historyHighlightIndex - terms.length;
+        if (pIdx >= 0 && pIdx < products.length) {
+          final prod = products[pIdx];
+          _hideSearchHistoryPopover();
+          _recordQuoteHistory(product: prod);
+          _addProduct(prod);
+          return true;
+        }
+      }
+    }
     if (event.logicalKey == LogicalKeyboardKey.f7) {
       if (context.read<SettingsProvider>().canUseHardwareCalculator) {
+        _hideSearchHistoryPopover();
         _openHardwareCalculator();
         return true;
       }
     }
     return false;
+  }
+
+  List<Product> _resolveRecentQuoteProducts(
+    CatalogProvider catalog,
+    LocalTerminalProvider? localTerminal,
+  ) {
+    final ids = localTerminal?.recentProductIdsForScope(
+          LocalTerminalProvider.scopeQuotes,
+        ) ??
+        const <int>[];
+    if (ids.isEmpty) return const [];
+    final resolved = catalog.resolveRecentProducts(ids, activeOnly: true);
+    final missing = catalog.unhydratedRecentProductIds(ids);
+    if (missing.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(catalog.syncPinnedProducts(missing));
+      });
+    }
+    return resolved;
+  }
+
+  bool _hasQuoteHistoryEntries(
+    CatalogProvider catalog,
+    LocalTerminalProvider? localTerminal,
+  ) {
+    if (localTerminal == null) return false;
+    final terms =
+        localTerminal.recentTermsForScope(LocalTerminalProvider.scopeQuotes);
+    if (terms.isNotEmpty) return true;
+    return _resolveRecentQuoteProducts(catalog, localTerminal).isNotEmpty;
+  }
+
+  void _showSearchHistoryPopoverIfAvailable({int initialHighlightIndex = -1}) {
+    if (!mounted || _searchCtrl.text.trim().isNotEmpty) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    final catalog = context.read<CatalogProvider>();
+    if (!_hasQuoteHistoryEntries(catalog, localTerminal)) return;
+    if (_historyHighlightIndex != initialHighlightIndex) {
+      setState(() => _historyHighlightIndex = initialHighlightIndex);
+    }
+    if (!_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.show();
+    }
+  }
+
+  void _hideSearchHistoryPopover() {
+    if (_historyHighlightIndex != -1 && mounted) {
+      setState(() => _historyHighlightIndex = -1);
+    } else {
+      _historyHighlightIndex = -1;
+    }
+    if (_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.hide();
+    }
+  }
+
+  void _recordQuoteHistory({String? term, Product? product}) {
+    if (product != null) {
+      try {
+        context.read<CatalogProvider>().registerRecentlySeenProducts([product]);
+      } catch (_) {}
+    }
+    final validTerm =
+        (term != null && LocalTerminalProvider.isValidRecentSearchTerm(term))
+            ? term
+            : null;
+    final prodId = (product != null && product.active) ? product.id : null;
+    if (validTerm == null && prodId == null) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    if (localTerminal == null) return;
+    unawaited(localTerminal.recordRecentSearchForScope(
+      LocalTerminalProvider.scopeQuotes,
+      term: validTerm,
+      selectedProductId: prodId,
+    ));
+  }
+
+  void _applyRecentQuoteTerm(String term) {
+    final clean = term.trim();
+    if (clean.isEmpty || !mounted) return;
+    _hideSearchHistoryPopover();
+    _searchCtrl.text = clean;
+    _searchCtrl.selection = TextSelection.collapsed(offset: clean.length);
+    _onSearchChanged(clean);
+    _recordQuoteHistory(term: clean);
+    _searchFocus.requestFocus();
+  }
+
+  Widget _buildSearchHistoryOverlay(
+    BuildContext overlayContext,
+    OverlayChildLayoutInfo info,
+  ) {
+    return PosSearchHistoryPopover.buildAnchoredOverlay(
+      info: info,
+      maxWidth: 560.0,
+      maxOverlayHeight: 360.0,
+      child: Consumer<CatalogProvider>(
+        builder: (ctx, catalog, _) {
+          final localTerminal = tryGetLocalTerminalProvider(ctx, listen: true);
+          final terms = localTerminal?.recentTermsForScope(
+                LocalTerminalProvider.scopeQuotes,
+              ) ??
+              const <String>[];
+          final products =
+              _resolveRecentQuoteProducts(catalog, localTerminal);
+
+          if (localTerminal == null || (terms.isEmpty && products.isEmpty)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _hideSearchHistoryPopover();
+            });
+            return const SizedBox.shrink();
+          }
+
+          return PosSearchHistoryPopover(
+            containerKey: const ValueKey('quote_search_history_overlay'),
+            terms: terms,
+            products: products,
+            highlightedIndex: _historyHighlightIndex,
+            tapGroupId: _searchHistoryTapGroupId,
+            maxWidth: 560.0,
+            maxHeight: 360.0,
+            onDismiss: _hideSearchHistoryPopover,
+            onClearAll: () {
+              unawaited(localTerminal.clearRecentSearchesForScope(
+                LocalTerminalProvider.scopeQuotes,
+              ));
+              _hideSearchHistoryPopover();
+              _searchFocus.requestFocus();
+            },
+            onSelectTerm: _applyRecentQuoteTerm,
+            onRemoveTerm: (term) {
+              final willBeEmpty = terms.length <= 1 && products.isEmpty;
+              unawaited(localTerminal.removeRecentTermForScope(
+                LocalTerminalProvider.scopeQuotes,
+                term,
+              ));
+              if (willBeEmpty) {
+                _hideSearchHistoryPopover();
+              } else if (_historyHighlightIndex != -1) {
+                setState(() => _historyHighlightIndex = -1);
+              }
+            },
+            onSelectProduct: (p) {
+              _hideSearchHistoryPopover();
+              _recordQuoteHistory(product: p);
+              _addProduct(p);
+            },
+            onRemoveProduct: (productId) {
+              final willBeEmpty = products.length <= 1 && terms.isEmpty;
+              unawaited(localTerminal.removeRecentProductIdForScope(
+                LocalTerminalProvider.scopeQuotes,
+                productId,
+              ));
+              if (willBeEmpty) {
+                _hideSearchHistoryPopover();
+              } else if (_historyHighlightIndex != -1) {
+                setState(() => _historyHighlightIndex = -1);
+              }
+            },
+            priceResolver: (p) => (
+              price: _resolvePreviewPrice(p),
+              crossedOutPrice: null,
+              hasActiveOffer: false,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _openHardwareCalculator({
@@ -115,8 +351,16 @@ class _QuoteScreenState extends State<QuoteScreen> {
   void _onSearchChanged(String value) {
     _debounceTimer?.cancel();
     final q = value.trim();
+    if (q.isNotEmpty) {
+      _hideSearchHistoryPopover();
+    }
     if (q.isEmpty) {
-      setState(() { _searchQuery = ''; _searchResults = []; _isSearching = false; });
+      setState(() {
+        _searchQuery = '';
+        _searchResults = [];
+        _isSearching = false;
+        _historyHighlightIndex = -1;
+      });
       return;
     }
     setState(() => _searchQuery = q);
@@ -127,11 +371,16 @@ class _QuoteScreenState extends State<QuoteScreen> {
           .where((p) => p.active)
           .toList();
       if (!mounted) return;
+      context.read<CatalogProvider>().registerRecentlySeenProducts(results);
+      if (results.isNotEmpty) {
+        _recordQuoteHistory(term: q);
+      }
       setState(() { _searchResults = results; _isSearching = false; });
     });
   }
 
   Future<void> _onSearchSubmittedOrScanned(String rawQuery) async {
+    _hideSearchHistoryPopover();
     final q = rawQuery.trim();
     if (q.isEmpty || !mounted) return;
     _debounceTimer?.cancel();
@@ -146,11 +395,13 @@ class _QuoteScreenState extends State<QuoteScreen> {
       final rawResults = await context.read<PosProvider>().search(q);
       if (!mounted) return;
       final results = rawResults.where((p) => p.active).toList();
+      context.read<CatalogProvider>().registerRecentlySeenProducts(results);
       final exact = RemoteScannerService.findExactProductMatch(results, q);
       final Product? match = exact ??
           (results.length == 1 && results.first.active ? results.first : null);
       if (match != null) {
         setState(() => _isSearching = false);
+        _recordQuoteHistory(term: q, product: match);
         _addProduct(match);
         return;
       }
@@ -210,6 +461,10 @@ class _QuoteScreenState extends State<QuoteScreen> {
       );
       return;
     }
+    final activeSearch = _searchCtrl.text.trim();
+    if (activeSearch.isNotEmpty) {
+      _recordQuoteHistory(term: activeSearch, product: product);
+    }
     if (product.isSoldByWeight) {
       _showWeightDialog(product);
     } else {
@@ -222,6 +477,11 @@ class _QuoteScreenState extends State<QuoteScreen> {
 
   void _showWeightDialog(Product product) {
     final ctrl = TextEditingController();
+    final settingsProv = context.read<SettingsProvider>();
+    final isHardwareStore = settingsProv.safeIsHardwareStore;
+    final canUseCalc = settingsProv.canUseHardwareCalculator;
+    final isMetricOrHardware = isHardwareStore || product.isMetricOrLiquidUnit;
+    final unitShort = product.unitShortLabel;
     showDialog(
       context: context,
       builder: (_) => ValueListenableBuilder<TextEditingValue>(
@@ -229,25 +489,72 @@ class _QuoteScreenState extends State<QuoteScreen> {
         builder: (ctx, val, __) {
           final valid = double.tryParse(val.text.replaceAll(',', '.')) != null &&
               double.parse(val.text.replaceAll(',', '.')) > 0;
-          return AlertDialog(
-            title: Text('Peso (Kg) - ${product.name}'),
-            content: TextField(
-              controller: ctrl,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Kg', suffixText: 'KG'),
+          return AppModalShell(
+            title: isMetricOrHardware
+                ? 'Cantidad / Medida ($unitShort) - ${product.name}'
+                : 'Peso (Kg) - ${product.name}',
+            icon: isMetricOrHardware
+                ? Icons.straighten_rounded
+                : Icons.scale_rounded,
+            accent: isMetricOrHardware
+                ? AppModalAccent.teal
+                : AppModalAccent.amber,
+            compact: true,
+            maxWidth: 420,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText:
+                        isMetricOrHardware ? 'Cantidad ($unitShort)' : 'Kg',
+                    suffixText:
+                        isMetricOrHardware ? unitShort.toUpperCase() : 'KG',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                if (canUseCalc) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _openHardwareCalculator(initialProduct: product);
+                    },
+                    icon: const Icon(Icons.calculate_outlined, size: 17),
+                    label: const Text('Abrir Calculadora F7'),
+                  ),
+                ],
+              ],
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            footerActions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar')),
               FilledButton(
-                onPressed: valid ? () {
-                  final kg = double.parse(ctrl.text.replaceAll(',', '.'));
-                  context.read<QuoteProvider>().addToCart(product, quantity: kg);
-                  Navigator.pop(ctx);
-                  _searchCtrl.clear();
-                  setState(() { _searchQuery = ''; _searchResults = []; });
-                  _searchFocus.requestFocus();
-                } : null,
+                onPressed: valid
+                    ? () {
+                        final qty =
+                            double.parse(ctrl.text.replaceAll(',', '.'));
+                        context
+                            .read<QuoteProvider>()
+                            .addToCart(product, quantity: qty);
+                        Navigator.pop(ctx);
+                        _searchCtrl.clear();
+                        setState(() {
+                          _searchQuery = '';
+                          _searchResults = [];
+                        });
+                        _searchFocus.requestFocus();
+                      }
+                    : null,
                 child: const Text('Agregar'),
               ),
             ],
@@ -331,7 +638,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
       debugLabel: 'QuoteScreen',
       onBarcodeScanned: _onSearchSubmittedOrScanned,
       child: Scaffold(
-      appBar: const GlobalAppBar(currentRoute: '/quotes', title: 'Nuevo Presupuesto', showBackButton: true),
+      appBar: const GlobalAppBar(currentRoute: '/quotes/new', title: 'Nuevo Presupuesto', showBackButton: true),
       body: Row(
         children: [
           // -- Panel Izquierdo: Buscador ------------------------------------
@@ -422,28 +729,86 @@ class _QuoteScreenState extends State<QuoteScreen> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _searchCtrl,
-                  focusNode: _searchFocus,
-                  onChanged: _onSearchChanged,
-                  onSubmitted: _onSearchSubmittedOrScanned,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'Buscar producto por nombre o código...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _isSearching
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
-                        : _searchQuery.isNotEmpty
-                            ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() { _searchQuery = ''; _searchResults = []; });
-                              })
-                            : null,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    filled: true,
-                    fillColor: Colors.white,
+                child: TapRegion(
+                  groupId: _searchHistoryTapGroupId,
+                  child: OverlayPortal.overlayChildLayoutBuilder(
+                    controller: _searchHistoryPortalController,
+                    overlayChildBuilder: _buildSearchHistoryOverlay,
+                    child: TextField(
+                      controller: _searchCtrl,
+                      focusNode: _searchFocus,
+                      onTap: () {
+                        if (_searchCtrl.text.trim().isEmpty) {
+                          _showSearchHistoryPopoverIfAvailable();
+                        }
+                      },
+                      onChanged: _onSearchChanged,
+                      onSubmitted: _onSearchSubmittedOrScanned,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar producto por nombre o código...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                            : _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                        _searchResults = [];
+                                        _historyHighlightIndex = -1;
+                                      });
+                                    },
+                                  )
+                                : Consumer<CatalogProvider>(
+                                    builder: (ctx, catalog, _) {
+                                      final localTerminal =
+                                          tryGetLocalTerminalProvider(ctx,
+                                              listen: true);
+                                      if (!_hasQuoteHistoryEntries(
+                                          catalog, localTerminal)) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Focus(
+                                        canRequestFocus: false,
+                                        descendantsAreFocusable: false,
+                                        child: Tooltip(
+                                          message: 'Búsquedas recientes',
+                                          child: IconButton(
+                                            key: const ValueKey(
+                                                'quote_search_history_toggle_btn'),
+                                            icon: Icon(
+                                              Icons.history_rounded,
+                                              size: 20,
+                                              color:
+                                                  _searchHistoryPortalController
+                                                          .isShowing
+                                                      ? const Color(0xFF0F766E)
+                                                      : Colors.blueGrey.shade600,
+                                            ),
+                                            onPressed: () {
+                                              if (_searchHistoryPortalController
+                                                  .isShowing) {
+                                                _hideSearchHistoryPopover();
+                                              } else {
+                                                _showSearchHistoryPopoverIfAvailable();
+                                              }
+                                              _searchFocus.requestFocus();
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -708,14 +1073,31 @@ class _QuoteScreenState extends State<QuoteScreen> {
                     TextButton.icon(
                       onPressed: () => showDialog(
                         context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('¿Limpiar presupuesto?'),
-                          content: const Text('Se borrarán todos los ítems agregados.'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                        builder: (dCtx) => AppModalShell(
+                          title: '¿Limpiar presupuesto?',
+                          icon: Icons.delete_sweep_rounded,
+                          accent: AppModalAccent.red,
+                          compact: true,
+                          maxWidth: 400,
+                          useAlertDialogWrapper: true,
+                          onClose: () => Navigator.pop(dCtx),
+                          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                          body: const Text(
+                            'Se borrarán todos los ítems agregados.',
+                          ),
+                          footerActions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dCtx),
+                              child: const Text('Cancelar'),
+                            ),
                             FilledButton(
-                              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                              onPressed: () { provider.clearCart(); Navigator.pop(context); },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.danger,
+                              ),
+                              onPressed: () {
+                                provider.clearCart();
+                                Navigator.pop(dCtx);
+                              },
                               child: const Text('Limpiar'),
                             ),
                           ],
@@ -806,9 +1188,15 @@ class _QuoteScreenState extends State<QuoteScreen> {
     final tierLabel = provider.activePriceListLabel;
     final isBase = item.activeTier == PriceTier.base;
     final isFractional = (item.quantity - item.quantity.roundToDouble()).abs() > 0.001;
+    final isHardwareStore = context.watch<SettingsProvider>().safeIsHardwareStore;
+    final isMetricOrHardware =
+        isHardwareStore || item.product.isMetricOrLiquidUnit;
+    final unitShort = item.product.unitShortLabel;
     final qtyDisplay = item.product.isSoldByWeight
-        ? '${item.quantity.toQty()} kg'
-        : (isFractional ? item.quantity.toQty() : '${item.quantity.toInt()}');
+        ? '${item.quantity.toQty()} ${isMetricOrHardware ? unitShort : 'kg'}'
+        : (isFractional
+            ? '${item.quantity.toQty()}${isHardwareStore ? ' $unitShort' : ''}'
+            : '${item.quantity.toInt()}');
     return ListTile(
       dense: true,
       title: Text(item.effectiveDisplayName,
@@ -882,17 +1270,31 @@ class _QuoteScreenState extends State<QuoteScreen> {
         bool openCalc = false;
         await showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Editar cantidad - ${item.product.name}'),
-            content: TextField(
+          builder: (ctx) => AppModalShell(
+            title: 'Editar cantidad - ${item.product.name}',
+            icon: Icons.edit_rounded,
+            accent: AppModalAccent.indigo,
+            compact: true,
+            maxWidth: 420,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: TextField(
               controller: ctrl,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: item.product.isSoldByWeight ? 'Kg' : 'Cantidad',
+                labelText: item.product.isSoldByWeight
+                    ? (isMetricOrHardware ? 'Cantidad ($unitShort)' : 'Kg')
+                    : 'Cantidad',
+                suffixText: item.product.isSoldByWeight
+                    ? (isMetricOrHardware ? unitShort.toUpperCase() : 'KG')
+                    : null,
+                border: const OutlineInputBorder(),
               ),
             ),
-            actions: [
+            footerActions: [
               if (canCalc && item.product.id > 0)
                 TextButton.icon(
                   onPressed: () {
@@ -902,7 +1304,9 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   icon: const Icon(Icons.straighten_rounded, size: 17),
                   label: const Text('Recalcular (F7)'),
                 ),
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar')),
               FilledButton(
                 onPressed: () {
                   final qty = double.tryParse(ctrl.text.replaceAll(',', '.'));
@@ -968,115 +1372,128 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
   @override
   Widget build(BuildContext context) {
     final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
-    return AlertDialog(
-      title: Row(
+    return AppModalShell(
+      title: 'Datos del Presupuesto',
+      subtitle: 'Cliente, vigencia y condiciones comerciales',
+      icon: Icons.description_outlined,
+      accent: AppModalAccent.indigo,
+      compact: true,
+      maxWidth: 460,
+      onClose: () => Navigator.pop(context, false),
+      bodyPadding: const EdgeInsets.all(18),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.description_outlined, color: Colors.indigo.shade700),
-          const SizedBox(width: 8),
-          const Text('Datos del Presupuesto'),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.indigo.shade100),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total del Presupuesto',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total del Presupuesto',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(fmt.format(widget.total),
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold,
-                            color: Colors.indigo.shade700)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Datos del Cliente (Opcional)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: widget.nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del cliente',
-                  prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: widget.phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Teléfono (para WhatsApp)',
-                  prefixIcon: Icon(Icons.phone_outlined),
-                  border: OutlineInputBorder(),
-                  helperText: 'Ej: 5491123456789 (con código de país)',
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today_outlined, size: 18, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  const Text('Válido hasta:', style: TextStyle(fontSize: 13)),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () async {
-                      final picked = await showCompactDatePicker(
-                        context: context,
-                        initialDate: DateTime.now().add(const Duration(days: 7)),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                        helpText: 'Fecha de Validez del Presupuesto',
-                      );
-                      if (picked != null) {
-                        setState(() => _validUntil = picked);
-                        widget.onValidUntilChanged(picked);
-                      }
-                    },
-                    child: Text(
-                      _validUntil != null
-                          ? DateFormat('dd/MM/yyyy').format(_validUntil!)
-                          : 'Seleccionar fecha',
-                    ),
+                Text(
+                  fmt.format(widget.total),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.indigo,
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Datos del Cliente (Opcional)',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.nameCtrl,
+            decoration: InputDecoration(
+              labelText: 'Nombre del cliente',
+              prefixIcon: const Icon(Icons.person_outline),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: widget.notesCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Condiciones / Notas (Opcional)',
-                  prefixIcon: Icon(Icons.notes_outlined),
-                  border: OutlineInputBorder(),
-                  hintText: 'Ej: Precios sujetos a disponibilidad de stock.',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              labelText: 'Teléfono (para WhatsApp)',
+              prefixIcon: const Icon(Icons.phone_outlined),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              helperText: 'Ej: 5491123456789 (con código de país)',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_today_outlined,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+              const SizedBox(width: 8),
+              const Text('Válido hasta:', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () async {
+                  final picked = await showCompactDatePicker(
+                    context: context,
+                    initialDate: DateTime.now().add(const Duration(days: 7)),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                    helpText: 'Fecha de Validez del Presupuesto',
+                  );
+                  if (picked != null) {
+                    setState(() => _validUntil = picked);
+                    widget.onValidUntilChanged(picked);
+                  }
+                },
+                child: Text(
+                  _validUntil != null
+                      ? DateFormat('dd/MM/yyyy').format(_validUntil!)
+                      : 'Seleccionar fecha',
                 ),
               ),
-              const SizedBox(height: 8),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.notesCtrl,
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: 'Condiciones / Notas (Opcional)',
+              prefixIcon: const Icon(Icons.notes_outlined),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              hintText: 'Ej: Precios sujetos a disponibilidad de stock.',
+            ),
+          ),
+        ],
       ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: Colors.indigo.shade700),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
           onPressed: () => Navigator.pop(context, true),
           icon: const Icon(Icons.description_rounded),
           label: const Text('Generar'),

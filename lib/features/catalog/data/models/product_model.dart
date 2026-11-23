@@ -34,6 +34,11 @@ class ProductModel extends Product {
     super.recipeYieldQuantity,
     super.recipeIngredients,
     super.unitType,
+    super.supplierSku,
+    super.storageLocation,
+    super.technicalSpec,
+    super.purchasePackageName,
+    super.conversionFactor,
     super.calcConfig,
     super.ivaRate,
     super.needsCatalogReview,
@@ -74,6 +79,16 @@ class ProductModel extends Product {
     double? recipeYieldQuantity,
     List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
+    String? supplierSku,
+    bool clearSupplierSku = false,
+    String? storageLocation,
+    bool clearStorageLocation = false,
+    String? technicalSpec,
+    bool clearTechnicalSpec = false,
+    String? purchasePackageName,
+    bool clearPurchasePackageName = false,
+    double? conversionFactor,
+    bool clearConversionFactor = false,
     Map<String, dynamic>? calcConfig,
     bool clearCalcConfig = false,
     double? ivaRate,
@@ -116,6 +131,15 @@ class ProductModel extends Product {
       recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
+      supplierSku: clearSupplierSku ? null : (supplierSku ?? this.supplierSku),
+      storageLocation: clearStorageLocation ? null : (storageLocation ?? this.storageLocation),
+      technicalSpec: clearTechnicalSpec ? null : (technicalSpec ?? this.technicalSpec),
+      purchasePackageName: clearPurchasePackageName
+          ? null
+          : (purchasePackageName ?? this.purchasePackageName),
+      conversionFactor: clearConversionFactor
+          ? null
+          : (conversionFactor ?? this.conversionFactor),
       calcConfig: clearCalcConfig ? null : (calcConfig ?? this.calcConfig),
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
@@ -255,6 +279,14 @@ class ProductModel extends Product {
       recipeYieldQuantity: double.tryParse(json['recipe_yield_quantity']?.toString() ?? '1') ?? 1.0,
       recipeIngredients: parsedRecipe,
       unitType: json['unit_type']?.toString() ?? 'un',
+      supplierSku: _parseOptionalString(json['supplier_sku']),
+      storageLocation: _parseOptionalString(json['storage_location']),
+      technicalSpec: _parseOptionalString(json['technical_spec']),
+      purchasePackageName: _parseOptionalString(json['purchase_package_name']),
+      conversionFactor: json['conversion_factor'] != null &&
+              json['conversion_factor'].toString().toLowerCase() != 'null'
+          ? double.tryParse(json['conversion_factor'].toString())
+          : null,
       calcConfig: parseCalcConfig(json['calc_config']),
       ivaRate: json['iva_rate'] != null
           ? (double.tryParse(json['iva_rate'].toString()) ?? 21.0)
@@ -276,6 +308,13 @@ class ProductModel extends Product {
           ? Supplier.fromJson(json['supplier'] as Map<String, dynamic>)
           : null,
     );
+  }
+
+  static String? _parseOptionalString(dynamic raw) {
+    if (raw == null) return null;
+    final str = raw.toString().trim();
+    if (str.isEmpty || str.toLowerCase() == 'null') return null;
+    return str;
   }
 
   static Map<String, dynamic>? parseCalcConfig(dynamic raw) {

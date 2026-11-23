@@ -7,12 +7,25 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
+import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
+import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import '../providers/catalog_provider.dart';
 
 class CatalogImportDialog extends StatefulWidget {
-  const CatalogImportDialog({super.key});
+  final int? initialSupplierId;
+  final String? initialSupplierName;
+
+  const CatalogImportDialog({
+    super.key,
+    this.initialSupplierId,
+    this.initialSupplierName,
+  });
 
   @override
   State<CatalogImportDialog> createState() => _CatalogImportDialogState();
@@ -21,9 +34,37 @@ class CatalogImportDialog extends StatefulWidget {
 class _CatalogImportDialogState extends State<CatalogImportDialog> {
   bool _isLoading = false;
   bool _isDragging = false;
-  
+
   String? _selectedFilename;
   Uint8List? _selectedFileBytes;
+  int? _selectedSupplierId;
+  final TextEditingController _marginCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedSupplierId = widget.initialSupplierId;
+    if (_selectedSupplierId == null) {
+      try {
+        _selectedSupplierId = context.read<CatalogProvider?>()?.safeFilterSupplierId;
+      } catch (_) {}
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final supProv = context.read<SupplierProvider?>();
+        if (supProv != null && supProv.suppliers.isEmpty) {
+          supProv.fetchSuppliers();
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _marginCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
@@ -119,45 +160,56 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
   Future<void> _importData() async {
     if (_selectedFileBytes == null || _selectedFilename == null) return;
 
+    final rawMargin = _marginCtrl.text.trim().replaceAll(',', '.');
+    final parsedMargin = rawMargin.isEmpty ? null : double.tryParse(rawMargin);
+    if (rawMargin.isNotEmpty && (parsedMargin == null || parsedMargin < 0)) {
+      SnackBarService.error(
+        context,
+        'Ingresá un porcentaje de margen válido (mayor o igual a 0).',
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       final provider = context.read<CatalogProvider>();
       final result = await provider.importProducts(
         fileBytes: _selectedFileBytes!,
         filename: _selectedFilename!,
+        defaultSupplierId: _selectedSupplierId,
+        defaultMarginPercent: parsedMargin,
       );
       
       if (mounted) {
         Navigator.of(context).pop(true);
+        final noImported =
+            result['created_count'] == 0 && result['updated_count'] == 0;
         showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(
-                  result['created_count'] == 0 && result['updated_count'] == 0 
-                      ? Icons.warning_amber_rounded 
-                      : Icons.check_circle, 
-                  color: result['created_count'] == 0 && result['updated_count'] == 0 
-                      ? Colors.orange 
-                      : Colors.green,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  result['created_count'] == 0 && result['updated_count'] == 0 
-                      ? 'No se importó nada' 
-                      : 'Importación Exitosa'
-                ),
-              ],
-            ),
-            content: Column(
+          builder: (ctx) => AppModalShell(
+            title: noImported ? 'No se importó nada' : 'Importación Exitosa',
+            subtitle: 'Resultado de la importación de catálogo',
+            icon: noImported
+                ? Icons.warning_amber_rounded
+                : Icons.check_circle_rounded,
+            accent:
+                noImported ? AppModalAccent.amber : AppModalAccent.emerald,
+            compact: true,
+            maxWidth: 460,
+            bodyPadding: const EdgeInsets.all(18),
+            body: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (result['created_count'] == 0 && result['updated_count'] == 0) ...[
-                  const Text('El sistema no pudo encontrar productos válidos para importar.'),
+                if (noImported) ...[
+                  const Text(
+                    'El sistema no pudo encontrar productos válidos para importar.',
+                  ),
                   const SizedBox(height: 8),
-                  const Text('⚠️ Asegúrate de que la primera fila de tu Excel tenga exactamente los nombres de las columnas que espera el sistema (ej: "nombre", "codigo_interno", "precio"). Si usaste el archivo crudo del proveedor, debes renombrar las columnas.', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    '⚠️ Asegúrate de que la primera fila de tu Excel tenga exactamente los nombres de las columnas que espera el sistema (ej: "nombre", "codigo_interno", "precio"). Si usaste el archivo crudo del proveedor, debes renombrar las columnas.',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ] else ...[
                   Text('• Productos creados: ${result['created_count']}'),
                   Text('• Productos actualizados: ${result['updated_count']}'),
@@ -165,13 +217,19 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
                   if (result['failed_count'] > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
-                      child: Text('Revisa tu Excel. Hubo filas vacías o sin nombre.', style: TextStyle(color: Colors.red.shade800, fontSize: 12)),
+                      child: Text(
+                        'Revisa tu Excel. Hubo filas vacías o sin nombre.',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
-                ]
+                ],
               ],
             ),
-            actions: [
-              TextButton(
+            footerActions: [
+              FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: const Text('Entendido'),
               ),
@@ -198,81 +256,184 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    SettingsProvider? settingsProv;
+    SupplierProvider? supplierProv;
+    try {
+      settingsProv = context.watch<SettingsProvider?>();
+    } catch (_) {}
+    try {
+      supplierProv = context.watch<SupplierProvider?>();
+    } catch (_) {}
+
+    final canSeeSupplier =
+        (settingsProv?.features.suppliers ?? true) && supplierProv != null;
+    final suppliers = supplierProv != null
+        ? sortByAlphabeticalName<Supplier>(
+            supplierProv.suppliers,
+            (s) => s.name,
+          )
+        : <Supplier>[];
+    final hasMatchingSupplier =
+        _selectedSupplierId != null && suppliers.any((s) => s.id == _selectedSupplierId);
+    final effectiveSupplierValue =
+        hasMatchingSupplier ? _selectedSupplierId : (_selectedSupplierId != null && widget.initialSupplierName != null ? _selectedSupplierId : null);
+
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: _handleDrop,
-      child: AlertDialog(
-        title: const Text('Importar Catálogo (Excel / CSV)'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Arrastra tu archivo aquí o haz clic para seleccionarlo. El sistema actualizará los precios y creará los productos nuevos automáticamente.',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.download, size: 18),
-                label: const Text('Descargar Plantilla (Opcional)'),
-                onPressed: _downloadTemplate,
-              ),
-              const SizedBox(height: 24),
-              InkWell(
-                onTap: _pickFile,
+      child: AppModalShell(
+        title: 'Importar Catálogo (Excel / CSV)',
+        subtitle: 'Alta y actualización masiva desde planilla',
+        icon: Icons.upload_file_rounded,
+        accent: AppModalAccent.emerald,
+        maxWidth: 520,
+        showCloseButton: !_isLoading,
+        bodyPadding: const EdgeInsets.all(18),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Arrastra tu archivo aquí o haz clic para seleccionarlo. El sistema actualizará costos/precios y creará productos nuevos automáticamente.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
                 borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _isDragging ? Colors.green : Colors.blue.shade300, 
-                      style: BorderStyle.solid,
-                      width: _isDragging ? 2.0 : 1.0,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Text(
+                'Columnas opcionales compatibles: cod_proveedor, medida, ubicacion, unidad (mt/m2/m3/bolsa/rollo/caja/par/kg/lt), presentacion_compra y factor_conversion.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Descargar Plantilla (Opcional)'),
+              onPressed: _isLoading ? null : _downloadTemplate,
+            ),
+            const SizedBox(height: 14),
+            if (canSeeSupplier) ...[
+              DropdownButtonFormField<int?>(
+                key: const ValueKey('import_default_supplier_dropdown'),
+                isExpanded: true,
+                initialValue: effectiveSupplierValue,
+                decoration: const InputDecoration(
+                  labelText: 'Proveedor por defecto (Opcional)',
+                  helperText:
+                      'Se asigna a las filas sin columna "proveedor" y prioriza el match por cod_proveedor',
+                  prefixIcon: Icon(Icons.local_shipping_outlined),
+                  isDense: true,
+                ),
+                items: [
+                  const DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text('— Según Excel / Sin proveedor fijo —'),
+                  ),
+                  if (!hasMatchingSupplier &&
+                      _selectedSupplierId != null &&
+                      widget.initialSupplierName != null)
+                    DropdownMenuItem<int?>(
+                      value: _selectedSupplierId,
+                      child: Text(widget.initialSupplierName!),
                     ),
-                    borderRadius: BorderRadius.circular(8),
-                    color: _isDragging ? Colors.green.shade50 : Colors.blue.shade50,
+                  ...suppliers.map(
+                    (s) => DropdownMenuItem<int?>(
+                      value: s.id,
+                      child: Text(s.name, overflow: TextOverflow.ellipsis),
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        _selectedFilename != null ? Icons.file_present : Icons.upload_file,
-                        size: 48,
-                        color: _isDragging ? Colors.green : Colors.blue.shade700,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _selectedFilename != null
-                            ? 'Archivo listo: $_selectedFilename'
-                            : 'Suelta el Excel aquí o haz clic',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _isDragging ? Colors.green.shade800 : Colors.blue.shade900,
-                          fontWeight: _selectedFilename != null ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ],
+                ],
+                onChanged: _isLoading
+                    ? null
+                    : (val) => setState(() => _selectedSupplierId = val),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextFormField(
+              key: const ValueKey('import_default_margin_field'),
+              controller: _marginCtrl,
+              enabled: !_isLoading,
+              decoration: const InputDecoration(
+                labelText: '% Margen por defecto (Opcional)',
+                helperText:
+                    'Si una fila trae Costo sin Precio Venta, calcula PVP = Costo × (1 + %)',
+                prefixIcon: Icon(Icons.percent),
+                suffixText: '%',
+                isDense: true,
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: _isLoading ? null : _pickFile,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _isDragging ? Colors.green : AppColors.primaryBorder,
+                    style: BorderStyle.solid,
+                    width: _isDragging ? 2.0 : 1.0,
                   ),
+                  borderRadius: BorderRadius.circular(10),
+                  color: _isDragging
+                      ? Colors.green.shade50
+                      : AppColors.primarySoft,
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      _selectedFilename != null
+                          ? Icons.file_present
+                          : Icons.upload_file,
+                      size: 42,
+                      color: _isDragging ? Colors.green : AppColors.primaryDark,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedFilename != null
+                          ? 'Archivo listo: $_selectedFilename'
+                          : 'Suelta el Excel aquí o haz clic',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _isDragging
+                            ? Colors.green.shade800
+                            : const Color(0xFF1E3A8A),
+                        fontWeight: _selectedFilename != null
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (_isLoading) ...[
-                const SizedBox(height: 24),
-                const Center(child: CircularProgressIndicator()),
-                const SizedBox(height: 8),
-                const Center(child: Text('Procesando archivo, no cierres esta ventana...')),
-              ]
+            ),
+            if (_isLoading) ...[
+              const SizedBox(height: 18),
+              const Center(child: CircularProgressIndicator()),
+              const SizedBox(height: 8),
+              const Center(
+                child: Text('Procesando archivo, no cierres esta ventana...'),
+              ),
             ],
-          ),
+          ],
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
             child: const Text('Cancelar'),
           ),
           FilledButton.icon(
-            onPressed: (_isLoading || _selectedFilename == null) ? null : _importData,
+            key: const ValueKey('import_catalog_submit_btn'),
+            onPressed:
+                (_isLoading || _selectedFilename == null) ? null : _importData,
             icon: const Icon(Icons.upload, size: 18),
             label: const Text('Comenzar Importación'),
           ),

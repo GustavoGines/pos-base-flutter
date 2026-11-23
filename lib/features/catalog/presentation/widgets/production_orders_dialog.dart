@@ -2,9 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -123,6 +125,11 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
       vsync: this,
       initialIndex: widget.initialTabIndex.clamp(0, 2),
     );
+    final initial = widget.initialProduct;
+    if (initial != null && !initial.isCombo && !initial.isService) {
+      _eligibleTargets = [initial];
+      _applyTargetProductState(initial);
+    }
     _loadInitialData();
   }
 
@@ -157,8 +164,19 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
     ]);
   }
 
+  String _unitLabel(Product? p) {
+    if (p == null) return 'un';
+    final u = p.unitType.trim().toLowerCase();
+    if (u.isEmpty || u == 'un') return 'un';
+    return p.unitShortLabel;
+  }
+
   bool _isEligibleTargetProduct(Product p) {
-    if (p.isCombo || p.isService || !p.active) return false;
+    if (p.isCombo || p.isService) return false;
+    final isExplicitTarget =
+        (widget.initialProduct != null && p.id == widget.initialProduct!.id) ||
+        (_selectedTarget != null && p.id == _selectedTarget!.id);
+    if (!p.active && !isExplicitTarget) return false;
     if (widget.filterIngredientProductId == null) return true;
     if (_usingTransformFallback) {
       return p.id != widget.filterIngredientProductId;
@@ -202,6 +220,14 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
             .where(_isEligibleTargetProduct)
             .toList();
       }
+      final initial = widget.initialProduct;
+      Product? refreshedInitial;
+      if (initial != null && !initial.isCombo && !initial.isService) {
+        refreshedInitial = combined[initial.id] ?? initial;
+        if (!targets.any((p) => p.id == refreshedInitial!.id)) {
+          targets.insert(0, refreshedInitial);
+        }
+      }
       targets.sort((a, b) {
         if (a.hasProductionRecipe != b.hasProductionRecipe) {
           return a.hasProductionRecipe ? -1 : 1;
@@ -223,7 +249,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
             }
           }
         });
-        final preselect = widget.initialProduct ??
+        final preselect = refreshedInitial ??
             targets.cast<Product?>().firstWhere(
                   (p) => p != null && p.hasProductionRecipe,
                   orElse: () => targets.isNotEmpty ? targets.first : null,
@@ -238,6 +264,13 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
   }
 
   void _selectTargetProduct(Product? target) {
+    _applyTargetProductState(target);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _applyTargetProductState(Product? target) {
     for (final l in _ingredientLines) {
       l.dispose();
     }
@@ -247,7 +280,6 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
     if (target == null) {
       _singleValidityDaysCtrl.clear();
       _expirationDate = null;
-      setState(() {});
       return;
     }
 
@@ -303,7 +335,6 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
         ),
       );
     }
-    setState(() {});
   }
 
   void _rescaleRecipeQuantities(double newProducedQty) {
@@ -955,25 +986,15 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
   }
 
   Future<void> _confirmVoidOrder(ProductionOrderModel order) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Anular ${order.orderNumber}'),
-        content: Text(
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Anular ${order.orderNumber}',
+      message:
           'Se devolverán los ingredientes consumidos a sus lotes originales y se retirará el stock generado del lote ${order.producedBatchCode ?? ''}.\n\nSolo es posible si el lote producido no tuvo ventas ni consumo.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Anular Orden'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Anular Orden',
+      cancelLabel: 'Cancelar',
+      icon: Icons.cancel_outlined,
+      isDestructive: true,
     );
     if (confirm != true || !mounted) return;
 
@@ -1025,13 +1046,14 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
   }
 
   Widget _buildCreateTab() {
-    if (_loadingCatalog) {
+    if (_loadingCatalog && _selectedTarget == null) {
       return const Center(child: CircularProgressIndicator());
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_loadingCatalog) const LinearProgressIndicator(minHeight: 2),
         const SizedBox(height: 10),
         Wrap(
           alignment: WrapAlignment.spaceBetween,
@@ -1204,10 +1226,10 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                       decoration: BoxDecoration(
-                        color: selected ? Colors.deepPurple.shade50 : Colors.grey.shade100,
+                        color: selected ? AppColors.primarySoft : Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: selected ? Colors.deepPurple.shade300 : Colors.grey.shade300,
+                          color: selected ? AppColors.primaryBorder : Colors.grey.shade300,
                         ),
                       ),
                       child: Text(
@@ -1215,7 +1237,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected ? Colors.deepPurple.shade800 : Colors.grey.shade800,
+                          color: selected ? AppColors.primaryDark : Colors.grey.shade800,
                         ),
                       ),
                     ),
@@ -1383,7 +1405,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                                             Icon(
                                               Icons.event_outlined,
                                               size: 12,
-                                              color: estExp != null ? Colors.deepPurple.shade600 : Colors.orange.shade800,
+                                              color: estExp != null ? AppColors.primary : Colors.orange.shade800,
                                             ),
                                             const SizedBox(width: 3),
                                             Flexible(
@@ -1394,7 +1416,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                                                 style: TextStyle(
                                                   fontSize: 11.5,
                                                   fontWeight: FontWeight.w600,
-                                                  color: estExp != null ? Colors.deepPurple.shade700 : Colors.orange.shade800,
+                                                  color: estExp != null ? AppColors.primaryDark : Colors.orange.shade800,
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -1715,11 +1737,30 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
     );
   }
 
+  SearchableSelectOption<int> _buildTargetSelectOption(Product p) {
+    return SearchableSelectOption<int>(
+      value: p.id,
+      label: p.name,
+      subtitle: 'Stock actual: ${p.stock.toQty()} ${_unitLabel(p)}'
+          '${p.vencimientoDias != null ? ' • Vida útil: ${p.vencimientoDias}d' : ''}'
+          '${!p.active ? ' • Inactivo en POS' : ''}',
+      badgeText: p.hasProductionRecipe ? 'RECETA' : null,
+      searchKeywords: [
+        p.internalCode,
+        if (p.barcode != null && p.barcode!.isNotEmpty) p.barcode!,
+      ],
+    );
+  }
+
   Widget _buildSingleCreateView() {
     final producedQty =
         double.tryParse(_qtyProducedCtrl.text.replaceAll(',', '.').trim()) ?? 1.0;
     final totalCost = _estimatedTotalCost;
     final estUnitCost = producedQty > 0 ? (totalCost / producedQty) : 0.0;
+    final dropdownTargets = (_selectedTarget != null &&
+            !_eligibleTargets.any((p) => p.id == _selectedTarget!.id))
+        ? <Product>[_selectedTarget!, ..._eligibleTargets]
+        : _eligibleTargets;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(top: 4),
@@ -1743,7 +1784,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                     child: Text(
                       'Re-elaboración desde ${_sourceTransformProduct!.name}'
                       '${widget.initialExplicitBatchCode != null && widget.initialExplicitBatchCode!.isNotEmpty ? ' • Lote ${widget.initialExplicitBatchCode}' : (widget.initialExplicitBatchId != null ? ' • Lote #${widget.initialExplicitBatchId}' : '')}'
-                      '${widget.initialExplicitBatchAvailableQty != null ? ' (Disp: ${widget.initialExplicitBatchAvailableQty!.toQty()} ${_sourceTransformProduct!.unitType})' : ''}',
+                      '${widget.initialExplicitBatchAvailableQty != null ? ' (Disp: ${widget.initialExplicitBatchAvailableQty!.toQty()} ${_unitLabel(_sourceTransformProduct)})' : ''}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1761,40 +1802,14 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
             prefixIcon: Icons.bakery_dining_outlined,
             searchHintText: 'Buscar por nombre, código o barras...',
             helperText: 'Los productos con receta configurada aparecen primero.',
-            options: _eligibleTargets
-                .map(
-                  (p) => SearchableSelectOption<int>(
-                    value: p.id,
-                    label: p.name,
-                    subtitle: 'Stock actual: ${p.stock.toQty()} ${p.unitType}'
-                        '${p.vencimientoDias != null ? ' • Vida útil: ${p.vencimientoDias}d' : ''}',
-                    badgeText: p.hasProductionRecipe ? 'RECETA' : null,
-                    searchKeywords: [
-                      p.internalCode,
-                      if (p.barcode != null && p.barcode!.isNotEmpty) p.barcode!,
-                    ],
-                  ),
-                )
-                .toList(),
+            options: dropdownTargets.map(_buildTargetSelectOption).toList(),
             onRemoteSearch: (q) async {
               final remote = await widget.provider.searchProductsRemote(q, perPage: 80);
               final matched = <SearchableSelectOption<int>>[];
               for (final p in remote) {
                 if (!_isEligibleTargetProduct(p)) continue;
                 _remoteTargetPool[p.id] = p;
-                matched.add(
-                  SearchableSelectOption<int>(
-                    value: p.id,
-                    label: p.name,
-                    subtitle: 'Stock actual: ${p.stock.toQty()} ${p.unitType}'
-                        '${p.vencimientoDias != null ? ' • Vida útil: ${p.vencimientoDias}d' : ''}',
-                    badgeText: p.hasProductionRecipe ? 'RECETA' : null,
-                    searchKeywords: [
-                      p.internalCode,
-                      if (p.barcode != null && p.barcode!.isNotEmpty) p.barcode!,
-                    ],
-                  ),
-                );
+                matched.add(_buildTargetSelectOption(p));
               }
               return matched;
             },
@@ -1826,7 +1841,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                   controller: _qtyProducedCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
-                    labelText: 'Cant. a producir (${_selectedTarget?.unitType ?? 'un'}) *',
+                    labelText: 'Cant. a producir (${_unitLabel(_selectedTarget)}) *',
                     isDense: true,
                     prefixIcon: const Icon(Icons.production_quantity_limits),
                   ),
@@ -2138,7 +2153,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                       ),
                     ),
                     Text(
-                      'Costo unitario del lote resultante: \$${estUnitCost.toCurrency()} / ${_selectedTarget?.unitType ?? 'un'}',
+                      'Costo unitario del lote resultante: \$${estUnitCost.toCurrency()} / ${_unitLabel(_selectedTarget)}',
                       style: TextStyle(fontSize: 12, color: Colors.teal.shade800),
                     ),
                   ],
@@ -2156,7 +2171,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                 ),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
+                    backgroundColor: AppColors.indigo,
                     foregroundColor: Colors.white,
                   ),
                   icon: const Icon(Icons.qr_code_2, size: 18),
@@ -2318,7 +2333,7 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
                                     if (!o.isVoided && o.producedBatchId != null)
                                       IconButton(
                                         tooltip: 'Imprimir Etiqueta Térmica del Lote',
-                                        icon: const Icon(Icons.qr_code_2, color: Colors.deepPurple),
+                                        icon: const Icon(Icons.qr_code_2, color: AppColors.indigo),
                                         onPressed: () {
                                           final match = _eligibleTargets.cast<Product?>().firstWhere(
                                                 (p) => p?.id == o.productId,
@@ -2588,72 +2603,53 @@ class _ProductionOrdersDialogState extends State<ProductionOrdersDialog>
 
   @override
   Widget build(BuildContext context) {
-    final screenH = MediaQuery.of(context).size.height;
     return RemoteScannerListener(
       debugLabel: 'ProductionOrdersDialog',
       onBarcodeScanned: _handleBarcodeScanned,
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 960,
-            maxHeight: math.min(760, screenH * 0.90),
+      child: AppModalShell(
+        title: 'Producción Propia (Cocina / Pastelería) y Mermas',
+        subtitle:
+            'Elaboración por receta, lotes con vencimiento y control de mermas',
+        icon: Icons.bakery_dining_outlined,
+        accent: AppModalAccent.orange,
+        maxWidth: 960,
+        maxHeight: 760,
+        expandBody: true,
+        topBar: Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surfaceMuted,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.bakery_dining_outlined, color: Colors.deepOrange, size: 28),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Producción Propia (Cocina / Pastelería) y Mermas',
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                TabBar(
-                  controller: _tabCtrl,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: const [
-                    Tab(icon: Icon(Icons.add_task, size: 18), text: 'Nueva Elaboración'),
-                    Tab(icon: Icon(Icons.history, size: 18), text: 'Órdenes de Producción'),
-                    Tab(icon: Icon(Icons.assessment_outlined, size: 18), text: 'Reporte de Mermas'),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabCtrl,
-                    children: [
-                      _buildCreateTab(),
-                      _buildHistoryTab(),
-                      _buildWasteReportTab(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          child: TabBar(
+            controller: _tabCtrl,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelColor: AppColors.orange,
+            unselectedLabelColor: AppColors.textSecondary,
+            indicatorColor: AppColors.orange,
+            dividerColor: Colors.transparent,
+            tabs: const [
+              Tab(icon: Icon(Icons.add_task, size: 18), text: 'Nueva Elaboración'),
+              Tab(icon: Icon(Icons.history, size: 18), text: 'Órdenes de Producción'),
+              Tab(icon: Icon(Icons.assessment_outlined, size: 18), text: 'Reporte de Mermas'),
+            ],
           ),
         ),
+        bodyPadding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+        body: TabBarView(
+          controller: _tabCtrl,
+          children: [
+            _buildCreateTab(),
+            _buildHistoryTab(),
+            _buildWasteReportTab(),
+          ],
+        ),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar (Esc)'),
+          ),
+        ],
       ),
     );
   }

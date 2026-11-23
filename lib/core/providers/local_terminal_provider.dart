@@ -19,6 +19,18 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _pinnedProductsKey = 'local_pinned_product_ids';
   static const String _recentSearchTermsKey = 'local_pos_recent_search_terms_v1';
   static const String _recentSearchProductIdsKey = 'local_pos_recent_search_product_ids_v1';
+
+  // Scopes operativos del historial de búsquedas
+  static const String scopePosCounter = 'pos_counter';
+  static const String scopeQuotes = 'quotes';
+  static const String scopeHardwareCalc = 'hardware_calc';
+  static const String scopeCatalog = 'catalog';
+  static const List<String> _knownSearchScopes = [
+    scopePosCounter,
+    scopeQuotes,
+    scopeHardwareCalc,
+    scopeCatalog,
+  ];
   static const int maxRecentSearchTerms = 8;
   static const int maxRecentSearchProducts = 5;
 
@@ -44,8 +56,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   double _salesHistorySplitRatio = 0.28;
 
   Set<int> _pinnedProductIds = {};
-  List<String> _recentSearchTerms = [];
-  List<int> _recentSearchProductIds = [];
+  final Map<String, List<String>> _scopedRecentSearchTerms = {};
+  final Map<String, List<int>> _scopedRecentSearchProductIds = {};
 
   bool _isInitialized = false;
 
@@ -64,8 +76,10 @@ class LocalTerminalProvider extends ChangeNotifier {
   double get customersSplitRatio => _customersSplitRatio;
   double get salesHistorySplitRatio => _salesHistorySplitRatio;
   Set<int> get pinnedProductIds => _pinnedProductIds;
-  List<String> get recentSearchTerms => List<String>.unmodifiable(_recentSearchTerms);
-  List<int> get recentSearchProductIds => List<int>.unmodifiable(_recentSearchProductIds);
+  List<String> get recentSearchTerms => List<String>.unmodifiable(
+      _scopedRecentSearchTerms[scopePosCounter] ?? const []);
+  List<int> get recentSearchProductIds => List<int>.unmodifiable(
+      _scopedRecentSearchProductIds[scopePosCounter] ?? const []);
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -103,23 +117,8 @@ class LocalTerminalProvider extends ChangeNotifier {
           .toSet();
     }
 
-    final savedTerms = prefs.getStringList(_recentSearchTermsKey);
-    if (savedTerms != null) {
-      _recentSearchTerms = savedTerms
-          .map((t) => t.trim())
-          .where((t) => isValidRecentSearchTerm(t))
-          .take(maxRecentSearchTerms)
-          .toList();
-    }
-
-    final savedProdIds = prefs.getStringList(_recentSearchProductIdsKey);
-    if (savedProdIds != null) {
-      _recentSearchProductIds = savedProdIds
-          .map((idStr) => int.tryParse(idStr))
-          .whereType<int>()
-          .where((id) => id > 0)
-          .take(maxRecentSearchProducts)
-          .toList();
+    for (final scope in _knownSearchScopes) {
+      _loadSearchHistoryScopeFromPrefs(prefs, scope);
     }
 
     _isInitialized = true;
@@ -257,85 +256,411 @@ class LocalTerminalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  static String _termsKeyForScope(String scope) {
+    switch (scope) {
+      case scopePosCounter:
+        return _recentSearchTermsKey;
+      case scopeQuotes:
+        return 'local_quotes_recent_search_terms_v1';
+      case scopeHardwareCalc:
+        return 'local_hwcalc_recent_search_terms_v1';
+      case scopeCatalog:
+        return 'local_catalog_recent_search_terms_v1';
+      default:
+        final safe = scope.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+        return 'local_${safe}_recent_search_terms_v1';
+    }
+  }
+
+  static String _productIdsKeyForScope(String scope) {
+    switch (scope) {
+      case scopePosCounter:
+        return _recentSearchProductIdsKey;
+      case scopeQuotes:
+        return 'local_quotes_recent_search_product_ids_v1';
+      case scopeHardwareCalc:
+        return 'local_hwcalc_recent_search_product_ids_v1';
+      case scopeCatalog:
+        return 'local_catalog_recent_search_product_ids_v1';
+      default:
+        final safe = scope.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+        return 'local_${safe}_recent_search_product_ids_v1';
+    }
+  }
+
+  void _loadSearchHistoryScopeFromPrefs(SharedPreferences prefs, String scope) {
+    final savedTerms = prefs.getStringList(_termsKeyForScope(scope));
+    if (savedTerms != null) {
+      final seenLower = <String>{};
+      final cleanedTerms = <String>[];
+      for (final raw in savedTerms) {
+        final cleaned = normalizeRecentSearchTerm(raw);
+        if (!isValidRecentSearchTerm(cleaned)) continue;
+        final lower = cleaned.toLowerCase();
+        if (seenLower.add(lower)) {
+          cleanedTerms.add(cleaned);
+          if (cleanedTerms.length >= maxRecentSearchTerms) break;
+        }
+      }
+      _scopedRecentSearchTerms[scope] = cleanedTerms;
+    }
+
+    final savedProdIds = prefs.getStringList(_productIdsKeyForScope(scope));
+    if (savedProdIds != null) {
+      final seenIds = <int>{};
+      final cleanedIds = <int>[];
+      for (final idStr in savedProdIds) {
+        final id = int.tryParse(idStr);
+        if (id != null && id > 0 && seenIds.add(id)) {
+          cleanedIds.add(id);
+          if (cleanedIds.length >= maxRecentSearchProducts) break;
+        }
+      }
+      _scopedRecentSearchProductIds[scope] = cleanedIds;
+    }
+  }
+
+  /// Normaliza espacios repetidos antes de validar o deduplicar un término.
+  static String normalizeRecentSearchTerm(String raw) =>
+      raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+
   /// Filtro anti-basura para historial de búsquedas del mostrador POS:
-  /// - Ignora términos vacíos o de menos de 2 caracteres.
-  /// - Ignora códigos internos de lote (`L#...`) o presupuestos (`PRES-...`).
+  /// - Ignora términos vacíos, de menos de 2 caracteres o mayores a 45 caracteres.
+  /// - Exige al menos una letra o dígito (ignora signos repetidos como "..." o "---").
+  /// - Ignora códigos internos de lote (`L#...`), presupuestos (`PRES-...`),
+  ///   remitos/órdenes (`REM00012`, `ORD00045`) y códigos internos de balanza/etiqueta (`20...`).
   /// - Ignora cualquier cadena puramente numérica de 5 o más dígitos (EAN-13, EAN-8, UPC, PLU).
+  /// - Conserva SKUs reales alfanuméricos cortos como `'HW101'`, `'T2'`, `'101'` o `'WD-40'`.
   static bool isValidRecentSearchTerm(String raw) {
-    final cleaned = raw.trim();
-    if (cleaned.length < 2) return false;
+    final cleaned = normalizeRecentSearchTerm(raw);
+    if (cleaned.length < 2 || cleaned.length > 45) return false;
+    if (!RegExp(r'[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]').hasMatch(cleaned)) return false;
     final upper = cleaned.toUpperCase();
     if (upper.startsWith('L#') || upper.startsWith('PRES-')) return false;
+    if (RegExp(r'^(?:REM|ORD)\d{4,}$').hasMatch(upper)) return false;
+    if (RegExp(r'^20\d{5,}').hasMatch(upper)) return false;
     if (RegExp(r'^\d{5,}$').hasMatch(cleaned)) return false;
     return true;
+  }
+
+  List<String> _getRecentTermsForScopeInternal(String scope) =>
+      List<String>.unmodifiable(_scopedRecentSearchTerms[scope] ?? const []);
+
+  List<int> _getRecentProductIdsForScopeInternal(String scope) =>
+      List<int>.unmodifiable(
+          _scopedRecentSearchProductIds[scope] ?? const []);
+
+  Future<void> _recordRecentSearchForScopeInternal(
+    String scope, {
+    String? term,
+    int? selectedProductId,
+  }) async {
+    bool termsChanged = false;
+    bool idsChanged = false;
+
+    final currentTerms =
+        List<String>.from(_scopedRecentSearchTerms[scope] ?? const []);
+    final currentIds =
+        List<int>.from(_scopedRecentSearchProductIds[scope] ?? const []);
+
+    if (term != null && isValidRecentSearchTerm(term)) {
+      final cleanTerm = normalizeRecentSearchTerm(term);
+      final lower = cleanTerm.toLowerCase();
+      if (currentTerms.isNotEmpty) {
+        final latestLower = currentTerms.first.toLowerCase();
+        if (cleanTerm.length > currentTerms.first.length &&
+            lower.startsWith(latestLower)) {
+          currentTerms.removeAt(0);
+        }
+      }
+      currentTerms.removeWhere((t) => t.toLowerCase() == lower);
+      currentTerms.insert(0, cleanTerm);
+      if (currentTerms.length > maxRecentSearchTerms) {
+        currentTerms.removeRange(maxRecentSearchTerms, currentTerms.length);
+      }
+      _scopedRecentSearchTerms[scope] = currentTerms;
+      termsChanged = true;
+    }
+
+    if (selectedProductId != null && selectedProductId > 0) {
+      currentIds.remove(selectedProductId);
+      currentIds.insert(0, selectedProductId);
+      if (currentIds.length > maxRecentSearchProducts) {
+        currentIds.removeRange(maxRecentSearchProducts, currentIds.length);
+      }
+      _scopedRecentSearchProductIds[scope] = currentIds;
+      idsChanged = true;
+    }
+
+    if (!termsChanged && !idsChanged) return;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    if (termsChanged) {
+      await prefs.setStringList(_termsKeyForScope(scope), currentTerms);
+    }
+    if (idsChanged) {
+      await prefs.setStringList(
+        _productIdsKeyForScope(scope),
+        currentIds.map((id) => id.toString()).toList(),
+      );
+    }
+  }
+
+  Future<void> _removeRecentTermForScopeInternal(
+    String scope,
+    String term,
+  ) async {
+    final list = _scopedRecentSearchTerms[scope];
+    if (list == null || list.isEmpty) return;
+    final lower = normalizeRecentSearchTerm(term).toLowerCase();
+    final before = list.length;
+    list.removeWhere((t) => t.toLowerCase() == lower);
+    if (list.length == before) return;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_termsKeyForScope(scope), list);
+  }
+
+  Future<void> _removeRecentProductIdForScopeInternal(
+    String scope,
+    int productId,
+  ) async {
+    final list = _scopedRecentSearchProductIds[scope];
+    if (list == null || !list.remove(productId)) return;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _productIdsKeyForScope(scope),
+      list.map((id) => id.toString()).toList(),
+    );
+  }
+
+  Future<void> _clearRecentSearchesForScopeInternal(String scope) async {
+    final terms = _scopedRecentSearchTerms[scope];
+    final ids = _scopedRecentSearchProductIds[scope];
+    final hasAny =
+        (terms != null && terms.isNotEmpty) || (ids != null && ids.isNotEmpty);
+    if (!hasAny) return;
+    _scopedRecentSearchTerms[scope] = [];
+    _scopedRecentSearchProductIds[scope] = [];
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_termsKeyForScope(scope));
+    await prefs.remove(_productIdsKeyForScope(scope));
   }
 
   Future<void> recordRecentSearch({
     String? term,
     int? selectedProductId,
+  }) =>
+      _recordRecentSearchForScopeInternal(
+        scopePosCounter,
+        term: term,
+        selectedProductId: selectedProductId,
+      );
+
+  Future<void> removeRecentSearchTerm(String term) =>
+      _removeRecentTermForScopeInternal(scopePosCounter, term);
+
+  Future<void> removeRecentSearchProductId(int productId) =>
+      _removeRecentProductIdForScopeInternal(scopePosCounter, productId);
+
+  Future<void> clearRecentSearches() =>
+      _clearRecentSearchesForScopeInternal(scopePosCounter);
+}
+
+/// Extensión segura para múltiples scopes (`pos_counter`, `quotes`, `hardware_calc`, `catalog`).
+/// Usa bloques `try/catch` con fallback en memoria para no romper tests que emplean mocks
+/// mediante `implements LocalTerminalProvider`.
+extension LocalTerminalSearchHistoryX on LocalTerminalProvider {
+  static final Expando<Map<String, List<String>>> _fallbackTermsByInstance =
+      Expando<Map<String, List<String>>>('_fallbackRecentTermsByScope');
+  static final Expando<Map<String, List<int>>> _fallbackIdsByInstance =
+      Expando<Map<String, List<int>>>('_fallbackRecentIdsByScope');
+
+  Map<String, List<String>> _ensureFallbackTermsMap() {
+    var map = _fallbackTermsByInstance[this];
+    if (map == null) {
+      map = {};
+      _fallbackTermsByInstance[this] = map;
+    }
+    return map;
+  }
+
+  Map<String, List<int>> _ensureFallbackIdsMap() {
+    var map = _fallbackIdsByInstance[this];
+    if (map == null) {
+      map = {};
+      _fallbackIdsByInstance[this] = map;
+    }
+    return map;
+  }
+
+  List<String> recentTermsForScope(String scope) {
+    try {
+      return _getRecentTermsForScopeInternal(scope);
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          return recentSearchTerms;
+        } catch (_) {}
+      }
+      final list = _ensureFallbackTermsMap()[scope];
+      return List<String>.unmodifiable(list ?? const []);
+    }
+  }
+
+  List<int> recentProductIdsForScope(String scope) {
+    try {
+      return _getRecentProductIdsForScopeInternal(scope);
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          return recentSearchProductIds;
+        } catch (_) {}
+      }
+      final list = _ensureFallbackIdsMap()[scope];
+      return List<int>.unmodifiable(list ?? const []);
+    }
+  }
+
+  Future<void> recordRecentSearchForScope(
+    String scope, {
+    String? term,
+    int? selectedProductId,
   }) async {
-    bool changed = false;
+    try {
+      await _recordRecentSearchForScopeInternal(
+        scope,
+        term: term,
+        selectedProductId: selectedProductId,
+      );
+      return;
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          await recordRecentSearch(
+            term: term,
+            selectedProductId: selectedProductId,
+          );
+          return;
+        } catch (_) {}
+      }
+    }
 
-    if (term != null && isValidRecentSearchTerm(term)) {
-      final cleanTerm = term.trim();
+    var changed = false;
+    if (term != null && LocalTerminalProvider.isValidRecentSearchTerm(term)) {
+      final cleanTerm = LocalTerminalProvider.normalizeRecentSearchTerm(term);
       final lower = cleanTerm.toLowerCase();
-      _recentSearchTerms.removeWhere((t) => t.toLowerCase() == lower);
-      _recentSearchTerms.insert(0, cleanTerm);
-      if (_recentSearchTerms.length > maxRecentSearchTerms) {
-        _recentSearchTerms =
-            _recentSearchTerms.sublist(0, maxRecentSearchTerms);
+      final map = _ensureFallbackTermsMap();
+      final list = List<String>.from(map[scope] ?? const []);
+      if (list.isNotEmpty) {
+        final latestLower = list.first.toLowerCase();
+        if (cleanTerm.length > list.first.length &&
+            lower.startsWith(latestLower)) {
+          list.removeAt(0);
+        }
       }
+      list.removeWhere((t) => t.toLowerCase() == lower);
+      list.insert(0, cleanTerm);
+      if (list.length > LocalTerminalProvider.maxRecentSearchTerms) {
+        list.removeRange(
+            LocalTerminalProvider.maxRecentSearchTerms, list.length);
+      }
+      map[scope] = list;
       changed = true;
     }
-
     if (selectedProductId != null && selectedProductId > 0) {
-      _recentSearchProductIds.remove(selectedProductId);
-      _recentSearchProductIds.insert(0, selectedProductId);
-      if (_recentSearchProductIds.length > maxRecentSearchProducts) {
-        _recentSearchProductIds =
-            _recentSearchProductIds.sublist(0, maxRecentSearchProducts);
+      final map = _ensureFallbackIdsMap();
+      final list = List<int>.from(map[scope] ?? const []);
+      list.remove(selectedProductId);
+      list.insert(0, selectedProductId);
+      if (list.length > LocalTerminalProvider.maxRecentSearchProducts) {
+        list.removeRange(
+            LocalTerminalProvider.maxRecentSearchProducts, list.length);
       }
+      map[scope] = list;
       changed = true;
     }
-
-    if (!changed) return;
-    notifyListeners();
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentSearchTermsKey, _recentSearchTerms);
-    await prefs.setStringList(
-      _recentSearchProductIdsKey,
-      _recentSearchProductIds.map((id) => id.toString()).toList(),
-    );
+    if (changed) {
+      try {
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        notifyListeners();
+      } catch (_) {}
+    }
   }
 
-  Future<void> removeRecentSearchTerm(String term) async {
-    final lower = term.trim().toLowerCase();
-    final before = _recentSearchTerms.length;
-    _recentSearchTerms.removeWhere((t) => t.toLowerCase() == lower);
-    if (_recentSearchTerms.length == before) return;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentSearchTermsKey, _recentSearchTerms);
+  Future<void> removeRecentTermForScope(String scope, String term) async {
+    try {
+      await _removeRecentTermForScopeInternal(scope, term);
+      return;
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          await removeRecentSearchTerm(term);
+          return;
+        } catch (_) {}
+      }
+    }
+    final map = _ensureFallbackTermsMap();
+    final list = map[scope];
+    if (list == null) return;
+    final lower = LocalTerminalProvider.normalizeRecentSearchTerm(term).toLowerCase();
+    final before = list.length;
+    list.removeWhere((t) => t.toLowerCase() == lower);
+    if (list.length != before) {
+      try {
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        notifyListeners();
+      } catch (_) {}
+    }
   }
 
-  Future<void> removeRecentSearchProductId(int productId) async {
-    if (!_recentSearchProductIds.remove(productId)) return;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _recentSearchProductIdsKey,
-      _recentSearchProductIds.map((id) => id.toString()).toList(),
-    );
+  Future<void> removeRecentProductIdForScope(
+    String scope,
+    int productId,
+  ) async {
+    try {
+      await _removeRecentProductIdForScopeInternal(scope, productId);
+      return;
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          await removeRecentSearchProductId(productId);
+          return;
+        } catch (_) {}
+      }
+    }
+    final map = _ensureFallbackIdsMap();
+    final list = map[scope];
+    if (list != null && list.remove(productId)) {
+      try {
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        notifyListeners();
+      } catch (_) {}
+    }
   }
 
-  Future<void> clearRecentSearches() async {
-    if (_recentSearchTerms.isEmpty && _recentSearchProductIds.isEmpty) return;
-    _recentSearchTerms = [];
-    _recentSearchProductIds = [];
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_recentSearchTermsKey);
-    await prefs.remove(_recentSearchProductIdsKey);
+  Future<void> clearRecentSearchesForScope(String scope) async {
+    try {
+      await _clearRecentSearchesForScopeInternal(scope);
+      return;
+    } catch (_) {
+      if (scope == LocalTerminalProvider.scopePosCounter) {
+        try {
+          await clearRecentSearches();
+          return;
+        } catch (_) {}
+      }
+    }
+    final terms = _ensureFallbackTermsMap().remove(scope);
+    final ids = _ensureFallbackIdsMap().remove(scope);
+    if ((terms != null && terms.isNotEmpty) || (ids != null && ids.isNotEmpty)) {
+      try {
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        notifyListeners();
+      } catch (_) {}
+    }
   }
 }

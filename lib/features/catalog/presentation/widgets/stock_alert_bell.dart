@@ -339,8 +339,8 @@ class _StockAlertItem extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 product.isSoldByWeight
-                    ? '${stock.toQty()} Kg'
-                    : '${stock.toInt()} u',
+                    ? '${stock.toQty()} ${product.effectiveQuantityUnitLabel}'
+                    : '${stock.toInt()} ${product.unitType.trim().toLowerCase() == 'un' || product.unitType.trim().isEmpty ? 'u' : product.unitShortLabel}',
                 style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isCritical ? Colors.red : Colors.orange.shade800),

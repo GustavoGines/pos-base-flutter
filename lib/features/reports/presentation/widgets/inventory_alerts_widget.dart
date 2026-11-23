@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/inventory_alerts_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -287,8 +288,9 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
-              final canUseBatches =
-                  settings.features.batchExpiration || settings.features.production;
+              final canUseBatches = !settings.safeIsHardwareStore &&
+                  (settings.features.batchExpiration ||
+                      settings.features.production);
               final expAlerts = canUseBatches
                   ? _safeExpirationAlerts(provider)
                   : const <dynamic>[];
@@ -501,8 +503,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        final expAlerts = _safeExpirationAlerts(provider);
-        final deficitAlerts = _safeDeficitAlerts(provider);
+        final canUseBatches = !settings.safeIsHardwareStore &&
+            (settings.features.batchExpiration || settings.features.production);
+        final expAlerts = canUseBatches
+            ? _safeExpirationAlerts(provider)
+            : const <dynamic>[];
+        final deficitAlerts = canUseBatches
+            ? _safeDeficitAlerts(provider)
+            : const <dynamic>[];
         final hasAnyAlerts = hasPredictive
             ? (provider.alerts.isNotEmpty || deficitAlerts.isNotEmpty)
             : (provider.reactiveAlerts.isNotEmpty ||
@@ -590,8 +598,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        final canUseBatches =
-            settings.features.batchExpiration || settings.features.production;
+        final canUseBatches = !settings.safeIsHardwareStore &&
+            (settings.features.batchExpiration || settings.features.production);
         final expAlerts = canUseBatches
             ? _safeExpirationAlerts(provider)
             : const <dynamic>[];
@@ -1272,63 +1280,71 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: Text('Merma: $productName'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        builder: (ctx, setModalState) => AppModalShell(
+          title: 'Merma: $productName',
+          subtitle: batchId != null
+              ? 'Lote: ${batchCode ?? '#$batchId'} • Stock lote: ${availableQty.toQty()}'
+              : 'Stock actual disponible: ${availableQty.toQty()}',
+          icon: Icons.remove_shopping_cart_rounded,
+          accent: AppModalAccent.orange,
+          compact: true,
+          maxWidth: 440,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: qtyCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Cantidad a dar de baja',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo de merma',
+                  isDense: true,
+                ),
+              ),
+              if (inlineError != null) ...[
+                const SizedBox(height: 10),
                 Text(
-                  batchId != null
-                      ? 'Lote: ${batchCode ?? '#$batchId'} • Stock lote: ${availableQty.toQty()}'
-                      : 'Stock actual disponible: ${availableQty.toQty()}',
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: qtyCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Cantidad a dar de baja',
-                    isDense: true,
+                  inlineError!,
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo de merma',
-                    isDense: true,
-                  ),
-                ),
-                if (inlineError != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    inlineError!,
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
               ],
-            ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          footerActions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
               onPressed: () {
-                final parsed = double.tryParse(qtyCtrl.text.replaceAll(',', '.').trim());
+                final parsed =
+                    double.tryParse(qtyCtrl.text.replaceAll(',', '.').trim());
                 if (parsed == null || parsed <= 0) {
-                  setModalState(() => inlineError = 'Ingresá una cantidad mayor a cero.');
+                  setModalState(
+                      () => inlineError = 'Ingresá una cantidad mayor a cero.');
                   return;
                 }
                 if (availableQty > 0 && parsed > availableQty + 0.0005) {
                   setModalState(
-                    () => inlineError = 'No podés dar de baja más que el stock disponible (${availableQty.toQty()}).',
+                    () => inlineError =
+                        'No podés dar de baja más que el stock disponible (${availableQty.toQty()}).',
                   );
                   return;
                 }
@@ -1446,135 +1462,149 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: const Row(
+        builder: (ctx, setModalState) => AppModalShell(
+          title: 'Crear Oferta de Liquidación',
+          subtitle: productName,
+          icon: Icons.local_offer_rounded,
+          accent: AppModalAccent.amber,
+          compact: true,
+          maxWidth: 460,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.local_offer_outlined, color: Colors.purple),
-              SizedBox(width: 8),
-              Flexible(child: Text('Crear Oferta de Liquidación')),
+              if (expWasInPast || isExpired) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade400),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 18, color: Colors.amber.shade900),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          parsedExpDay != null
+                              ? 'La fecha registrada (${DateFormat('dd/MM/yyyy').format(parsedExpDay)}) ya pasó. Para que la oferta impacte hoy en caja, sugerimos vigencia hasta el ${DateFormat('dd/MM/yyyy').format(endDate)}. Si la mercadería no está apta, usá "Registrar Merma".'
+                              : 'Producto marcado como vencido. Si vas a liquidarlo hoy, elegí una fecha límite desde hoy en adelante; si no es apto, registrá Merma.',
+                          style: TextStyle(
+                              fontSize: 11.5, color: Colors.amber.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              TextField(
+                controller: nameCtrl,
+                maxLength: 150,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre de la oferta',
+                  isDense: true,
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: pctCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Porcentaje de descuento (%)',
+                  suffixText: '%',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final preset in const [
+                    ('Solo hoy', 0),
+                    ('+2 días', 2),
+                    ('+3 días', 3),
+                    ('+7 días', 7),
+                  ])
+                    ChoiceChip(
+                      label:
+                          Text(preset.$1, style: const TextStyle(fontSize: 11)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      selected: sameDay(
+                          endDate, today.add(Duration(days: preset.$2))),
+                      onSelected: (_) {
+                        setModalState(() {
+                          endDate = today.add(Duration(days: preset.$2));
+                          inlineError = null;
+                        });
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.event, size: 16),
+                label: Text(
+                    'Válida hasta: ${DateFormat('dd/MM/yyyy').format(endDate)}'),
+                onPressed: () async {
+                  final picked = await showCompactDatePicker(
+                    context: ctx,
+                    initialDate: endDate.isBefore(today) ? today : endDate,
+                    firstDate: today,
+                    helpText: 'Fecha fin de liquidación',
+                  );
+                  if (picked != null) {
+                    setModalState(() {
+                      endDate = DateTime(picked.year, picked.month, picked.day);
+                      inlineError = null;
+                    });
+                  }
+                },
+              ),
+              if (inlineError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  inlineError!,
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (expWasInPast || isExpired) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.shade400),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber.shade900),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            parsedExpDay != null
-                                ? 'La fecha registrada (${DateFormat('dd/MM/yyyy').format(parsedExpDay)}) ya pasó. Para que la oferta impacte hoy en caja, sugerimos vigencia hasta el ${DateFormat('dd/MM/yyyy').format(endDate)}. Si la mercadería no está apta, usá "Registrar Merma".'
-                                : 'Producto marcado como vencido. Si vas a liquidarlo hoy, elegí una fecha límite desde hoy en adelante; si no es apto, registrá Merma.',
-                            style: TextStyle(fontSize: 11.5, color: Colors.amber.shade900),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                TextField(
-                  controller: nameCtrl,
-                  maxLength: 150,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la oferta',
-                    isDense: true,
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: pctCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Porcentaje de descuento (%)',
-                    suffixText: '%',
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final preset in const [
-                      ('Solo hoy', 0),
-                      ('+2 días', 2),
-                      ('+3 días', 3),
-                      ('+7 días', 7),
-                    ])
-                      ChoiceChip(
-                        label: Text(preset.$1, style: const TextStyle(fontSize: 11)),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        selected: sameDay(endDate, today.add(Duration(days: preset.$2))),
-                        onSelected: (_) {
-                          setModalState(() {
-                            endDate = today.add(Duration(days: preset.$2));
-                            inlineError = null;
-                          });
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.event, size: 16),
-                  label: Text('Válida hasta: ${DateFormat('dd/MM/yyyy').format(endDate)}'),
-                  onPressed: () async {
-                    final picked = await showCompactDatePicker(
-                      context: ctx,
-                      initialDate: endDate.isBefore(today) ? today : endDate,
-                      firstDate: today,
-                      helpText: 'Fecha fin de liquidación',
-                    );
-                    if (picked != null) {
-                      setModalState(() {
-                        endDate = DateTime(picked.year, picked.month, picked.day);
-                        inlineError = null;
-                      });
-                    }
-                  },
-                ),
-                if (inlineError != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    inlineError!,
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
+          footerActions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
             FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+              ),
               onPressed: () {
-                final pct = double.tryParse(pctCtrl.text.replaceAll(',', '.').trim());
+                final pct =
+                    double.tryParse(pctCtrl.text.replaceAll(',', '.').trim());
                 if (pct == null || pct <= 0 || pct > 100) {
-                  setModalState(() => inlineError = 'Ingresá un descuento válido entre 1% y 100%.');
+                  setModalState(() => inlineError =
+                      'Ingresá un descuento válido entre 1% y 100%.');
                   return;
                 }
                 if (endDate.isBefore(today)) {
                   setModalState(
-                    () => inlineError = 'La fecha límite no puede ser anterior a hoy para que aplique en caja.',
+                    () => inlineError =
+                        'La fecha límite no puede ser anterior a hoy para que aplique en caja.',
                   );
                   return;
                 }
@@ -1704,24 +1734,16 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   }) async {
     _hideOverlay();
     if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Quitar fecha de vencimiento'),
-        content: Text(
-          batchId != null
-              ? 'Se quitará la fecha de vencimiento del lote ${batchCode ?? '#$batchId'} de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".'
-              : 'Se quitará la fecha de vencimiento de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Quitar fecha'),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Quitar fecha de vencimiento',
+      message: batchId != null
+          ? 'Se quitará la fecha de vencimiento del lote ${batchCode ?? '#$batchId'} de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".'
+          : 'Se quitará la fecha de vencimiento de "$productName" SIN descontar stock.\n\nSi la mercadería se descartó, usá "Registrar Merma".',
+      confirmLabel: 'Quitar fecha',
+      cancelLabel: 'Cancelar',
+      icon: Icons.event_busy_rounded,
+      isDestructive: true,
     );
     if (confirmed != true || !mounted) return;
 

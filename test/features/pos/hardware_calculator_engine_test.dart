@@ -312,6 +312,30 @@ void main() {
       final impregnante = HardwareCalculatorEngine.inferConfigFromName(
           'Impregnante para madera 4L');
       expect(impregnante['type'], 'paint');
+
+      // Nuevas pulgadas de madera (1", 2", 8") además de 3", 4", 5", 6"
+      final presetKeys = HardwareCalculatorEngine.woodInchPresets
+          .map((p) => p.key)
+          .toList();
+      expect(presetKeys, containsAll(['1', '2', '3', '4', '5', '6', '8']));
+
+      final tirante2 = HardwareCalculatorEngine.inferConfigFromName(
+          'Tirante Pino 2" x 2" x 3.00m (Alfajía)');
+      expect(tirante2['type'], 'wood');
+      expect(tirante2['inch_preset'], '2');
+      expect(tirante2['nominal_width_m'], closeTo(0.0508, 0.0005));
+
+      final liston1 = HardwareCalculatorEngine.inferConfigFromName(
+          'Listón Yesero Pino 1/2 x 1" x 3.00m');
+      expect(liston1['type'], 'wood');
+      expect(liston1['inch_preset'], '1');
+      expect(liston1['nominal_width_m'], closeTo(0.0254, 0.0005));
+
+      final tabla8 = HardwareCalculatorEngine.inferConfigFromName(
+          'Tabla Encofrado Saligna 1" x 8" x 3.00m');
+      expect(tabla8['type'], 'wood');
+      expect(tabla8['inch_preset'], '8');
+      expect(tabla8['nominal_width_m'], closeTo(0.2032, 0.0005));
     });
   });
 

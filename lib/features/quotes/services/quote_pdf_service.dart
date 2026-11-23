@@ -9,9 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/quote_repository.dart';
 
@@ -377,88 +378,31 @@ class QuotePdfService {
     String? baseUrl,
     String paperSize = 'a4',
   }) async {
-    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
-    await showGeneralDialog(
+    final paperLabel = pdfPaperSizeLabel(paperSize);
+    await showAppPdfPreviewDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Cerrar',
-      pageBuilder: (ctx, _, __) {
-        return Material(
-          color: Colors.black54,
-          child: Center(
-            child: Container(
-              width: 880,
-              height: MediaQuery.of(ctx).size.height * 0.92,
-              margin: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  Container(
-                    color: Colors.grey.shade900,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.request_quote_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Presupuesto N° ${quote.quoteNumber} — Vista Previa $paperLabel',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: PdfPreview(
-                      allowPrinting: true,
-                      allowSharing: true,
-                      canChangeOrientation: false,
-                      canChangePageFormat: false,
-                      pdfFileName: '${quote.quoteNumber}.pdf',
-                      build: (_) async => _buildPdf(
-                        quote: quote,
-                        businessName: businessName,
-                        businessAddress: businessAddress,
-                        businessPhone: businessPhone,
-                        businessCuit: businessCuit,
-                        businessTaxCondition: businessTaxCondition,
-                        businessIibb: businessIibb,
-                        businessActivityStartDate: businessActivityStartDate,
-                        businessSettings: businessSettings,
-                        vendorName: vendorName,
-                        logoUrl: logoUrl,
-                        logoBytes: logoBytes,
-                        baseUrl: baseUrl,
-                        paperSize: paperSize,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      title: 'Presupuesto N° ${quote.quoteNumber}',
+      subtitle: 'Vista previa • Hoja $paperLabel',
+      icon: Icons.request_quote_rounded,
+      accent: AppModalAccent.indigo,
+      initialPageFormat: pdfPageFormatFromPaperSize(paperSize),
+      pdfFileName: '${quote.quoteNumber}.pdf',
+      build: (_) async => _buildPdf(
+        quote: quote,
+        businessName: businessName,
+        businessAddress: businessAddress,
+        businessPhone: businessPhone,
+        businessCuit: businessCuit,
+        businessTaxCondition: businessTaxCondition,
+        businessIibb: businessIibb,
+        businessActivityStartDate: businessActivityStartDate,
+        businessSettings: businessSettings,
+        vendorName: vendorName,
+        logoUrl: logoUrl,
+        logoBytes: logoBytes,
+        baseUrl: baseUrl,
+        paperSize: paperSize,
+      ),
     );
   }
 
@@ -1044,8 +988,9 @@ class QuotePdfService {
                   final memImg = itemThumbnails[i];
 
                   final isWeight = item.product?.isSoldByWeight == true;
+                  final weightSuffix = item.product?.effectiveReceiptUnitSuffix ?? 'kg';
                   final qtyText = isWeight
-                      ? '${item.quantity.toQty()} kg'
+                      ? '${item.quantity.toQty()} $weightSuffix'
                       : (item.quantity % 1 == 0
                           ? item.quantity.toInt().toString()
                           : item.quantity.toQty());

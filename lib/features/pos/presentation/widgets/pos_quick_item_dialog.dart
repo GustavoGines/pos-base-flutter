@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -1528,14 +1530,14 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
             ? Alignment.center
             : Alignment.centerLeft);
     final Color activeColor = activeMode == 'combo'
-        ? Colors.deepPurple.shade700
+        ? AppColors.indigo
         : (activeMode == 'service'
-            ? Colors.teal.shade700
-            : const Color(0xFF1D4ED8));
+            ? AppColors.tealDark
+            : AppColors.primaryDark);
     final Color activeBorder = activeMode == 'combo'
-        ? Colors.deepPurple.shade200
+        ? const Color(0xFFC7D2FE)
         : (activeMode == 'service'
-            ? Colors.teal.shade200
+            ? const Color(0xFF99F6E4)
             : const Color(0xFFBFDBFE));
 
     const tabs = [
@@ -1639,162 +1641,122 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     );
   }
 
-  Widget _buildDialogHeader({required bool isCompact}) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        isCompact ? 14 : 22,
-        isCompact ? 12 : 18,
-        isCompact ? 14 : 22,
-        isCompact ? 8 : 12,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-                padding: EdgeInsets.all(isCompact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: _isComboMode
-                      ? Colors.deepPurple.shade50
-                      : (_isServiceMode
-                          ? Colors.teal.shade50
-                          : Colors.amber.shade50),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOutBack,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(
-                      scale: Tween<double>(begin: 0.85, end: 1.0)
-                          .animate(animation),
-                      child: child,
-                    ),
-                  ),
-                  child: Icon(
-                    _isComboMode
-                        ? Icons.layers_rounded
-                        : (_isServiceMode
-                            ? Icons.work_outline_rounded
-                            : Icons.flash_on_rounded),
-                    key: ValueKey<String>(
-                      _isComboMode
-                          ? 'icon_combo'
-                          : (_isServiceMode ? 'icon_service' : 'icon_product'),
-                    ),
-                    color: _isComboMode
-                        ? Colors.deepPurple.shade700
-                        : (_isServiceMode
-                            ? Colors.teal.shade700
-                            : Colors.amber.shade800),
-                    size: isCompact ? 20 : 24,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, 0.14),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      ),
-                      layoutBuilder: (currentChild, previousChildren) => Stack(
-                        alignment: Alignment.centerLeft,
-                        children: <Widget>[
-                          ...previousChildren,
-                          if (currentChild != null) currentChild,
-                        ],
-                      ),
-                      child: Text(
-                        _isComboMode
-                            ? 'Combo / Oferta Rápida en Mostrador'
-                            : (_isServiceMode
-                                ? 'Servicio / Honorario en Mostrador'
-                                : 'Producto Rápido en Mostrador'),
-                        key: ValueKey<String>(
-                          _isComboMode
-                              ? 'title_combo'
-                              : (_isServiceMode
-                                  ? 'title_service'
-                                  : 'title_product'),
-                        ),
-                        style: TextStyle(
-                          fontSize: isCompact ? 15.5 : 17.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA/AFIP',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close, size: 20),
-                tooltip: 'Cerrar (Esc)',
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildModeSelector(),
-        ],
-      ),
-    );
+  AppModalAccent get _currentModalAccent {
+    if (_isComboMode) return AppModalAccent.indigo;
+    if (_isServiceMode) return AppModalAccent.teal;
+    return AppModalAccent.amber;
   }
 
-  Widget _buildDialogFooter({
-    required double previewSubtotal,
-    required bool isCompact,
-  }) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        isCompact ? 14 : 22,
-        12,
-        isCompact ? 14 : 22,
-        14,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(
-          top: BorderSide(color: Color(0xFFE2E8F0)),
-        ),
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(18),
-        ),
-      ),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 12,
-        runSpacing: 10,
-        children: [
-          Column(
+  @override
+  Widget build(BuildContext context) {
+    final isResponsableInscripto =
+        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ?? false;
+    final isHardwareStore =
+        context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false;
+    final qty = _parseDouble(_quantityController.text);
+    final unitPrice = _parseArs(_priceController.text);
+    final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactWidth = screenSize.width < 480;
+    final modalAccent = _currentModalAccent;
+
+    return RemoteScannerListener(
+      debugLabel: 'PosQuickItemDialog',
+      onBarcodeScanned: _handleRemoteBarcodeScan,
+      child: Focus(
+        autofocus: false,
+        child: AppModalShell(
+          maxWidth: 684,
+          borderRadius: 16,
+          accent: modalAccent,
+          iconWidget: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.85, end: 1.0).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Icon(
+              _isComboMode
+                  ? Icons.layers_rounded
+                  : (_isServiceMode
+                      ? Icons.work_outline_rounded
+                      : Icons.flash_on_rounded),
+              key: ValueKey<String>(
+                _isComboMode
+                    ? 'icon_combo'
+                    : (_isServiceMode ? 'icon_service' : 'icon_product'),
+              ),
+              color: modalAccent.iconColor,
+              size: isCompactWidth ? 20 : 22,
+            ),
+          ),
+          titleWidget: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.14),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              alignment: Alignment.centerLeft,
+              children: <Widget>[
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            ),
+            child: Text(
+              _isComboMode
+                  ? 'Combo / Oferta Rápida en Mostrador'
+                  : (_isServiceMode
+                      ? 'Servicio / Honorario en Mostrador'
+                      : 'Producto Rápido en Mostrador'),
+              key: ValueKey<String>(
+                _isComboMode
+                    ? 'title_combo'
+                    : (_isServiceMode ? 'title_service' : 'title_product'),
+              ),
+              style: TextStyle(
+                fontSize: isCompactWidth ? 15.0 : 16.5,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          subtitle: 'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA/AFIP',
+          topBar: Container(
+            padding: EdgeInsets.fromLTRB(
+              isCompactWidth ? 14 : 20,
+              10,
+              isCompactWidth ? 14 : 20,
+              10,
+            ),
+            decoration: const BoxDecoration(
+              color: AppColors.surfaceMuted,
+              border: Border(
+                bottom: BorderSide(color: AppColors.border),
+              ),
+            ),
+            child: _buildModeSelector(),
+          ),
+          bodyPadding: EdgeInsets.fromLTRB(
+            isCompactWidth ? 14 : 20,
+            14,
+            isCompactWidth ? 14 : 20,
+            14,
+          ),
+          footerLeading: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
@@ -1802,7 +1764,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF64748B),
+                  color: AppColors.textMuted,
                 ),
               ),
               Text(
@@ -1810,101 +1772,46 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
           ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancelar (Esc)'),
-              ),
-              ElevatedButton.icon(
-                onPressed: _submit,
-                icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
-                label: const Text('Agregar al Carrito (Enter)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isCompact ? 14 : 18,
-                    vertical: 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+          footerActions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isResponsableInscripto =
-        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ?? false;
-    final qty = _parseDouble(_quantityController.text);
-    final unitPrice = _parseArs(_priceController.text);
-    final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
-    final screenSize = MediaQuery.of(context).size;
-    final isCompactWidth = screenSize.width < 480;
-    final isShortScreen = screenSize.height < 580;
-    final horizontalInset = isCompactWidth ? 10.0 : 24.0;
-    final verticalInset = isShortScreen ? 8.0 : 24.0;
-    final dialogWidth =
-        (screenSize.width - (horizontalInset * 2)).clamp(240.0, 684.0);
-
-    return RemoteScannerListener(
-      debugLabel: 'PosQuickItemDialog',
-      onBarcodeScanned: _handleRemoteBarcodeScan,
-      child: Focus(
-        autofocus: false,
-        child: Dialog(
-        alignment: Alignment.center,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        insetPadding: EdgeInsets.symmetric(
-          horizontal: horizontalInset,
-          vertical: verticalInset,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 684,
-            maxHeight: screenSize.height * (isShortScreen ? 0.96 : 0.92),
-          ),
-          child: SizedBox(
-            width: dialogWidth,
-            child: Builder(
-              builder: (_) {
-                final header = _buildDialogHeader(isCompact: isCompactWidth);
-                final footer = _buildDialogFooter(
-                  previewSubtotal: previewSubtotal,
-                  isCompact: isCompactWidth,
-                );
-                const divider = Divider(height: 1, color: Color(0xFFE2E8F0));
-                final formBody = Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    isCompactWidth ? 14 : 22,
-                    14,
-                    isCompactWidth ? 14 : 22,
-                    14,
-                  ),
-                  child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_scannedReferenceCode != null) ...[
+              child: const Text('Cancelar (Esc)'),
+            ),
+            ElevatedButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+              label: const Text('Agregar al Carrito (Enter)'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompactWidth ? 14 : 18,
+                  vertical: 13,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+          body: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_scannedReferenceCode != null) ...[
                             Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.symmetric(
@@ -2037,14 +1944,18 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                   onChanged: (_) => setState(() {}),
                                   onFieldSubmitted: (_) => _submit(),
                                   decoration: InputDecoration(
-                                    labelText: _isSoldByWeight ? 'Peso (Kg) *' : 'Cantidad *',
+                                    labelText: _isSoldByWeight
+                                        ? (isHardwareStore
+                                            ? 'Cantidad / Medida *'
+                                            : 'Peso (Kg) *')
+                                        : 'Cantidad *',
                                     filled: true,
                                     fillColor: const Color(0xFFF8FAFC),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     isDense: true,
-                                    suffixIcon: _isSoldByWeight
+                                    suffixIcon: (_isSoldByWeight && !isHardwareStore)
                                         ? Consumer<LocalTerminalProvider>(
                                             builder: (ctx, localTerminal, _) {
                                               final comPort = localTerminal.scaleComPort;
@@ -2212,28 +2123,37 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                   ),
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       ConstrainedBox(
                                         constraints: const BoxConstraints(minHeight: 32),
-                                        child: Row(
+                                        child: Wrap(
+                                          alignment: WrapAlignment.spaceBetween,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          spacing: 8,
+                                          runSpacing: 6,
                                           children: [
-                                            const Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF475569)),
-                                            const SizedBox(width: 6),
-                                             Expanded(
-                                               child: Text(
-                                                 (_isComboMode && _comboIngredients.isNotEmpty)
-                                                     ? 'Rentabilidad del Combo (Calculada s/ Ingredientes)'
-                                                     : 'Costo y Margen (Opcional · Cálculo Automático)',
-                                                 maxLines: 1,
-                                                 overflow: TextOverflow.ellipsis,
-                                                 style: const TextStyle(
-                                                   fontSize: 12,
-                                                   fontWeight: FontWeight.w700,
-                                                   color: Color(0xFF475569),
-                                                 ),
-                                               ),
-                                             ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF475569)),
+                                                const SizedBox(width: 6),
+                                                Flexible(
+                                                  child: Text(
+                                                    (_isComboMode && _comboIngredients.isNotEmpty)
+                                                        ? 'Rentabilidad del Combo (Calculada s/ Ingredientes)'
+                                                        : 'Costo y Margen (Opcional · Cálculo Automático)',
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Color(0xFF475569),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                             AnimatedSwitcher(
                                               duration: const Duration(milliseconds: 200),
                                               switchInCurve: Curves.easeOutCubic,
@@ -2253,12 +2173,17 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
                                                         ChoiceChip(
-                                                          label: const Text('Por Peso (Kg)', style: TextStyle(fontSize: 11)),
+                                                          label: Text(
+                                                            isHardwareStore
+                                                                ? 'Fraccionable / Decimal'
+                                                                : 'Por Peso (Kg)',
+                                                            style: const TextStyle(fontSize: 11),
+                                                          ),
                                                           selected: _isSoldByWeight,
                                                           visualDensity: VisualDensity.compact,
                                                           onSelected: (v) => setState(() => _isSoldByWeight = v),
                                                         ),
-                                                        if (_isSoldByWeight) ...[
+                                                        if (_isSoldByWeight && !isHardwareStore) ...[
                                                           const SizedBox(width: 6),
                                                           Consumer<LocalTerminalProvider>(
                                                             builder: (ctx, localTerminal, _) {
@@ -2415,25 +2340,34 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                   ),
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       ConstrainedBox(
                                         constraints: const BoxConstraints(minHeight: 32),
-                                        child: Row(
+                                        child: Wrap(
+                                          alignment: WrapAlignment.spaceBetween,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          spacing: 8,
+                                          runSpacing: 6,
                                           children: [
-                                            Icon(Icons.verified_outlined, size: 16, color: Colors.teal.shade800),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                'Modalidad Servicio / Honorario (AFIP Concepto 2)',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.teal.shade900,
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.verified_outlined, size: 16, color: Colors.teal.shade800),
+                                                const SizedBox(width: 6),
+                                                Flexible(
+                                                  child: Text(
+                                                    'Modalidad Servicio / Honorario (AFIP Concepto 2)',
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.teal.shade900,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                              ],
                                             ),
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2444,6 +2378,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                               ),
                                               child: Text(
                                                 'Sin Stock Físico',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w700,
@@ -2496,6 +2432,12 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                         child: SwitchListTile(
                           dense: true,
                           value: _saveToCatalog,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppColors.primary,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: AppColors.borderStrong,
+                          trackOutlineColor:
+                              const WidgetStatePropertyAll(Colors.transparent),
                           onChanged: (val) => setState(() {
                             _userToggledSaveToCatalog = true;
                             _saveToCatalog = val;
@@ -2535,33 +2477,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                         ],
                       ),
                     ),
-                );
-                if (isShortScreen) {
-                  return SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [header, divider, formBody, footer],
-                    ),
-                  );
-                }
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    header,
-                    divider,
-                    Flexible(
-                      child: SingleChildScrollView(child: formBody),
-                    ),
-                    footer,
-                  ],
-                );
-              },
-            ),
-          ),
         ),
-      ),
       ),
     );
   }

@@ -27,7 +27,11 @@ import '../widgets/pos_quick_item_dialog.dart';
 import '../widgets/pos_price_lookup_dialog.dart';
 import '../widgets/pos_rename_cart_item_dialog.dart';
 import '../widgets/pos_hardware_calculator_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/pos_search_history_popover.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -42,7 +46,6 @@ import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
-import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -74,7 +77,7 @@ class _PosScreenState extends State<PosScreen> {
   // Controladores para el Popover flotante de Historial de Búsquedas
   final _searchHistoryPortalController = OverlayPortalController();
   static const Object _searchHistoryTapGroupId = 'pos_search_history_popover';
-  bool _suppressNextFocusPopover = false;
+  int _searchHistoryHighlightIndex = -1;
 
   // Filtro rápido en memoria para el Acceso Rápido
   String _quickAccessFilter = 'all'; // 'all', 'pinned', 'top_sellers', 'offers', 'weight', o 'cat_<id>'
@@ -217,90 +220,97 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _handleSearchFocusChange() {
-    if (!mounted) return;
-    if (!_searchFocusNode.hasFocus) {
-      _hideSearchHistoryPopover();
-      return;
-    }
-    if (_suppressNextFocusPopover) {
-      _suppressNextFocusPopover = false;
-      return;
-    }
-    if (_searchController.text.trim().isEmpty &&
-        _posRoute?.isCurrent == true &&
-        !_isCheckingOut) {
-      _showSearchHistoryPopoverIfAvailable();
-    }
+    // El cierre del popover lo controlan TapRegion.onTapOutside, TextFieldTapRegion, Esc y Tab.
+    // No ocultamos ni abrimos en foco programático para evitar destruir clics internos en X/Limpiar
+    // y evitar aperturas involuntarias al cerrar modales.
   }
 
   void _requestSearchFocusSilently() {
-    _suppressNextFocusPopover = true;
+    if (!mounted) return;
     _searchFocusNode.requestFocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _suppressNextFocusPopover = false;
-    });
   }
 
   List<Product> _resolveActiveRecentProducts(
     CatalogProvider catalog,
-    LocalTerminalProvider localTerminal,
+    LocalTerminalProvider? localTerminal,
   ) {
-    final activeById = <int, Product>{};
-    for (final p in catalog.activeProducts) {
-      activeById[p.id] = p;
-    }
-    for (final p in catalog.pinnedExtraProducts) {
-      activeById.putIfAbsent(p.id, () => p);
-    }
-    for (final p in catalog.weightOnlyProducts) {
-      activeById.putIfAbsent(p.id, () => p);
-    }
-    final resolved = <Product>[];
-    for (final id in localTerminal.recentSearchProductIds) {
-      final prod = activeById[id];
-      if (prod != null && prod.active) {
-        resolved.add(prod);
-      }
+    final ids = localTerminal?.recentProductIdsForScope(
+          LocalTerminalProvider.scopePosCounter,
+        ) ??
+        const <int>[];
+    if (ids.isEmpty) return const [];
+    final resolved = catalog.resolveRecentProducts(ids, activeOnly: true);
+    final missingIds = catalog.unhydratedRecentProductIds(ids);
+    if (missingIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(catalog.syncPinnedProducts(missingIds));
+      });
     }
     return resolved;
   }
 
   bool _hasSearchHistoryEntries(
     CatalogProvider catalog,
-    LocalTerminalProvider localTerminal,
+    LocalTerminalProvider? localTerminal,
   ) {
-    if (localTerminal.recentSearchTerms.isNotEmpty) return true;
+    if (localTerminal == null) return false;
+    final terms = localTerminal.recentTermsForScope(
+      LocalTerminalProvider.scopePosCounter,
+    );
+    if (terms.isNotEmpty) return true;
     return _resolveActiveRecentProducts(catalog, localTerminal).isNotEmpty;
   }
 
-  void _showSearchHistoryPopoverIfAvailable() {
+  void _showSearchHistoryPopoverIfAvailable({int initialHighlightIndex = -1}) {
     if (!mounted || _isCheckingOut) return;
     if (_searchController.text.trim().isNotEmpty) return;
     final catalog = Provider.of<CatalogProvider>(context, listen: false);
-    final localTerminal =
-        Provider.of<LocalTerminalProvider>(context, listen: false);
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
     if (!_hasSearchHistoryEntries(catalog, localTerminal)) return;
+    if (_searchHistoryHighlightIndex != initialHighlightIndex) {
+      setState(() => _searchHistoryHighlightIndex = initialHighlightIndex);
+    }
     if (!_searchHistoryPortalController.isShowing) {
       _searchHistoryPortalController.show();
     }
   }
 
   void _hideSearchHistoryPopover() {
+    if (_searchHistoryHighlightIndex != -1 && mounted) {
+      setState(() => _searchHistoryHighlightIndex = -1);
+    } else {
+      _searchHistoryHighlightIndex = -1;
+    }
     if (_searchHistoryPortalController.isShowing) {
       _searchHistoryPortalController.hide();
     }
   }
 
-  void _recordRecentSearchIfValid(String term, {int? selectedProductId}) {
-    if (!LocalTerminalProvider.isValidRecentSearchTerm(term)) return;
-    try {
-      final localTerminal =
-          Provider.of<LocalTerminalProvider>(context, listen: false);
-      unawaited(localTerminal.recordRecentSearch(
-        term: term,
-        selectedProductId: selectedProductId,
-      ));
-    } catch (_) {}
+  void _recordRecentSearchIfValid(
+    String? term, {
+    int? selectedProductId,
+    Product? selectedProduct,
+  }) {
+    if (selectedProduct != null) {
+      try {
+        Provider.of<CatalogProvider>(context, listen: false)
+            .registerRecentlySeenProducts([selectedProduct]);
+      } catch (_) {}
+    }
+    final validTerm = (term != null &&
+            LocalTerminalProvider.isValidRecentSearchTerm(term))
+        ? term
+        : null;
+    final validProdId = selectedProductId ?? selectedProduct?.id;
+    if (validTerm == null && (validProdId == null || validProdId <= 0)) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    if (localTerminal == null) return;
+    unawaited(localTerminal.recordRecentSearchForScope(
+      LocalTerminalProvider.scopePosCounter,
+      term: validTerm,
+      selectedProductId: validProdId,
+    ));
   }
 
   Future<void> _applyRecentSearchTerm(String term) async {
@@ -321,6 +331,8 @@ class _PosScreenState extends State<PosScreen> {
         .where((p) => p.active)
         .toList();
     if (!mounted || _searchQuery != clean) return;
+    Provider.of<CatalogProvider>(context, listen: false)
+        .registerRecentlySeenProducts(results);
     setState(() {
       _searchResults = results;
       _isSearching = false;
@@ -395,6 +407,7 @@ class _PosScreenState extends State<PosScreen> {
         _searchQuery = '';
         _searchResults = [];
         _isSearching = false;
+        _searchHistoryHighlightIndex = -1;
       });
       return;
     }
@@ -409,11 +422,22 @@ class _PosScreenState extends State<PosScreen> {
           .where((p) => p.active)
           .toList();
       if (!mounted || _searchQuery != query) return;
+      Provider.of<CatalogProvider>(context, listen: false)
+          .registerRecentlySeenProducts(results);
+      if (results.isNotEmpty) {
+        _recordRecentSearchIfValid(query);
+      }
       setState(() {
         _searchResults = results;
         _isSearching = false;
       });
     });
+  }
+
+  void _clearActiveSearchFilter() {
+    _searchController.clear();
+    _onPosSearchChanged('');
+    _requestSearchFocusSilently();
   }
 
   void _onProductScannedOrSearched(String query) async {
@@ -464,23 +488,14 @@ class _PosScreenState extends State<PosScreen> {
         if (quote != null) {
           // Mostrar diálogo de confirmación
           if (mounted) {
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: Text('Cargar Presupuesto: $cleanQuery'),
-                content: Text(
-                    '¿Desea limpiar la caja actual y cargar los ${quote.items.length} productos de este presupuesto?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancelar'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Cargar'),
-                  ),
-                ],
-              ),
+            final confirm = await AppConfirmDialog.show(
+              context,
+              title: 'Cargar Presupuesto: $cleanQuery',
+              message:
+                  '¿Desea limpiar la caja actual y cargar los ${quote.items.length} productos de este presupuesto?',
+              confirmLabel: 'Cargar',
+              cancelLabel: 'Cancelar',
+              icon: Icons.request_quote_rounded,
             );
 
             if (confirm == true) {
@@ -511,6 +526,10 @@ class _PosScreenState extends State<PosScreen> {
     List<Product> results = (await posProvider.search(cleanQuery))
         .where((p) => p.active)
         .toList();
+    if (mounted && results.isNotEmpty) {
+      Provider.of<CatalogProvider>(context, listen: false)
+          .registerRecentlySeenProducts(results);
+    }
 
     bool appliedScaleLogic = false;
     double embeddedPrice = 0.0;
@@ -635,7 +654,11 @@ class _PosScreenState extends State<PosScreen> {
         promotionalPeriodType: promoOffer?.periodType,
       );
     } else if (results.length == 1) {
-      _recordRecentSearchIfValid(rawQuery, selectedProductId: results.first.id);
+      _recordRecentSearchIfValid(
+        rawQuery,
+        selectedProductId: results.first.id,
+        selectedProduct: results.first,
+      );
       _handleProductSelection(results.first);
     } else {
       _recordRecentSearchIfValid(rawQuery);
@@ -652,30 +675,25 @@ class _PosScreenState extends State<PosScreen> {
       List<Product> results, String query) async {
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.search, color: Colors.blueAccent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('Resultados para "$query"',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-        content: SizedBox(
-          width: 480,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: results.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final p = results[i];
-              return ListTile(
+      builder: (ctx) => AppModalShell(
+        title: 'Resultados para "$query"',
+        subtitle: '${results.length} coincidencias encontradas',
+        icon: Icons.search_rounded,
+        accent: AppModalAccent.blue,
+        maxWidth: 500,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.symmetric(vertical: 8),
+        body: ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: results.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (_, i) {
+            final p = results[i];
+            return Material(
+              color: Colors.transparent,
+              child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: p.isSoldByWeight
                       ? Colors.orange.shade100
@@ -694,21 +712,25 @@ class _PosScreenState extends State<PosScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(
                   p.isSoldByWeight
-                      ? 'Por Kg · \$${p.sellingPrice.toCurrency()}/Kg'
+                      ? 'Por ${p.effectiveQuantityUnitLabel} · \$${p.sellingPrice.toCurrency()}/${p.effectiveQuantityUnitLabel}'
                       : '\$${p.sellingPrice.toCurrency()}',
                 ),
                 trailing:
                     const Icon(Icons.add_circle_outline, color: Colors.green),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _recordRecentSearchIfValid(query, selectedProductId: p.id);
+                  _recordRecentSearchIfValid(
+                    query,
+                    selectedProductId: p.id,
+                    selectedProduct: p,
+                  );
                   _handleProductSelection(p);
                 },
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
@@ -746,39 +768,23 @@ class _PosScreenState extends State<PosScreen> {
           blockReason ??
               'Lote ${batchCode ?? ''} dado de baja. Retire la bandeja del exhibidor.',
         );
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
 
       if (isExpired && !canSell) {
-        final authorize = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.red),
-                SizedBox(width: 8),
-                Flexible(child: Text('Lote Vencido')),
-              ],
-            ),
-            content: Text(
+        final authorize = await AppConfirmDialog.show(
+          context,
+          title: 'Lote Vencido',
+          message:
               '${blockReason ?? 'El lote ${batchCode ?? ''} se encuentra vencido.'}\n\nPara continuar igualmente con la venta se requiere autorización de Supervisor.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Retirar / Cancelar'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Autorizar Venta'),
-              ),
-            ],
-          ),
+          confirmLabel: 'Autorizar Venta',
+          cancelLabel: 'Retirar / Cancelar',
+          icon: Icons.warning_amber_rounded,
+          isDestructive: true,
         );
         if (authorize != true || !mounted) {
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
           return;
         }
         final pinResult = await AdminPinDialog.verifyAndGetPin(
@@ -786,7 +792,7 @@ class _PosScreenState extends State<PosScreen> {
           action: 'Vender bandeja vencida (${batchCode ?? rawCode})',
         );
         if (pinResult == null || !mounted) {
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
           return;
         }
         if (pinResult != 'ALREADY_AUTHORIZED') {
@@ -829,7 +835,7 @@ class _PosScreenState extends State<PosScreen> {
           context,
           '${product.name} (${weightKg.toStringAsFixed(3)} kg • Lote ${batchCode ?? '#$batchId'}) agregado.',
         );
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
 
@@ -846,7 +852,7 @@ class _PosScreenState extends State<PosScreen> {
           context,
           e.toString().replaceFirst('Exception: ', ''),
         );
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
       }
     }
   }
@@ -867,7 +873,16 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     if (_searchQuery.trim().isNotEmpty) {
-      _recordRecentSearchIfValid(_searchQuery, selectedProductId: product.id);
+      _recordRecentSearchIfValid(
+        _searchQuery,
+        selectedProductId: product.id,
+        selectedProduct: product,
+      );
+    } else {
+      try {
+        Provider.of<CatalogProvider>(context, listen: false)
+            .registerRecentlySeenProducts([product]);
+      } catch (_) {}
     }
 
     final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -932,7 +947,7 @@ class _PosScreenState extends State<PosScreen> {
     } else {
       posProvider.updateQuantity(cartItem, cartItem.quantity - 1);
     }
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
   }
 
 
@@ -956,96 +971,146 @@ class _PosScreenState extends State<PosScreen> {
     return Colors.blueGrey.shade600;
   }
 
-  String _formatQuickLookStock(double qty, bool isByWeight) =>
-      qty.toUnitStockDisplay(isSoldByWeight: isByWeight, unitSuffix: 'u.');
+  String _formatQuickLookStock(
+    double qty,
+    bool isByWeight, {
+    String? unitShortLabel,
+  }) =>
+      qty.toUnitStockDisplay(
+        isSoldByWeight: isByWeight,
+        unitSuffix: unitShortLabel ?? 'u.',
+        weightUnit: unitShortLabel,
+      );
+
+  Widget _buildQuickLookMetaChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Color bgColor,
+    required Color borderColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickLookMetaBadges(Product product) {
+    final location = product.storageLocation?.trim();
+    final spec = product.technicalSpec?.trim();
+    final sku = product.supplierSku?.trim();
+    final hasAny = (location != null && location.isNotEmpty) ||
+        (spec != null && spec.isNotEmpty) ||
+        (sku != null && sku.isNotEmpty);
+    if (!hasAny) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          if (location != null && location.isNotEmpty)
+            _buildQuickLookMetaChip(
+              icon: Icons.place_outlined,
+              label: 'Ubic: $location',
+              color: Colors.amber.shade900,
+              bgColor: Colors.amber.shade50,
+              borderColor: Colors.amber.shade300,
+            ),
+          if (spec != null && spec.isNotEmpty)
+            _buildQuickLookMetaChip(
+              icon: Icons.straighten_outlined,
+              label: spec,
+              color: Colors.blueGrey.shade800,
+              bgColor: Colors.blueGrey.shade50,
+              borderColor: Colors.blueGrey.shade200,
+            ),
+          if (sku != null && sku.isNotEmpty)
+            _quickLookCodeChip('Prov', sku),
+        ],
+      ),
+    );
+  }
 
   void _showImageZoomDialog(BuildContext context, Product product) {
     if (product.imageUrl == null || product.imageUrl!.isEmpty) return;
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        insetPadding: const EdgeInsets.all(24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 620),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black45,
-                blurRadius: 24,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      product.name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: 'Cerrar',
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const Divider(height: 16),
-              Flexible(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: InteractiveViewer(
-                    clipBehavior: Clip.none,
-                    minScale: 1.0,
-                    maxScale: 3.5,
-                    child: CachedNetworkImage(
-                      imageUrl: product.imageUrl!,
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(40.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-                      errorWidget: (context, url, error) => const Center(
-                        child: Icon(Icons.broken_image_outlined,
-                            size: 64, color: Colors.grey),
-                      ),
-                    ),
-                  ),
+      builder: (ctx) => AppModalShell(
+        title: product.name,
+        subtitle: 'Podés hacer zoom con la rueda del mouse o gestos táctiles',
+        icon: Icons.image_outlined,
+        accent: AppModalAccent.slate,
+        maxWidth: 620,
+        maxHeight: 620,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.all(16),
+        body: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: InteractiveViewer(
+            clipBehavior: Clip.none,
+            minScale: 1.0,
+            maxScale: 3.5,
+            child: CachedNetworkImage(
+              imageUrl: product.imageUrl!,
+              fit: BoxFit.contain,
+              placeholder: (context, url) => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(40.0),
+                  child: CircularProgressIndicator(),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Podés hacer zoom con la rueda del mouse o gestos táctiles',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: Colors.grey.shade600,
+              errorWidget: (context, url, error) => const Center(
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  size: 64,
+                  color: Colors.grey,
                 ),
               ),
-            ],
+            ),
           ),
         ),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }
 
   void _showProductQuickLookDialog(Product product) {
+    _hideSearchHistoryPopover();
+    if (product.active) {
+      _recordRecentSearchIfValid(
+        _searchQuery.trim().isNotEmpty ? _searchQuery : null,
+        selectedProduct: product,
+      );
+    }
     final localTerminal =
         Provider.of<LocalTerminalProvider>(context, listen: false);
     final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -1075,18 +1140,37 @@ class _PosScreenState extends State<PosScreen> {
     final hasImage =
         uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
 
+    final bool canUseHardwareCalculator;
+    final bool isHardwareVertical;
+    {
+      SettingsProvider? settingsProv;
+      try {
+        settingsProv = Provider.of<SettingsProvider>(context, listen: false);
+      } catch (_) {
+        settingsProv = null;
+      }
+      canUseHardwareCalculator = settingsProv?.canUseHardwareCalculator ?? false;
+      isHardwareVertical =
+          (settingsProv?.safeIsHardwareStore ?? false) ||
+              canUseHardwareCalculator;
+    }
+
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      builder: (ctx) => AppModalShell(
+        title: 'Vista Rápida de Producto',
+        subtitle: product.category?.name ?? 'Ficha rápida de mostrador',
+        icon: isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+        accent:
+            isHardwareVertical ? AppModalAccent.teal : AppModalAccent.blue,
+        compact: true,
+        maxWidth: 490,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                 // ── Header: Hero Media Showcase Enterprise o Fallback Compacto ──
                 if (hasImage) ...[
                   // ── Hero Media Showcase Enterprise (175px) ──
@@ -1188,7 +1272,7 @@ class _PosScreenState extends State<PosScreen> {
                                         margin:
                                             const EdgeInsets.only(right: 6),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF7B1FA2),
+                                          color: const Color(0xFFD97706),
                                           borderRadius:
                                               BorderRadius.circular(12),
                                         ),
@@ -1294,6 +1378,7 @@ class _PosScreenState extends State<PosScreen> {
                         _quickLookCodeChip('EAN', product.barcode!),
                     ],
                   ),
+                  _buildQuickLookMetaBadges(product),
                 ] else ...[
                   // ── Fallback Compacto para productos SIN imagen ──
                   Row(
@@ -1362,6 +1447,7 @@ class _PosScreenState extends State<PosScreen> {
                                   _quickLookCodeChip('EAN', product.barcode!),
                               ],
                             ),
+                            _buildQuickLookMetaBadges(product),
                           ],
                         ),
                       ),
@@ -1380,10 +1466,14 @@ class _PosScreenState extends State<PosScreen> {
                             ? Colors.orange.shade700
                             : Colors.green.shade600,
                         label: 'Stock Actual',
-                        value: _formatQuickLookStock(product.stock, isByWeight),
+                        value: _formatQuickLookStock(
+                          product.stock,
+                          isByWeight,
+                          unitShortLabel: product.unitShortLabel,
+                        ),
                         valueColor: lowStock ? Colors.orange.shade800 : null,
                         footer: product.minStock != null
-                            ? 'Mín: ${_formatQuickLookStock(product.minStock!, isByWeight)}'
+                            ? 'Mín: ${_formatQuickLookStock(product.minStock!, isByWeight, unitShortLabel: product.unitShortLabel)}'
                             : null,
                       ),
                     ),
@@ -1397,7 +1487,7 @@ class _PosScreenState extends State<PosScreen> {
                             ? '${product.salesCount} vend.'
                             : 'Sin ventas',
                         footer: cartQty > 0
-                            ? 'En ticket: ${_formatQuickLookStock(cartQty, isByWeight)}'
+                            ? 'En ticket: ${_formatQuickLookStock(cartQty, isByWeight, unitShortLabel: product.unitShortLabel)}'
                             : null,
                       ),
                     ),
@@ -1423,7 +1513,7 @@ class _PosScreenState extends State<PosScreen> {
                         _buildInfoRow(
                           '🔥 Oferta Activa',
                           '\$${promoPrice.toCurrency()}',
-                          valueColor: const Color(0xFF7B1FA2),
+                          valueColor: const Color(0xFFB45309),
                         ),
                       ...() {
                         final settings = () {
@@ -1552,6 +1642,11 @@ class _PosScreenState extends State<PosScreen> {
                           final ingByWeight = catalogMatch?.isSoldByWeight ??
                               (ing['is_sold_by_weight'] == true ||
                                   ing['is_sold_by_weight'] == 1);
+                          final ingUnitShort = catalogMatch?.unitShortLabel ??
+                              (ing['unit_type'] != null
+                                  ? Product.shortLabelFor(
+                                      ing['unit_type'].toString())
+                                  : null);
                           final hasEnough = ingStock >= reqQty;
                           final reqFmt = reqQty.toQty();
 
@@ -1595,7 +1690,7 @@ class _PosScreenState extends State<PosScreen> {
                                     ),
                                   ),
                                   child: Text(
-                                    'Stock: ${_formatQuickLookStock(ingStock, ingByWeight)}',
+                                    'Stock: ${_formatQuickLookStock(ingStock, ingByWeight, unitShortLabel: ingUnitShort)}',
                                     style: TextStyle(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.bold,
@@ -1613,86 +1708,78 @@ class _PosScreenState extends State<PosScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
-
-                // ── Footer de acciones (ancho controlado, sin desbordar en vista compacta) ──
-                SizedBox(
-                  width: double.infinity,
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      TextButton.icon(
-                        icon: Icon(
-                            isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                            size: 18),
-                        label: Text(isPinned ? 'Desfijar' : '📌 Fijar'),
-                        onPressed: () {
-                          localTerminal.togglePinnedProduct(product.id);
-                          Navigator.pop(ctx);
-                          // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
-                          if (_quickAccessFilter == 'pinned' &&
-                              localTerminal.pinnedProductIds.isEmpty) {
-                            setState(() {
-                              _quickAccessFilter = 'all';
-                            });
-                          }
-                        },
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Cerrar'),
-                          ),
-                          if (context
-                              .read<SettingsProvider>()
-                              .canUseHardwareCalculator) ...[
-                            const SizedBox(width: 6),
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.straighten_rounded,
-                                  size: 17),
-                              label: const Text('Calcular (F7)'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF0F766E),
-                                side:
-                                    const BorderSide(color: Color(0xFF0F766E)),
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _openHardwareCalculatorDialog(
-                                    initialProduct: product);
-                              },
-                            ),
-                          ],
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.add_shopping_cart, size: 18),
-                            label: const Text('Agregar'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E88E5),
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              _handleProductSelection(product);
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
+            footerLeading: TextButton.icon(
+              icon: Icon(
+                isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                size: 17,
+              ),
+              label: Text(isPinned ? 'Desfijar' : 'Fijar'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: () {
+                localTerminal.togglePinnedProduct(product.id);
+                Navigator.pop(ctx);
+                // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
+                if (_quickAccessFilter == 'pinned' &&
+                    localTerminal.pinnedProductIds.isEmpty) {
+                  setState(() {
+                    _quickAccessFilter = 'all';
+                  });
+                }
+              },
+            ),
+            footerActions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
+              if (canUseHardwareCalculator)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.straighten_rounded, size: 16),
+                  label: const Text('Calcular (F7)'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.tealDark,
+                    side: const BorderSide(color: AppColors.tealDark),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    if (product.active) {
+                      _recordRecentSearchIfValid(
+                        _searchQuery.trim().isNotEmpty ? _searchQuery : null,
+                        selectedProduct: product,
+                      );
+                    }
+                    _openHardwareCalculatorDialog(initialProduct: product);
+                  },
+                ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add_shopping_cart, size: 17),
+                label: const Text('Agregar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _handleProductSelection(product);
+                },
+              ),
+            ],
           ),
-        ),
-      ),
-    ).then((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+        ).then((_) {
+      if (mounted) _requestSearchFocusSilently();
     });
   }
 
@@ -1804,122 +1891,121 @@ class _PosScreenState extends State<PosScreen> {
   void _showKeyboardShortcutsHelpDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.keyboard_rounded,
-                        color: Colors.blueGrey.shade700, size: 22),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Guía Rápida de Teclado POS',
-                        style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      tooltip: 'Cerrar (Esc)',
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                _shortcutSection(
-                  '⚡ Flujo "Doble Enter" (Cobro en 1 segundo)',
-                  [
-                    _shortcutRow(['Enter'],
-                        'con buscador vacío → Abre ventana de Cobro'),
-                    _shortcutRow([
-                      'Enter'
-                    ], 'en ventana de Cobro → Confirma pago exacto en Efectivo'),
-                    _shortcutRow(
-                        ['F9', 'F12'], 'Cobrar directo en cualquier momento'),
-                  ],
-                ),
-                _shortcutSection(
-                  '🛒 Carrito y Acceso Rápido',
-                  [
-                    _shortcutRow(['F3'],
-                        'Crear Producto o Combo Rápido (Temporal o en Catálogo)'),
-                    _shortcutRow(['Ctrl', 'E'],
-                        'Renombrar último ítem para Factura / Ticket (Alias)'),
-                    _shortcutRow(['Ctrl', '1..9'],
-                        'Agrega el producto 1 al 9 de la grilla'),
-                    _shortcutRow([
-                      '+',
-                      '-'
-                    ], 'con buscador vacío → Suma o resta 1 u. al último ítem'),
-                    _shortcutRow([
-                      'Supr'
-                    ], 'con buscador vacío → Elimina el último ítem del carrito'),
-                    _shortcutRow(['Clic Der.'],
-                        'sobre producto → Vista Rápida (stock, precios, 📌)'),
-                  ],
-                ),
-                _shortcutSection(
-                  '💳 Ventana de Cobro (Desglose de Pago)',
-                  [
-                    _shortcutRow(['Ctrl', '1..8'], 'Métodos de pago (Efectivo, Point, QR, Tarjetas, Transf., Cta. Cte., Cheque)'),
-                    _shortcutRow(['F2'], 'Pago exacto auto-ajustable en efectivo'),
-                    _shortcutRow(['F4'], 'Agregar otro medio de pago (Pago Mixto)'),
-                    _shortcutRow(['F6'], 'Asociar / Buscar Cliente'),
-                    _shortcutRow(['F7'], 'Marcar / Desmarcar Imprimir Comprobante'),
-                    _shortcutRow(['F8'], 'Marcar / Desmarcar Vista Previa'),
-                    _shortcutRow(['F9'], 'Alternar Ticket Común / Factura Fiscal ARCA'),
-                    _shortcutRow(['F10'], 'Alternar Logística (Retira / Envío / Acopio)'),
-                    _shortcutRow(['Enter'], 'Confirmar Venta'),
-                    _shortcutRow(['Esc'], 'Cerrar ventana de Cobro (conserva borrador)'),
-                  ],
-                ),
-                _shortcutSection(
-                  '🗂️ Orden en Espera, Clientes y Filtros',
-                  [
-                    _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
-                    _shortcutRow(['F5'], 'Consultar precio y stock sin agregar al carrito'),
-                    _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
-                    if (context
-                        .read<SettingsProvider>()
-                        .canUseHardwareCalculator)
-                      _shortcutRow(['F7'],
-                          'Calculadora Rápida Ferretera (Machimbre / Chapas / Pintura)'),
-                    _shortcutRow([
-                      'Esc'
-                    ], 'Cierra ventana de Cobro, limpia buscador o vuelve a "Todos"'),
-                    _shortcutRow(['F1'], 'Abre esta guía de ayuda'),
-                  ],
-                ),
+      builder: (ctx) => AppModalShell(
+        title: 'Guía Rápida de Teclado POS',
+        subtitle: 'Atajos de mostrador, cobro en 1 segundo y gestión rápida',
+        icon: Icons.keyboard_rounded,
+        accent: AppModalAccent.slate,
+        compact: true,
+        maxWidth: 540,
+        maxHeight: 600,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.all(16),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _shortcutSection(
+              Icons.bolt_rounded,
+              AppColors.amber,
+              'Flujo "Doble Enter" (Cobro en 1 segundo)',
+              [
+                _shortcutRow(['Enter'],
+                    'con buscador vacío → Abre ventana de Cobro'),
+                _shortcutRow(['Enter'],
+                    'en ventana de Cobro → Confirma pago exacto en Efectivo'),
+                _shortcutRow(
+                    ['F9', 'F12'], 'Cobrar directo en cualquier momento'),
               ],
             ),
-          ),
+            const SizedBox(height: 10),
+            _shortcutSection(
+              Icons.shopping_cart_outlined,
+              AppColors.primaryDark,
+              'Carrito y Acceso Rápido',
+              [
+                _shortcutRow(['F3'],
+                    'Crear Producto o Combo Rápido (Temporal o en Catálogo)'),
+                _shortcutRow(['Ctrl', 'E'],
+                    'Renombrar último ítem para Factura / Ticket (Alias)'),
+                _shortcutRow(['Ctrl', '1..9'],
+                    'Agrega el producto 1 al 9 de la grilla'),
+                _shortcutRow(['+', '-'],
+                    'con buscador vacío → Suma o resta 1 u. al último ítem'),
+                _shortcutRow(['Supr'],
+                    'con buscador vacío → Elimina el último ítem del carrito'),
+                _shortcutRow(['Clic Der.'],
+                    'sobre producto → Vista Rápida (stock, precios, fijar)'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _shortcutSection(
+              Icons.payments_outlined,
+              AppColors.emerald,
+              'Ventana de Cobro (Desglose de Pago)',
+              [
+                _shortcutRow(['Ctrl', '1..8'],
+                    'Métodos de pago (Efectivo, Point, QR, Tarjetas, Transf., Cta. Cte., Cheque)'),
+                _shortcutRow(['F2'], 'Pago exacto auto-ajustable en efectivo'),
+                _shortcutRow(['F4'], 'Agregar otro medio de pago (Pago Mixto)'),
+                _shortcutRow(['F6'], 'Asociar / Buscar Cliente'),
+                _shortcutRow(['F7'], 'Marcar / Desmarcar Imprimir Comprobante'),
+                _shortcutRow(['F8'], 'Marcar / Desmarcar Vista Previa'),
+                _shortcutRow(
+                    ['F9'], 'Alternar Ticket Común / Factura Fiscal ARCA'),
+                _shortcutRow(
+                    ['F10'], 'Alternar Logística (Retira / Envío / Acopio)'),
+                _shortcutRow(['Enter'], 'Confirmar Venta'),
+                _shortcutRow(
+                    ['Esc'], 'Cerrar ventana de Cobro (conserva borrador)'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _shortcutSection(
+              Icons.folder_special_outlined,
+              AppColors.indigo,
+              'Orden en Espera, Clientes y Filtros',
+              [
+                _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
+                _shortcutRow(
+                    ['F5'], 'Consultar precio y stock sin agregar al carrito'),
+                _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
+                if (context.read<SettingsProvider>().canUseHardwareCalculator)
+                  _shortcutRow(['F7'],
+                      'Calculadora Rápida Ferretera (Machimbre / Chapas / Pintura)'),
+                _shortcutRow(['Esc'],
+                    'Cierra ventana de Cobro, limpia buscador o vuelve a "Todos"'),
+                _shortcutRow(['F1'], 'Abre esta guía de ayuda'),
+              ],
+            ),
+          ],
         ),
+        footerActions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido (Esc)'),
+          ),
+        ],
       ),
     ).then((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+      if (mounted) _requestSearchFocusSilently();
     });
   }
 
-  Widget _shortcutSection(String title, List<Widget> rows) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
+  Widget _shortcutSection(
+    IconData icon,
+    Color accent,
+    String title,
+    List<Widget> rows,
+  ) {
+    return AppSectionCard(
+      title: title,
+      icon: icon,
+      accent: accent,
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title,
-              style:
-                  const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          ...rows,
-        ],
+        children: rows,
       ),
     );
   }
@@ -1993,99 +2079,132 @@ class _PosScreenState extends State<PosScreen> {
     String? batchCode,
     String? batchExpirationDate,
   }) {
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final isHardwareStore = settingsProv?.safeIsHardwareStore ?? false;
+    final canUseF7 = settingsProv?.canUseHardwareCalculator ?? false;
+    final isHardwareFractionalMode =
+        isHardwareStore || product.isMetricOrLiquidUnit;
+    final unitShort = product.unitShortLabel;
+    final double maxLimit = isHardwareFractionalMode ? 100000.0 : 1000.0;
+    bool openedF7Calculator = false;
+
     showDialog(
         context: context,
         barrierDismissible: true,
-        builder: (context) {
+        builder: (dialogContext) {
           return _ManagedControllerScope(
-            builder: (context, weightController, isDialogMounted) {
+            builder: (dialogContext, weightController, isDialogMounted) {
               return ValueListenableBuilder<TextEditingValue>(
                   valueListenable: weightController,
-                  builder: (context, value, child) {
+                  builder: (dialogContext, value, child) {
                     final parsedVal =
                         double.tryParse(value.text.trim().replaceAll(',', '.'));
                     final isValid = parsedVal != null &&
                         parsedVal >= 0.001 &&
-                        parsedVal < 1000;
-                    return AlertDialog(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                      title: Text('Ingresar Peso (Kg) - ${product.name}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 18)),
-                      content: Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: TextField(
-                          controller: weightController,
-                          autofocus: true,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            labelText: 'Peso Exacto (Ej: 1.500)',
-                            hintText: '0.000',
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            suffixText: 'KG',
-                            helperText: 'Ejemplo: 0.5 = 500 gramos',
-                          ),
-                          onSubmitted: (val) {
-                            if (isValid) {
-                              _processWeight(
-                                val,
-                                product,
-                                provider,
-                                context,
-                                promotionalPrice: promotionalPrice,
-                                promotionalLabel: promotionalLabel,
-                                promotionalPeriodType: promotionalPeriodType,
-                                batchId: batchId,
-                                batchCode: batchCode,
-                                batchExpirationDate: batchExpirationDate,
-                              );
-                            }
-                          },
+                        parsedVal < maxLimit;
+                    return AppModalShell(
+                      title: isHardwareFractionalMode
+                          ? 'Cantidad / Medida ($unitShort) - ${product.name}'
+                          : 'Ingresar Peso (Kg) - ${product.name}',
+                      icon: Icons.scale_rounded,
+                      accent: AppModalAccent.amber,
+                      compact: true,
+                      maxWidth: 460,
+                      useAlertDialogWrapper: true,
+                      onClose: () => Navigator.pop(dialogContext),
+                      bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                      body: TextField(
+                        controller: weightController,
+                        autofocus: true,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: isHardwareFractionalMode
+                              ? 'Cantidad / Medida en $unitShort (Ej: 2.5)'
+                              : 'Peso Exacto (Ej: 1.500)',
+                          hintText: isHardwareFractionalMode ? '0.00' : '0.000',
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          suffixText: isHardwareFractionalMode ? unitShort : 'KG',
+                          helperText: isHardwareFractionalMode
+                              ? 'Acepta enteros o decimales (ej: 1.5 $unitShort)'
+                              : 'Ejemplo: 0.5 = 500 gramos',
                         ),
-                      ),
-                      actionsPadding:
-                          const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      actions: [
-                        Consumer<LocalTerminalProvider>(
-                          builder: (ctx, localTerminal, _) {
-                            final comPort = localTerminal.scaleComPort;
-                            final isConfigured = comPort.trim().isNotEmpty;
-                            return OutlinedButton.icon(
-                              onPressed: () {
-                                if (!isConfigured) {
-                                  showTerminalPeripheralsDialog(context);
-                                  return;
-                                }
-                                _readWeightFromScale(
-                                    comPort, weightController,
-                                    isDialogMounted: isDialogMounted);
-                              },
-                              icon: Icon(Icons.scale_rounded,
-                                  color: isConfigured ? Colors.blueGrey : Colors.grey),
-                              label: Text(
-                                isConfigured ? 'Leer Balanza' : 'Configurar Balanza',
-                                style: TextStyle(
-                                  color: isConfigured ? Colors.blueGrey : Colors.grey,
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isConfigured ? Colors.blueGrey : Colors.grey,
-                                side: BorderSide(
-                                  color: isConfigured ? Colors.blueGrey : Colors.grey.shade400,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
+                        onSubmitted: (val) {
+                          if (isValid) {
+                            _processWeight(
+                              val,
+                              product,
+                              provider,
+                              dialogContext,
+                              promotionalPrice: promotionalPrice,
+                              promotionalLabel: promotionalLabel,
+                              promotionalPeriodType: promotionalPeriodType,
+                              batchId: batchId,
+                              batchCode: batchCode,
+                              batchExpirationDate: batchExpirationDate,
+                              maxLimit: maxLimit,
+                              unitShortLabel: unitShort,
+                              isHardwareFractionalMode: isHardwareFractionalMode,
                             );
-                          },
-                        ),
+                          }
+                        },
+                      ),
+                      footerActions: [
+                        if (!isHardwareFractionalMode)
+                          Consumer<LocalTerminalProvider>(
+                            builder: (ctx, localTerminal, _) {
+                              final comPort = localTerminal.scaleComPort;
+                              final isConfigured = comPort.trim().isNotEmpty;
+                              return OutlinedButton.icon(
+                                onPressed: () {
+                                  if (!isConfigured) {
+                                    showTerminalPeripheralsDialog(dialogContext);
+                                    return;
+                                  }
+                                  _readWeightFromScale(
+                                      comPort, weightController,
+                                      isDialogMounted: isDialogMounted);
+                                },
+                                icon: Icon(Icons.scale_rounded,
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey),
+                                label: Text(
+                                  isConfigured ? 'Leer Balanza' : 'Configurar Balanza',
+                                  style: TextStyle(
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: isConfigured ? Colors.blueGrey : Colors.grey,
+                                  side: BorderSide(
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey.shade400,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                              );
+                            },
+                          ),
+                        if (canUseF7)
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              openedF7Calculator = true;
+                              Navigator.pop(dialogContext);
+                              _openHardwareCalculatorDialog(initialProduct: product);
+                            },
+                            icon: const Icon(Icons.calculate_outlined, size: 18),
+                            label: const Text('Abrir Calculadora F7'),
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
                         TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancelar',
-                              style: TextStyle(color: Colors.grey)),
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Cancelar'),
                         ),
                         FilledButton(
                           onPressed: isValid
@@ -2094,20 +2213,20 @@ class _PosScreenState extends State<PosScreen> {
                                     weightController.text,
                                     product,
                                     provider,
-                                    context,
+                                    dialogContext,
                                     promotionalPrice: promotionalPrice,
                                     promotionalLabel: promotionalLabel,
                                     promotionalPeriodType: promotionalPeriodType,
                                     batchId: batchId,
                                     batchCode: batchCode,
                                     batchExpirationDate: batchExpirationDate,
+                                    maxLimit: maxLimit,
+                                    unitShortLabel: unitShort,
+                                    isHardwareFractionalMode:
+                                        isHardwareFractionalMode,
                                   );
                                 }
                               : null,
-                          style: FilledButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
                           child: const Text('Agregar'),
                         )
                       ],
@@ -2116,7 +2235,9 @@ class _PosScreenState extends State<PosScreen> {
             },
           );
         }).then((_) {
-      _searchFocusNode.requestFocus();
+      if (!openedF7Calculator) {
+        _requestSearchFocusSilently();
+      }
     });
   }
 
@@ -2179,13 +2300,16 @@ class _PosScreenState extends State<PosScreen> {
     int? batchId,
     String? batchCode,
     String? batchExpirationDate,
+    double maxLimit = 1000.0,
+    String unitShortLabel = 'Kg',
+    bool isHardwareFractionalMode = false,
   }) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
     String sanitizedValue = value.trim().replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
 
-    // Validación alineada con ProcessSaleRequest (min:0.001) en v1.8.5 y tope anti-código de barras (<1000Kg)
-    if (weight != null && weight >= 0.001 && weight < 1000) {
+    // Validación alineada con ProcessSaleRequest (min:0.001) y tope anti-código de barras
+    if (weight != null && weight >= 0.001 && weight < maxLimit) {
       provider.submitWeighedProductWithPromo(
         product,
         weight,
@@ -2199,7 +2323,11 @@ class _PosScreenState extends State<PosScreen> {
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
-          dialogContext, 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.');
+        dialogContext,
+        isHardwareFractionalMode
+            ? 'Por favor, ingrese una cantidad válida entre 0.001 y ${(maxLimit - 0.001).toStringAsFixed(3)} $unitShortLabel.'
+            : 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.',
+      );
     }
   }
 
@@ -2236,29 +2364,23 @@ class _PosScreenState extends State<PosScreen> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            backgroundColor: Colors.red.shade50,
-            title: Row(
-              children: [
-                Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Turno Cerrado',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
+          builder: (ctx) => AppModalShell(
+            title: 'Turno Cerrado',
+            subtitle: 'Operación bloqueada por cierre remoto',
+            icon: Icons.lock_clock_rounded,
+            accent: AppModalAccent.red,
+            compact: true,
+            maxWidth: 440,
+            showCloseButton: false,
+            useAlertDialogWrapper: true,
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'El turno de caja fue cerrado desde otra terminal.',
-                  style: TextStyle(fontSize: 15),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -2267,7 +2389,7 @@ class _PosScreenState extends State<PosScreen> {
                 ),
               ],
             ),
-            actions: [
+            footerActions: [
               FilledButton.icon(
                 style:
                     FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
@@ -2441,6 +2563,7 @@ class _PosScreenState extends State<PosScreen> {
                 );
 
                 if (mounted) {
+                  final paperSize = localTerminalProvider.pdfPaperSize;
                   final result = await showDialog<String>(
                     context: context,
                     barrierDismissible: false,
@@ -2448,132 +2571,127 @@ class _PosScreenState extends State<PosScreen> {
                       bool isVoiding = false;
                       return StatefulBuilder(
                         builder: (context, setState) {
-                          return Dialog(
-                            child: SizedBox(
-                              width: 900,
-                              height: 800,
-                              child: Scaffold(
-                                appBar: AppBar(
-                                  title: Text(
-                                      'Vista Previa - Venta #${sale['id']}'),
-                                  automaticallyImplyLeading: false,
-                                  actions: [
-                                    if (isVoiding)
-                                      Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 16.0),
-                                          child: SizedBox(
-                                            width: 24,
-                                            height: 24,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: Colors.red),
-                                          ),
-                                        ),
-                                      )
-                                    else
-                                      TextButton.icon(
-                                        onPressed: () async {
-                                          final confirm =
-                                              await showDialog<bool>(
-                                            context: context,
-                                            builder: (c) => AlertDialog(
-                                              title:
-                                                  const Text('¿Anular Venta?'),
-                                              content: const Text(
-                                                  'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                              actions: [
-                                                TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(c, false),
-                                                    child: const Text(
-                                                        'NO, VOLVER')),
-                                                ElevatedButton(
-                                                    style: ElevatedButton
-                                                        .styleFrom(
-                                                            backgroundColor:
-                                                                Colors.red,
-                                                            foregroundColor:
-                                                                Colors.white),
-                                                    onPressed: () =>
-                                                        Navigator.pop(c, true),
-                                                    child: const Text(
-                                                        'SÍ, ANULAR')),
-                                              ],
-                                            ),
-                                          );
-
-                                          if (confirm == true) {
-                                            final currentShift = context.read<CashRegisterProvider>().currentShift;
-                                            if (currentShift == null) {
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.error(
-                                                    dialogCtx, 'Debe haber un turno de caja abierto para anular órdenes.');
-                                              }
-                                              return;
-                                            }
-                                            setState(() {
-                                              isVoiding = true;
-                                            });
-                                            try {
-                                              final success = await posProvider
-                                                  .voidPendingOrder(
-                                                      int.parse(
-                                                          sale['id'].toString()),
-                                                      shiftId: currentShift.id);
-                                              if (!success) {
-                                                throw Exception(
-                                                    posProvider.errorMessage ??
-                                                        'Error desconocido');
-                                              }
-                                              // Restaurar carrito al estado previo a la venta
-                                              posProvider.restoreLastSaleCart();
-
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.warning(
-                                                    dialogCtx,
-                                                    'Venta anulada. Los productos han vuelto al carrito.');
-                                                Navigator.pop(
-                                                    dialogCtx, 'annulled');
-                                              }
-                                            } catch (e) {
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.error(dialogCtx,
-                                                    'Error al anular: $e');
-                                                setState(() {
-                                                  isVoiding = false;
-                                                });
-                                              }
-                                            }
-                                          }
-                                        },
-                                        icon: const Icon(Icons.delete_forever,
-                                            color: Colors.red),
-                                        label: const Text(
-                                            'ANULAR COBRO Y VOLVER',
-                                            style: TextStyle(
-                                                color: Colors.red,
-                                                fontWeight: FontWeight.bold)),
+                          return AppPdfPreviewModal(
+                            title: 'Vista Previa - Venta #${sale['id']}',
+                            subtitle:
+                                'Comprobante y despacho • Hoja ${pdfPaperSizeLabel(paperSize)}',
+                            icon: Icons.picture_as_pdf_rounded,
+                            accent: AppModalAccent.blue,
+                            pdfFileName: 'Comprobante_${sale['id']}.pdf',
+                            initialPageFormat:
+                                pdfPageFormatFromPaperSize(paperSize),
+                            build: (format) async => pdfBytes,
+                            canClose: !isVoiding,
+                            onClose: isVoiding
+                                ? null
+                                : () => Navigator.pop(dialogCtx),
+                            headerTrailing: isVoiding
+                                ? const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.dangerLight,
                                       ),
-                                    const SizedBox(width: 16),
-                                    IconButton(
-                                      icon: const Icon(Icons.close),
-                                      onPressed: isVoiding
-                                          ? null
-                                          : () => Navigator.pop(dialogCtx),
                                     ),
-                                  ],
-                                ),
-                                body: PdfPreview(
-                                  build: (format) async => pdfBytes,
-                                  canChangePageFormat: false,
-                                  canChangeOrientation: false,
-                                  pdfFileName: 'Comprobante_${sale['id']}.pdf',
-                                  canDebug: false,
-                                ),
-                              ),
-                            ),
+                                  )
+                                : OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final confirm =
+                                          await AppConfirmDialog.show(
+                                        context,
+                                        title: '¿Anular Venta?',
+                                        message:
+                                            'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.',
+                                        confirmLabel: 'SÍ, ANULAR',
+                                        cancelLabel: 'NO, VOLVER',
+                                        icon: Icons.cancel_outlined,
+                                        isDestructive: true,
+                                      );
+
+                                      if (confirm == true) {
+                                        final currentShift = context
+                                            .read<CashRegisterProvider>()
+                                            .currentShift;
+                                        if (currentShift == null) {
+                                          if (dialogCtx.mounted) {
+                                            SnackBarService.error(
+                                              dialogCtx,
+                                              'Debe haber un turno de caja abierto para anular órdenes.',
+                                            );
+                                          }
+                                          return;
+                                        }
+                                        setState(() {
+                                          isVoiding = true;
+                                        });
+                                        try {
+                                          final success = await posProvider
+                                              .voidPendingOrder(
+                                            int.parse(sale['id'].toString()),
+                                            shiftId: currentShift.id,
+                                          );
+                                          if (!success) {
+                                            throw Exception(
+                                              posProvider.errorMessage ??
+                                                  'Error desconocido',
+                                            );
+                                          }
+                                          // Restaurar carrito al estado previo a la venta
+                                          posProvider.restoreLastSaleCart();
+
+                                          if (dialogCtx.mounted) {
+                                            SnackBarService.warning(
+                                              dialogCtx,
+                                              'Venta anulada. Los productos han vuelto al carrito.',
+                                            );
+                                            Navigator.pop(
+                                              dialogCtx,
+                                              'annulled',
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (dialogCtx.mounted) {
+                                            SnackBarService.error(
+                                              dialogCtx,
+                                              'Error al anular: $e',
+                                            );
+                                            setState(() {
+                                              isVoiding = false;
+                                            });
+                                          }
+                                        }
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_forever_rounded,
+                                      size: 17,
+                                    ),
+                                    label:
+                                        const Text('ANULAR COBRO Y VOLVER'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor:
+                                          const Color(0xFFFCA5A5),
+                                      backgroundColor: AppColors.danger
+                                          .withValues(alpha: 0.22),
+                                      side: BorderSide(
+                                        color: AppColors.dangerLight
+                                            .withValues(alpha: 0.55),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      textStyle: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
                           );
                         },
                       );
@@ -2734,30 +2852,24 @@ class _PosScreenState extends State<PosScreen> {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: Colors.red.shade50,
-          title: Row(
-            children: [
-              Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Turno Cerrado',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
+        builder: (ctx) => AppModalShell(
+          title: 'Turno Cerrado',
+          subtitle: 'Operación bloqueada por cierre remoto',
+          icon: Icons.lock_clock_rounded,
+          accent: AppModalAccent.red,
+          compact: true,
+          maxWidth: 440,
+          showCloseButton: false,
+          useAlertDialogWrapper: true,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 posProvider.errorMessage ??
                     'El turno de caja fue cerrado desde otra terminal.',
-                style: const TextStyle(fontSize: 15),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Text(
@@ -2766,7 +2878,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ],
           ),
-          actions: [
+          footerActions: [
             FilledButton.icon(
               style:
                   FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
@@ -2790,7 +2902,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
     } finally {
       _isCheckingOut = false;
     }
@@ -2840,30 +2952,24 @@ class _PosScreenState extends State<PosScreen> {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: Colors.red.shade50,
-          title: Row(
-            children: [
-              Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Turno Cerrado',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
+        builder: (ctx) => AppModalShell(
+          title: 'Turno Cerrado',
+          subtitle: 'Operación bloqueada por cierre remoto',
+          icon: Icons.lock_clock_rounded,
+          accent: AppModalAccent.red,
+          compact: true,
+          maxWidth: 440,
+          showCloseButton: false,
+          useAlertDialogWrapper: true,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 posProvider.errorMessage ??
                     'El turno de caja fue cerrado desde otra terminal.',
-                style: const TextStyle(fontSize: 15),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Text(
@@ -2872,7 +2978,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ],
           ),
-          actions: [
+          footerActions: [
             FilledButton.icon(
               style:
                   FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
@@ -2898,7 +3004,7 @@ class _PosScreenState extends State<PosScreen> {
       SnackBarService.error(
           context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
     }
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -2906,25 +3012,14 @@ class _PosScreenState extends State<PosScreen> {
   // ────────────────────────────────────────────────────────────────
   Future<void> _handleDeletePendingOrder(int saleId, PosProvider posProvider,
       {StateSetter? setStateDialog}) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Anular Orden en Espera',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        content: Text(
-            '¿Desea anular la orden #$saleId?\nEsta acción devolverá los productos al stock físico y no se puede deshacer.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.delete, size: 18),
-            label: const Text('Anular'),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Anular Orden en Espera',
+      message:
+          '¿Desea anular la orden #$saleId?\nEsta acción devolverá los productos al stock físico y no se puede deshacer.',
+      confirmLabel: 'Anular',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
 
     if (confirmed == true && mounted) {
@@ -2941,7 +3036,7 @@ class _PosScreenState extends State<PosScreen> {
           if (setStateDialog != null) {
             setStateDialog(() {});
           } else {
-            _searchFocusNode.requestFocus();
+            _requestSearchFocusSilently();
           }
         } else {
           SnackBarService.error(
@@ -3458,7 +3553,7 @@ class _PosScreenState extends State<PosScreen> {
                         posProvider.recallOrderToCart(sale, availableCustomers: customers);
                         SnackBarService.success(
                             context, '📥 Orden #$saleId cargada al carrito.');
-                        _searchFocusNode.requestFocus();
+                        _requestSearchFocusSilently();
                       },
                       child: const Text('RECUPERAR',
                           style: TextStyle(
@@ -3773,7 +3868,7 @@ class _PosScreenState extends State<PosScreen> {
                     constraints: const BoxConstraints(),
                     onPressed: () {
                       pos.clearRecall();
-                      _searchFocusNode.requestFocus();
+                      _requestSearchFocusSilently();
                     },
                   ),
                 ],
@@ -3806,7 +3901,7 @@ class _PosScreenState extends State<PosScreen> {
                     constraints: const BoxConstraints(),
                     onPressed: () {
                       pos.clearCart();
-                      _searchFocusNode.requestFocus();
+                      _requestSearchFocusSilently();
                     },
                   ),
                 ],
@@ -3880,29 +3975,18 @@ class _PosScreenState extends State<PosScreen> {
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                               onPressed: () async {
-                                final confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (c) => AlertDialog(
-                                    title: const Text('Vaciar Carrito'),
-                                    content: const Text(
-                                        '¿Deseas quitar todos los productos y vaciar el carrito?'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(c, false),
-                                          child: const Text('Cancelar')),
-                                      FilledButton(
-                                        style: FilledButton.styleFrom(
-                                            backgroundColor: Colors.red),
-                                        onPressed: () => Navigator.pop(c, true),
-                                        child: const Text('Vaciar'),
-                                      ),
-                                    ],
-                                  ),
+                                final confirm = await AppConfirmDialog.show(
+                                  context,
+                                  title: 'Vaciar Carrito',
+                                  message:
+                                      '¿Deseas quitar todos los productos y vaciar el carrito?',
+                                  confirmLabel: 'Vaciar',
+                                  icon: Icons.remove_shopping_cart_outlined,
+                                  isDestructive: true,
                                 );
                                 if (confirm == true) {
                                   pos.clearCart();
-                                  _searchFocusNode.requestFocus();
+                                  _requestSearchFocusSilently();
                                 }
                               },
                             ),
@@ -3999,17 +4083,17 @@ class _PosScreenState extends State<PosScreen> {
                                       ? Colors.blueGrey.shade50
                                       : (item.product.ivaRate == 10.5
                                           ? Colors.indigo.shade50
-                                          : Colors.purple.shade50),
+                                          : Colors.blueGrey.shade50),
                                   borderColor: item.product.ivaRate == 0
                                       ? Colors.blueGrey.shade200
                                       : (item.product.ivaRate == 10.5
                                           ? Colors.indigo.shade200
-                                          : Colors.purple.shade200),
+                                          : Colors.blueGrey.shade200),
                                   textColor: item.product.ivaRate == 0
                                       ? Colors.blueGrey.shade700
                                       : (item.product.ivaRate == 10.5
                                           ? Colors.indigo.shade800
-                                          : Colors.purple.shade800),
+                                          : Colors.blueGrey.shade800),
                                   tooltip: item.product.ivaRate == 0
                                       ? 'Producto Exento (IVA 0%)'
                                       : 'Alícuota fiscal: IVA ${item.product.ivaRate.toCleanMargin()}%',
@@ -4056,9 +4140,9 @@ class _PosScreenState extends State<PosScreen> {
                                 label: isCompactCart
                                     ? '🏷️ ${item.offerBadgeLabel} (Sin rec.)'
                                     : '🏷️ ${item.offerBadgeLabel} (Sin recargo)',
-                                bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
-                                borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
-                                textColor: const Color(0xFF7B1FA2),
+                                bgColor: const Color(0xFFD97706).withValues(alpha: 0.12),
+                                borderColor: const Color(0xFFD97706).withValues(alpha: 0.40),
+                                textColor: const Color(0xFFB45309),
                                 tooltip: 'Oferta vigente aplicada sin recargo de lista',
                               ));
                             } else {
@@ -4066,9 +4150,9 @@ class _PosScreenState extends State<PosScreen> {
                                 label: item.offerBeatDiscountTier && !isCompactCart
                                     ? '🏷️ ${item.offerBadgeLabel} (Mejor precio)'
                                     : '🏷️ ${item.offerBadgeLabel}',
-                                bgColor: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
-                                borderColor: const Color(0xFF7B1FA2).withValues(alpha: 0.35),
-                                textColor: const Color(0xFF7B1FA2),
+                                bgColor: const Color(0xFFD97706).withValues(alpha: 0.12),
+                                borderColor: const Color(0xFFD97706).withValues(alpha: 0.40),
+                                textColor: const Color(0xFFB45309),
                                 tooltip: item.offerBeatDiscountTier
                                     ? 'Oferta aplicada por tener menor precio que la lista activa (sin acumular descuentos). Lista base: \$${item.product.sellingPrice.toCurrency()}'
                                     : 'Oferta promocional aplicada (Lista: \$${item.product.sellingPrice.toCurrency()})',
@@ -4277,7 +4361,7 @@ class _PosScreenState extends State<PosScreen> {
                                         borderRadius: BorderRadius.circular(6),
                                         onTap: () {
                                           pos.removeFromCart(item);
-                                          _searchFocusNode.requestFocus();
+                                          _requestSearchFocusSilently();
                                         },
                                         child: Padding(
                                           padding: const EdgeInsets.all(2.0),
@@ -4451,7 +4535,7 @@ class _PosScreenState extends State<PosScreen> {
                                                     } else {
                                                       pos.removeFromCart(item);
                                                     }
-                                                    _searchFocusNode.requestFocus();
+                                                    _requestSearchFocusSilently();
                                                   },
                                                   child: Padding(
                                                     padding: EdgeInsets.all(
@@ -4511,7 +4595,7 @@ class _PosScreenState extends State<PosScreen> {
                                                     }
                                                     pos.updateQuantity(
                                                         item, item.quantity + 1);
-                                                    _searchFocusNode.requestFocus();
+                                                    _requestSearchFocusSilently();
                                                   },
                                                   child: Padding(
                                                     padding: EdgeInsets.all(
@@ -4688,7 +4772,7 @@ class _PosScreenState extends State<PosScreen> {
                                             );
                                           }
                                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                                            if (mounted) _searchFocusNode.requestFocus();
+                                            if (mounted) _requestSearchFocusSilently();
                                           });
                                         },
                                       ),
@@ -4721,7 +4805,7 @@ class _PosScreenState extends State<PosScreen> {
                                           pos.setDefaultTier(currentValue, customLabel);
                                           SnackBarService.success(context, 'Lista fijada. El carrito usará esta lista automáticamente.');
                                         }
-                                        _searchFocusNode.requestFocus();
+                                        _requestSearchFocusSilently();
                                       },
                                     );
                                   },
@@ -4744,7 +4828,7 @@ class _PosScreenState extends State<PosScreen> {
                   onOpenPendingList: () => _pendingOrdersPortalController.toggle(),
                   onOpenPriceLookup: _openPriceLookupDialog,
                   onAfterDialogClosed: () {
-                    if (mounted) _searchFocusNode.requestFocus();
+                    if (mounted) _requestSearchFocusSilently();
                   },
                 ),
                 const SizedBox(height: 6),
@@ -5045,12 +5129,17 @@ class _PosScreenState extends State<PosScreen> {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final catalog = Provider.of<CatalogProvider>(context, listen: false);
     final offerProv = Provider.of<OfferProvider>(context, listen: false);
-    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
-    final displayItems = _getFilteredProducts(catalog, offerProv, localTerminal);
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    final displayItems = _getFilteredProducts(
+      catalog,
+      offerProv,
+      localTerminal ?? LocalTerminalProvider(),
+    );
     final isSearchEmpty = _searchController.text.trim().isEmpty;
 
     // F9 / F12 → Cobrar directo (funciona siempre que haya ítems en el carrito)
     if (event.logicalKey == LogicalKeyboardKey.f9 || event.logicalKey == LogicalKeyboardKey.f12) {
+      _hideSearchHistoryPopover();
       if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
         _handleCheckout();
       }
@@ -5059,12 +5148,14 @@ class _PosScreenState extends State<PosScreen> {
 
     // F3 → Crear Producto o Combo Rápido (Temporal o en Catálogo)
     if (event.logicalKey == LogicalKeyboardKey.f3) {
+      _hideSearchHistoryPopover();
       _openQuickItemDialog();
       return true;
     }
 
     // F4 → Poner en Espera directo
     if (event.logicalKey == LogicalKeyboardKey.f4) {
+      _hideSearchHistoryPopover();
       if (posProvider.cart.isNotEmpty && !posProvider.isLoading) {
         _handleHoldOrder();
       }
@@ -5073,12 +5164,14 @@ class _PosScreenState extends State<PosScreen> {
 
     // F5 → Consultar Precio sin agregar al carrito
     if (event.logicalKey == LogicalKeyboardKey.f5) {
+      _hideSearchHistoryPopover();
       _openPriceLookupDialog();
       return true;
     }
 
     // F6 → Abrir selector rápido de clientes
     if (event.logicalKey == LogicalKeyboardKey.f6) {
+      _hideSearchHistoryPopover();
       final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
       final hasCurrentAccounts = settingsProv.settings?.features.currentAccounts ?? false;
       if (!hasCurrentAccounts) {
@@ -5088,14 +5181,14 @@ class _PosScreenState extends State<PosScreen> {
           description:
               'La gestión de clientes con cuenta corriente y saldo a favor está disponible en el Plan Ferretería/Corralón o como módulo adicional.',
         ).then((_) {
-          if (mounted) _searchFocusNode.requestFocus();
+          if (mounted) _requestSearchFocusSilently();
         });
       } else {
         showDialog(
           context: context,
           builder: (ctx) => const PosQuickCustomerDialog(),
         ).then((_) {
-          if (mounted) _searchFocusNode.requestFocus();
+          if (mounted) _requestSearchFocusSilently();
         });
       }
       return true;
@@ -5106,9 +5199,17 @@ class _PosScreenState extends State<PosScreen> {
       final settingsProv =
           Provider.of<SettingsProvider>(context, listen: false);
       if (settingsProv.canUseHardwareCalculator) {
+        _hideSearchHistoryPopover();
         _openHardwareCalculatorDialog();
         return true;
       }
+    }
+
+    // Tab → Cerrar popover si está abierto para no quedar flotando tras cambiar foco
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        _searchHistoryPortalController.isShowing) {
+      _hideSearchHistoryPopover();
+      return false;
     }
 
     // Escape → Cerrar overlay de órdenes pendientes o historial de búsqueda o limpiar buscador/resetear filtro
@@ -5138,6 +5239,39 @@ class _PosScreenState extends State<PosScreen> {
 
     // Atajos que solo funcionan cuando el buscador está vacío
     if (isSearchEmpty) {
+      // Navegación por teclado en Popover de historial de búsquedas (ArrowDown/ArrowUp/Enter)
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+          (_searchFocusNode.hasFocus || _searchHistoryPortalController.isShowing)) {
+        final historyTerms = localTerminal?.recentTermsForScope(
+              LocalTerminalProvider.scopePosCounter,
+            ) ??
+            const <String>[];
+        final historyProducts =
+            _resolveActiveRecentProducts(catalog, localTerminal);
+        final totalHistory = historyTerms.length + historyProducts.length;
+        if (totalHistory > 0) {
+          if (!_searchHistoryPortalController.isShowing) {
+            _showSearchHistoryPopoverIfAvailable(initialHighlightIndex: 0);
+          } else {
+            setState(() {
+              _searchHistoryHighlightIndex =
+                  (_searchHistoryHighlightIndex + 1).clamp(0, totalHistory - 1);
+            });
+          }
+          return true;
+        }
+      }
+
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+          _searchHistoryPortalController.isShowing) {
+        setState(() {
+          _searchHistoryHighlightIndex = _searchHistoryHighlightIndex <= 0
+              ? -1
+              : _searchHistoryHighlightIndex - 1;
+        });
+        return true;
+      }
+
       // Ctrl + 1..9 para seleccionar productos (anti-AltCodes de Windows)
       final isControlPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
                                HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight);
@@ -5179,9 +5313,36 @@ class _PosScreenState extends State<PosScreen> {
         return index != null;
       }
 
-      // Enter / NumpadEnter → Cobrar siempre que el buscador esté vacío
+      // Enter / NumpadEnter → Si hay un ítem del historial resaltado con flechas, aplicarlo;
+      // si no hay selección (-1), cerrar popover y cobrar directamente (Enter: Cobrar).
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+        if (_searchHistoryPortalController.isShowing &&
+            _searchHistoryHighlightIndex >= 0) {
+          final historyTerms = localTerminal?.recentTermsForScope(
+                LocalTerminalProvider.scopePosCounter,
+              ) ??
+              const <String>[];
+          final historyProducts =
+              _resolveActiveRecentProducts(catalog, localTerminal);
+          if (_searchHistoryHighlightIndex < historyTerms.length) {
+            _applyRecentSearchTerm(historyTerms[_searchHistoryHighlightIndex]);
+            return true;
+          }
+          final pIdx = _searchHistoryHighlightIndex - historyTerms.length;
+          if (pIdx >= 0 && pIdx < historyProducts.length) {
+            final prod = historyProducts[pIdx];
+            _hideSearchHistoryPopover();
+            _recordRecentSearchIfValid(
+              null,
+              selectedProductId: prod.id,
+              selectedProduct: prod,
+            );
+            _handleProductSelection(prod);
+            return true;
+          }
+        }
+        _hideSearchHistoryPopover();
         if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
           _handleCheckout();
         }
@@ -5318,6 +5479,14 @@ class _PosScreenState extends State<PosScreen> {
     CartItem? replacingCartItem,
   }) async {
     _hideSearchHistoryPopover();
+    if (initialProduct != null &&
+        initialProduct.active &&
+        _searchQuery.trim().isNotEmpty) {
+      _recordRecentSearchIfValid(
+        _searchQuery,
+        selectedProduct: initialProduct,
+      );
+    }
     final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
     if (!settingsProv.canUseHardwareCalculator) return;
 
@@ -5382,7 +5551,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
     if (res == null) {
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
       return;
     }
 
@@ -5408,7 +5577,7 @@ class _PosScreenState extends State<PosScreen> {
     );
     if (unitBlockMsg != null) {
       SnackBarService.error(context, unitBlockMsg);
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
       return;
     }
 
@@ -5433,7 +5602,7 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (!mounted) return;
       if (pinResult == null) {
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
       if (pinResult != 'ALREADY_AUTHORIZED') {
@@ -5472,7 +5641,7 @@ class _PosScreenState extends State<PosScreen> {
       if (!mounted) return;
 
       if (!authorized) {
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
 
@@ -5482,7 +5651,7 @@ class _PosScreenState extends State<PosScreen> {
           catalogProvider.errorMessage ??
               'No se pudo actualizar el producto en la Base de Datos.',
         );
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusSilently();
         return;
       }
     }
@@ -5509,7 +5678,7 @@ class _PosScreenState extends State<PosScreen> {
         );
         if (!mounted) return;
         if (!authorized) {
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
           return;
         }
         if (!ok) {
@@ -5518,7 +5687,7 @@ class _PosScreenState extends State<PosScreen> {
             catalogProvider.errorMessage ??
                 'No se pudo ajustar el stock en la Base de Datos.',
           );
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
           return;
         }
         shelfStockAdjustedOk = true;
@@ -5605,7 +5774,7 @@ class _PosScreenState extends State<PosScreen> {
               : '💾 Cambios guardados en la Base de Datos para "${updatedProduct!.name}".');
       SnackBarService.success(context, msg);
     }
-    _searchFocusNode.requestFocus();
+    _requestSearchFocusSilently();
   }
 
   /// Punto 2B: Cuando se escanea un código de barras desconocido en el mostrador,
@@ -5706,386 +5875,103 @@ class _PosScreenState extends State<PosScreen> {
     BuildContext overlayContext,
     OverlayChildLayoutInfo info,
   ) {
-    final Offset targetBottomLeft = MatrixUtils.transformPoint(
-      info.childPaintTransform,
-      Offset(0, info.childSize.height),
-    );
-    final double width = info.childSize.width
-        .clamp(300.0, (info.overlaySize.width - 16.0).clamp(300.0, 900.0));
-    final double maxLeft = (info.overlaySize.width - width - 8.0) < 8.0
-        ? 8.0
-        : (info.overlaySize.width - width - 8.0);
-    final double left = targetBottomLeft.dx.clamp(8.0, maxLeft);
-    final double top = targetBottomLeft.dy + 6.0;
-    final double maxHeight =
-        (info.overlaySize.height - top - 16.0).clamp(180.0, 360.0);
+    return PosSearchHistoryPopover.buildAnchoredOverlay(
+      info: info,
+      maxWidth: 580.0,
+      maxOverlayHeight: 380.0,
+      child: Consumer3<CatalogProvider, PosProvider, OfferProvider>(
+        builder: (ctx, catalog, pos, offerProv, _) {
+          final localTerminal = tryGetLocalTerminalProvider(ctx, listen: true);
+          final terms = localTerminal?.recentTermsForScope(
+                LocalTerminalProvider.scopePosCounter,
+              ) ??
+              const <String>[];
+          final recentProducts =
+              _resolveActiveRecentProducts(catalog, localTerminal);
 
-    return Positioned(
-      top: top,
-      left: left,
-      width: width,
-      child: TapRegion(
-        groupId: _searchHistoryTapGroupId,
-        onTapOutside: (_) => _hideSearchHistoryPopover(),
-        child: Focus(
-          canRequestFocus: false,
-          descendantsAreFocusable: false,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxHeight),
-            child: Material(
-              key: const ValueKey('pos_search_history_overlay'),
-              elevation: 12,
-              borderRadius: BorderRadius.circular(12),
-              clipBehavior: Clip.antiAlias,
-              color: Colors.white,
-              shadowColor: Colors.black.withValues(alpha: 0.22),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Consumer4<LocalTerminalProvider, CatalogProvider,
-                    PosProvider, OfferProvider>(
-                  builder: (ctx, localTerminal, catalog, pos, offerProv, _) {
-                    final terms = localTerminal.recentSearchTerms;
-                    final recentProducts =
-                        _resolveActiveRecentProducts(catalog, localTerminal);
+          if (localTerminal == null ||
+              (terms.isEmpty && recentProducts.isEmpty)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _hideSearchHistoryPopover();
+            });
+            return const SizedBox.shrink();
+          }
 
-                    if (terms.isEmpty && recentProducts.isEmpty) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _hideSearchHistoryPopover();
-                      });
-                      return const SizedBox.shrink();
-                    }
-
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            border: Border(
-                              bottom: BorderSide(color: Colors.grey.shade200),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.history_rounded,
-                                  size: 16, color: Colors.blueGrey.shade700),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'Búsquedas recientes',
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.blueGrey.shade800,
-                                  ),
-                                ),
-                              ),
-                              TextButton.icon(
-                                style: TextButton.styleFrom(
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  foregroundColor: Colors.grey.shade600,
-                                ),
-                                onPressed: () {
-                                  unawaited(
-                                      localTerminal.clearRecentSearches());
-                                  _hideSearchHistoryPopover();
-                                  _requestSearchFocusSilently();
-                                },
-                                icon:
-                                    const Icon(Icons.delete_sweep_outlined, size: 15),
-                                label: const Text(
-                                  'Limpiar',
-                                  style: TextStyle(fontSize: 11.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Flexible(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (terms.isNotEmpty) ...[
-                                  Text(
-                                    'TÉRMINOS RECIENTES',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.5,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: terms.map((term) {
-                                      return Material(
-                                        color: const Color(0xFFF1F5F9),
-                                        borderRadius: BorderRadius.circular(18),
-                                        child: InkWell(
-                                          canRequestFocus: false,
-                                          borderRadius:
-                                              BorderRadius.circular(18),
-                                          onTap: () =>
-                                              _applyRecentSearchTerm(term),
-                                          child: Padding(
-                                            padding: const EdgeInsets.fromLTRB(
-                                                10, 5, 6, 5),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.history_rounded,
-                                                    size: 13,
-                                                    color: Colors
-                                                        .blueGrey.shade600),
-                                                const SizedBox(width: 5),
-                                                ConstrainedBox(
-                                                  constraints:
-                                                      const BoxConstraints(
-                                                          maxWidth: 180),
-                                                  child: Text(
-                                                    term,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Color(0xFF1E293B),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                InkWell(
-                                                  canRequestFocus: false,
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  onTap: () {
-                                                    final willBeEmpty =
-                                                        terms.length <= 1 &&
-                                                            recentProducts
-                                                                .isEmpty;
-                                                    unawaited(localTerminal
-                                                        .removeRecentSearchTerm(
-                                                            term));
-                                                    if (willBeEmpty) {
-                                                      _hideSearchHistoryPopover();
-                                                    }
-                                                  },
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(2),
-                                                    child: Icon(
-                                                      Icons.close_rounded,
-                                                      size: 14,
-                                                      color:
-                                                          Colors.grey.shade600,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ],
-                                if (terms.isNotEmpty &&
-                                    recentProducts.isNotEmpty)
-                                  const Divider(height: 18),
-                                if (recentProducts.isNotEmpty) ...[
-                                  Text(
-                                    'PRODUCTOS CONSULTADOS',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.5,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  ...recentProducts.map((p) {
-                                    final promoPrice =
-                                        offerProv.getDiscountedPrice(p);
-                                    final hasOffer = promoPrice != null &&
-                                        promoPrice > 0 &&
-                                        promoPrice < p.sellingPrice;
-                                    final calc =
-                                        ProductPricingCalculator.calculate(
-                                      product: p,
-                                      activeTier: pos.activeTier,
-                                      wholesaleFactor: pos.wholesaleFactor,
-                                      cardFactor: pos.cardFactor,
-                                      customFactor: pos.currentCustomFactor,
-                                      promotionalPrice: promoPrice,
-                                      hasExplicitOffer: hasOffer,
-                                      cardSurchargeOnOffersMode:
-                                          pos.cardSurchargeOnOffersMode,
-                                      discountTierOnOffersMode:
-                                          pos.discountTierOnOffersMode,
-                                      ignoreFixedPrices:
-                                          pos.ignoreProductFixedPrices,
-                                    );
-                                    final unitPrice = calc.finalUnitPrice;
-                                    final priceStr = p.isSoldByWeight
-                                        ? '\$${unitPrice.toCurrency()}/Kg'
-                                        : '\$${unitPrice.toCurrency()}';
-
-                                    return InkWell(
-                                      canRequestFocus: false,
-                                      borderRadius: BorderRadius.circular(8),
-                                      onTap: () {
-                                        _hideSearchHistoryPopover();
-                                        unawaited(localTerminal
-                                            .recordRecentSearch(
-                                                selectedProductId: p.id));
-                                        _handleProductSelection(p);
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 6),
-                                        child: Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 14,
-                                              backgroundColor: p.isSoldByWeight
-                                                  ? Colors.orange.shade50
-                                                  : Colors.indigo.shade50,
-                                              child: Icon(
-                                                p.isSoldByWeight
-                                                    ? Icons.scale_rounded
-                                                    : Icons.inventory_2_outlined,
-                                                size: 15,
-                                                color: p.isSoldByWeight
-                                                    ? Colors.orange.shade700
-                                                    : Colors.indigo.shade700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    p.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 12.5,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                  if (p.internalCode
-                                                          .isNotEmpty ||
-                                                      p.category?.name != null)
-                                                    Text(
-                                                      [
-                                                        if (p.internalCode
-                                                            .isNotEmpty)
-                                                          p.internalCode,
-                                                        if (p.category?.name !=
-                                                            null)
-                                                          p.category!.name,
-                                                      ].join(' · '),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontSize: 10.5,
-                                                        color: Colors
-                                                            .grey.shade600,
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            if (calc.crossedOutPrice != null)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                    right: 6),
-                                                child: Text(
-                                                  '\$${calc.crossedOutPrice!.toCurrency()}${p.isSoldByWeight ? '/Kg' : ''}',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.grey.shade500,
-                                                    decoration: TextDecoration
-                                                        .lineThrough,
-                                                  ),
-                                                ),
-                                              ),
-                                            Text(
-                                              priceStr,
-                                              style: TextStyle(
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.bold,
-                                                color: calc.hasActiveOffer
-                                                    ? const Color(0xFF7B1FA2)
-                                                    : const Color(0xFF1B873A),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            InkWell(
-                                              canRequestFocus: false,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              onTap: () {
-                                                final willBeEmpty =
-                                                    recentProducts.length <=
-                                                            1 &&
-                                                        terms.isEmpty;
-                                                unawaited(localTerminal
-                                                    .removeRecentSearchProductId(
-                                                        p.id));
-                                                if (willBeEmpty) {
-                                                  _hideSearchHistoryPopover();
-                                                }
-                                              },
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(4),
-                                                child: Icon(
-                                                  Icons.close_rounded,
-                                                  size: 15,
-                                                  color: Colors.grey.shade500,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
+          return PosSearchHistoryPopover(
+            containerKey: const ValueKey('pos_search_history_overlay'),
+            terms: terms,
+            products: recentProducts,
+            highlightedIndex: _searchHistoryHighlightIndex,
+            tapGroupId: _searchHistoryTapGroupId,
+            maxWidth: 580.0,
+            onDismiss: _hideSearchHistoryPopover,
+            onClearAll: () {
+              unawaited(localTerminal.clearRecentSearchesForScope(
+                LocalTerminalProvider.scopePosCounter,
+              ));
+              _hideSearchHistoryPopover();
+              _requestSearchFocusSilently();
+            },
+            onSelectTerm: _applyRecentSearchTerm,
+            onRemoveTerm: (term) {
+              final willBeEmpty = terms.length <= 1 && recentProducts.isEmpty;
+              unawaited(localTerminal.removeRecentTermForScope(
+                LocalTerminalProvider.scopePosCounter,
+                term,
+              ));
+              if (willBeEmpty) {
+                _hideSearchHistoryPopover();
+              } else if (_searchHistoryHighlightIndex != -1) {
+                setState(() => _searchHistoryHighlightIndex = -1);
+              }
+            },
+            onSelectProduct: (p) {
+              _hideSearchHistoryPopover();
+              _recordRecentSearchIfValid(
+                null,
+                selectedProductId: p.id,
+                selectedProduct: p,
+              );
+              _handleProductSelection(p);
+            },
+            onRemoveProduct: (productId) {
+              final willBeEmpty =
+                  recentProducts.length <= 1 && terms.isEmpty;
+              unawaited(localTerminal.removeRecentProductIdForScope(
+                LocalTerminalProvider.scopePosCounter,
+                productId,
+              ));
+              if (willBeEmpty) {
+                _hideSearchHistoryPopover();
+              } else if (_searchHistoryHighlightIndex != -1) {
+                setState(() => _searchHistoryHighlightIndex = -1);
+              }
+            },
+            priceResolver: (p) {
+              final promoPrice = offerProv.getDiscountedPrice(p);
+              final hasOffer = promoPrice != null &&
+                  promoPrice > 0 &&
+                  promoPrice < p.sellingPrice;
+              final calc = ProductPricingCalculator.calculate(
+                product: p,
+                activeTier: pos.activeTier,
+                wholesaleFactor: pos.wholesaleFactor,
+                cardFactor: pos.cardFactor,
+                customFactor: pos.currentCustomFactor,
+                promotionalPrice: promoPrice,
+                hasExplicitOffer: hasOffer,
+                cardSurchargeOnOffersMode: pos.cardSurchargeOnOffersMode,
+                discountTierOnOffersMode: pos.discountTierOnOffersMode,
+                ignoreFixedPrices: pos.ignoreProductFixedPrices,
+              );
+              return (
+                price: calc.finalUnitPrice,
+                crossedOutPrice: calc.crossedOutPrice,
+                hasActiveOffer: calc.hasActiveOffer,
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -6148,15 +6034,14 @@ class _PosScreenState extends State<PosScreen> {
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _onPosSearchChanged('');
-                                      _requestSearchFocusSilently();
-                                    },
+                                    tooltip: 'Limpiar filtro',
+                                    onPressed: _clearActiveSearchFilter,
                                   )
-                                : Consumer2<LocalTerminalProvider,
-                                    CatalogProvider>(
-                                    builder: (ctx, localTerminal, catalog, _) {
+                                : Consumer<CatalogProvider>(
+                                    builder: (ctx, catalog, _) {
+                                      final localTerminal =
+                                          tryGetLocalTerminalProvider(ctx,
+                                              listen: true);
                                       if (!_hasSearchHistoryEntries(
                                           catalog, localTerminal)) {
                                         return const SizedBox.shrink();
@@ -6167,10 +6052,16 @@ class _PosScreenState extends State<PosScreen> {
                                         child: Tooltip(
                                           message: 'Búsquedas recientes',
                                           child: IconButton(
+                                            key: const ValueKey(
+                                                'pos_search_history_toggle_btn'),
                                             icon: Icon(
                                               Icons.history_rounded,
                                               size: 20,
-                                              color: Colors.blueGrey.shade600,
+                                              color:
+                                                  _searchHistoryPortalController
+                                                          .isShowing
+                                                      ? const Color(0xFF0F766E)
+                                                      : Colors.blueGrey.shade600,
                                             ),
                                             onPressed: () {
                                               if (_searchHistoryPortalController
@@ -6364,6 +6255,16 @@ class _PosScreenState extends State<PosScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    TextButton.icon(
+                      key: const ValueKey('pos_clear_search_filter_btn'),
+                      onPressed: _clearActiveSearchFilter,
+                      icon: const Icon(Icons.filter_alt_off_rounded, size: 17),
+                      label: const Text('Limpiar filtro'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: Colors.blueGrey.shade700,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -6455,9 +6356,19 @@ class _PosScreenState extends State<PosScreen> {
                             ),
                             if (_searchQuery.isNotEmpty) ...[
                               const SizedBox(height: 8),
-                              const Text('Presá Enter para buscar en el servidor',
-                                  style: TextStyle(
-                                      color: Colors.blueGrey, fontSize: 13)),
+                              const Text(
+                                'Presioná Enter para buscar por código o limpiá el filtro',
+                                style: TextStyle(
+                                    color: Colors.blueGrey, fontSize: 13),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                key: const ValueKey('pos_empty_clear_search_filter_btn'),
+                                icon: const Icon(Icons.filter_alt_off_rounded),
+                                label: const Text('Limpiar filtro'),
+                                onPressed: _clearActiveSearchFilter,
+                              ),
                             ],
                           ],
                         ),
@@ -6485,6 +6396,10 @@ class _PosScreenState extends State<PosScreen> {
       final pdfBytes = await posProvider.repository
           .downloadTicketPdf(posProvider.lastSaleId);
       if (!mounted) return;
+      var paperSize = 'a4';
+      try {
+        paperSize = context.read<LocalTerminalProvider>().pdfPaperSize;
+      } catch (_) {}
       await showDialog(
         context: context,
         barrierDismissible: false,
@@ -6492,143 +6407,147 @@ class _PosScreenState extends State<PosScreen> {
           bool isVoiding = false;
           return StatefulBuilder(
             builder: (context, setState) {
-              return Dialog(
-                child: SizedBox(
-                  width: 900,
-                  height: 800,
-                  child: Scaffold(
-                    appBar: AppBar(
-                      title: Text(
-                          'Vista Previa Backoffice - Venta #${posProvider.lastSaleId}'),
-                      automaticallyImplyLeading: false,
-                      actions: [
-                        if (isVoiding)
-                          Center(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16.0),
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.red),
-                              ),
-                            ),
-                          )
-                        else
-                          TextButton.icon(
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: dialogCtx,
-                                builder: (c) => AlertDialog(
-                                  title: const Text('¿Anular Venta?'),
-                                  content: const Text(
-                                      'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(c, false),
-                                        child: const Text('NO, VOLVER')),
-                                    ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.red,
-                                            foregroundColor: Colors.white),
-                                        onPressed: () => Navigator.pop(c, true),
-                                        child: const Text('SÍ, ANULAR')),
-                                  ],
-                                ),
-                              );
-
-                              if (confirm == true) {
-                                final currentShift = context.read<CashRegisterProvider>().currentShift;
-                                if (currentShift == null) {
-                                  if (dialogCtx.mounted) {
-                                    SnackBarService.error(
-                                        dialogCtx, 'Debe haber un turno de caja abierto para anular órdenes.');
-                                  }
-                                  return;
-                                }
-                                if (posProvider.lastSaleId <= 0) {
-                                  if (dialogCtx.mounted) {
-                                    SnackBarService.error(
-                                        dialogCtx, 'No hay ID de venta válido para anular.');
-                                  }
-                                  return;
-                                }
-                                setState(() {
-                                  isVoiding = true;
-                                });
-
-                                final hasPermission = await AdminPinDialog.protectAction(
-                                  dialogCtx,
-                                  action: 'Anulación de Ventas Emitidas',
-                                  permissionKey: AppPermissions.voidSales,
-                                  onAuthorized: () async {
-                                    try {
-                                      final success = await posProvider.voidPendingOrder(
-                                        posProvider.lastSaleId,
-                                        shiftId: currentShift.id,
-                                      );
-                                      if (!success) {
-                                        if (dialogCtx.mounted) {
-                                          SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${posProvider.errorMessage ?? "Error desconocido"}');
-                                        }
-                                        setState(() {
-                                          isVoiding = false;
-                                        });
-                                        return;
-                                      }
-                                      // Restaurar carrito al estado previo a la venta
-                                      posProvider.restoreLastSaleCart();
-
-                                      if (dialogCtx.mounted) {
-                                        SnackBarService.warning(dialogCtx,
-                                            'Venta anulada. Los productos han vuelto al carrito.');
-                                        Navigator.pop(dialogCtx, 'annulled');
-                                      }
-                                    } catch (e) {
-                                      if (dialogCtx.mounted) {
-                                        SnackBarService.error(
-                                            dialogCtx, 'Error al anular: $e');
-                                        setState(() {
-                                          isVoiding = false;
-                                        });
-                                      }
-                                    }
-                                  },
-                                );
-
-                                if (!hasPermission) {
-                                  setState(() {
-                                    isVoiding = false;
-                                  });
-                                }
-                              }
-                            },
-                            icon: const Icon(Icons.delete_forever,
-                                color: Colors.red),
-                            label: const Text('ANULAR COBRO Y VOLVER',
-                                style: TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold)),
+              return AppPdfPreviewModal(
+                title: 'Vista Previa Backoffice - Venta #${posProvider.lastSaleId}',
+                subtitle:
+                    'Comprobante respaldado • Hoja ${pdfPaperSizeLabel(paperSize)}',
+                icon: Icons.picture_as_pdf_rounded,
+                accent: AppModalAccent.blue,
+                pdfFileName: 'Comprobante_${posProvider.lastSaleId}.pdf',
+                initialPageFormat: pdfPageFormatFromPaperSize(paperSize),
+                build: (format) async => pdfBytes,
+                canClose: !isVoiding,
+                onClose: isVoiding ? null : () => Navigator.pop(dialogCtx),
+                headerTrailing: isVoiding
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.dangerLight,
                           ),
-                        const SizedBox(width: 16),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed:
-                              isVoiding ? null : () => Navigator.pop(dialogCtx),
                         ),
-                      ],
-                    ),
-                    body: PdfPreview(
-                      build: (format) async => pdfBytes,
-                      canChangePageFormat: false,
-                      canChangeOrientation: false,
-                      pdfFileName: 'Comprobante_${posProvider.lastSaleId}.pdf',
-                      canDebug: false,
-                    ),
-                  ),
-                ),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: () async {
+                          final confirm = await AppConfirmDialog.show(
+                            dialogCtx,
+                            title: '¿Anular Venta?',
+                            message:
+                                'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.',
+                            confirmLabel: 'SÍ, ANULAR',
+                            cancelLabel: 'NO, VOLVER',
+                            icon: Icons.cancel_outlined,
+                            isDestructive: true,
+                          );
+
+                          if (confirm == true) {
+                            final currentShift = context
+                                .read<CashRegisterProvider>()
+                                .currentShift;
+                            if (currentShift == null) {
+                              if (dialogCtx.mounted) {
+                                SnackBarService.error(
+                                  dialogCtx,
+                                  'Debe haber un turno de caja abierto para anular órdenes.',
+                                );
+                              }
+                              return;
+                            }
+                            if (posProvider.lastSaleId <= 0) {
+                              if (dialogCtx.mounted) {
+                                SnackBarService.error(
+                                  dialogCtx,
+                                  'No hay ID de venta válido para anular.',
+                                );
+                              }
+                              return;
+                            }
+                            setState(() {
+                              isVoiding = true;
+                            });
+
+                            final hasPermission =
+                                await AdminPinDialog.protectAction(
+                              dialogCtx,
+                              action: 'Anulación de Ventas Emitidas',
+                              permissionKey: AppPermissions.voidSales,
+                              onAuthorized: () async {
+                                try {
+                                  final success =
+                                      await posProvider.voidPendingOrder(
+                                    posProvider.lastSaleId,
+                                    shiftId: currentShift.id,
+                                  );
+                                  if (!success) {
+                                    if (dialogCtx.mounted) {
+                                      SnackBarService.error(
+                                        dialogCtx,
+                                        'No se pudo anular la venta: ${posProvider.errorMessage ?? "Error desconocido"}',
+                                      );
+                                    }
+                                    setState(() {
+                                      isVoiding = false;
+                                    });
+                                    return;
+                                  }
+                                  // Restaurar carrito al estado previo a la venta
+                                  posProvider.restoreLastSaleCart();
+
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.warning(
+                                      dialogCtx,
+                                      'Venta anulada. Los productos han vuelto al carrito.',
+                                    );
+                                    Navigator.pop(dialogCtx, 'annulled');
+                                  }
+                                } catch (e) {
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.error(
+                                      dialogCtx,
+                                      'Error al anular: $e',
+                                    );
+                                    setState(() {
+                                      isVoiding = false;
+                                    });
+                                  }
+                                }
+                              },
+                            );
+
+                            if (!hasPermission) {
+                              setState(() {
+                                isVoiding = false;
+                              });
+                            }
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.delete_forever_rounded,
+                          size: 17,
+                        ),
+                        label: const Text('ANULAR COBRO Y VOLVER'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFFCA5A5),
+                          backgroundColor:
+                              AppColors.danger.withValues(alpha: 0.22),
+                          side: BorderSide(
+                            color:
+                                AppColors.dangerLight.withValues(alpha: 0.55),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
               );
             },
           );
@@ -6666,7 +6585,7 @@ class _PosScreenState extends State<PosScreen> {
       child: InkWell(
         onTap: () {
           context.read<LocalTerminalProvider>().setCatalogViewMode(mode);
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -6693,6 +6612,10 @@ class _PosScreenState extends State<PosScreen> {
     final localTerminal = context.watch<LocalTerminalProvider>();
     final catalog = context.watch<CatalogProvider>();
     final offerProv = context.watch<OfferProvider>();
+    bool isHardwareStore = false;
+    try {
+      isHardwareStore = context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false;
+    } catch (_) {}
 
     final activeCatalogProducts = catalog.activeProducts;
     final hasPinned = localTerminal.pinnedProductIds.any(
@@ -6841,7 +6764,11 @@ class _PosScreenState extends State<PosScreen> {
                     _buildFilterChip('🔥 Más Vendidos', 'top_sellers', _quickAccessFilter),
                   if (hasOffers)
                     _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
-                  _buildFilterChip('⚖️ Por Peso', 'weight', _quickAccessFilter),
+                  _buildFilterChip(
+                    isHardwareStore ? '📏 Fraccionables' : '⚖️ Por Peso',
+                    'weight',
+                    _quickAccessFilter,
+                  ),
                   for (final catEntry in visibleCategories)
                     _buildCategoryChip(
                       catEntry.key,
@@ -6863,6 +6790,8 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _buildFilterChip(String label, String value, String currentFilter) {
     final isSelected = value == currentFilter;
+    final activeChipColor =
+        value == 'offers' ? const Color(0xFFB45309) : Colors.blueAccent;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
@@ -6872,17 +6801,17 @@ class _PosScreenState extends State<PosScreen> {
           setState(() {
             _quickAccessFilter = selected ? value : 'all';
           });
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
         },
-        selectedColor: Colors.blue.withAlpha(25),
-        checkmarkColor: Colors.blueAccent,
+        selectedColor: activeChipColor.withAlpha(25),
+        checkmarkColor: activeChipColor,
         labelStyle: TextStyle(
-          color: isSelected ? Colors.blueAccent : Colors.grey.shade700,
+          color: isSelected ? activeChipColor : Colors.grey.shade700,
           fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
         ),
         shape: StadiumBorder(
           side: BorderSide(
-            color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
+            color: isSelected ? activeChipColor : Colors.grey.shade300,
           ),
         ),
       ),
@@ -6911,14 +6840,14 @@ class _PosScreenState extends State<PosScreen> {
                 setState(() {
                   _quickAccessFilter = 'all';
                 });
-                _searchFocusNode.requestFocus();
+                _requestSearchFocusSilently();
               }
             : null,
         onSelected: (selected) {
           setState(() {
             _quickAccessFilter = selected ? 'cat_$catName' : 'all';
           });
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
         },
         selectedColor: color.withAlpha(35),
         checkmarkColor: color,
@@ -7003,7 +6932,7 @@ class _PosScreenState extends State<PosScreen> {
           setState(() {
             _quickAccessFilter = 'cat_$cat';
           });
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusSilently();
         },
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: buttonContent,
@@ -7077,205 +7006,190 @@ class _PosScreenState extends State<PosScreen> {
                     .where((e) => e.key.toLowerCase().contains(query))
                     .toList();
 
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 580,
-                  maxHeight: 560,
+            return AppModalShell(
+              title: 'Todas las Categorías (${categories.length})',
+              subtitle: 'Selecciona una categoría para filtrar el catálogo',
+              icon: Icons.category_rounded,
+              accent: AppModalAccent.blue,
+              maxWidth: 580,
+              maxHeight: 560,
+              expandBody: true,
+              onClose: () => Navigator.pop(dialogCtx),
+              topBar: Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceMuted,
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Encabezado
-                      Row(
+                child: TextField(
+                  controller: searchCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar categoría por nombre...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            splashRadius: 16,
+                            onPressed: () {
+                              searchCtrl.clear();
+                              setModalState(() {});
+                            },
+                          )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.blueAccent,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  onChanged: (_) => setModalState(() {}),
+                  onSubmitted: (_) {
+                    if (filtered.isNotEmpty) {
+                      Navigator.pop(dialogCtx, filtered.first.key);
+                    }
+                  },
+                ),
+              ),
+              bodyPadding: const EdgeInsets.all(16),
+              body: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.category_rounded, color: Colors.blue.shade700, size: 22),
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 48,
+                            color: Colors.grey.shade400,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Todas las Categorías (${categories.length})',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Selecciona una categoría para filtrar el catálogo',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                ),
-                              ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'No se encontró ninguna categoría con "$query"',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            splashRadius: 18,
-                            tooltip: 'Cerrar',
-                            onPressed: () => Navigator.pop(dialogCtx),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-
-                      // Buscador con auto-focus
-                      TextField(
-                        controller: searchCtrl,
-                        autofocus: true,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar categoría por nombre...',
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          suffixIcon: searchCtrl.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  splashRadius: 16,
-                                  onPressed: () {
-                                    searchCtrl.clear();
-                                    setModalState(() {});
-                                  },
-                                )
-                              : null,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
-                          ),
-                        ),
-                        onChanged: (_) => setModalState(() {}),
-                        onSubmitted: (_) {
-                          if (filtered.isNotEmpty) {
-                            Navigator.pop(dialogCtx, filtered.first.key);
-                          }
-                        },
+                    )
+                  : GridView.builder(
+                      itemCount: filtered.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisExtent: 44,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
                       ),
-                      const SizedBox(height: 14),
+                      itemBuilder: (context, index) {
+                        final entry = filtered[index];
+                        final isCurrent = entry.key == activeCategory;
+                        final catColor =
+                            PosQuickAccessCatalogView.resolveCategoryAccent(
+                          entry.key,
+                        );
 
-                      // Grilla de Categorías
-                      Expanded(
-                        child: filtered.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.search_off_rounded, size: 48, color: Colors.grey.shade400),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'No se encontró ninguna categoría con "$query"',
-                                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        return Material(
+                          color: isCurrent
+                              ? catColor.withAlpha(25)
+                              : Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => Navigator.pop(dialogCtx, entry.key),
+                            hoverColor: catColor.withAlpha(15),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isCurrent
+                                      ? catColor
+                                      : Colors.grey.shade200,
+                                  width: isCurrent ? 1.5 : 1.0,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: catColor,
+                                      shape: BoxShape.circle,
                                     ),
-                                  ],
-                                ),
-                              )
-                            : GridView.builder(
-                                itemCount: filtered.length,
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  mainAxisExtent: 44,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                ),
-                                itemBuilder: (context, index) {
-                                  final entry = filtered[index];
-                                  final isCurrent = entry.key == activeCategory;
-                                  final catColor = PosQuickAccessCatalogView.resolveCategoryAccent(entry.key);
-
-                                  return Material(
-                                    color: isCurrent
-                                        ? catColor.withAlpha(25)
-                                        : Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(10),
-                                      onTap: () => Navigator.pop(dialogCtx, entry.key),
-                                      hoverColor: catColor.withAlpha(15),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(
-                                            color: isCurrent
-                                                ? catColor
-                                                : Colors.grey.shade200,
-                                            width: isCurrent ? 1.5 : 1.0,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 10,
-                                              height: 10,
-                                              decoration: BoxDecoration(
-                                                color: catColor,
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                entry.key,
-                                                style: TextStyle(
-                                                  fontSize: 12.5,
-                                                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-                                                  color: isCurrent ? catColor : Colors.black87,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: Colors.grey.shade200),
-                                              ),
-                                              child: Text(
-                                                '${entry.value}',
-                                                style: TextStyle(
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.grey.shade700,
-                                                ),
-                                              ),
-                                            ),
-                                            if (isCurrent) ...[
-                                              const SizedBox(width: 4),
-                                              Icon(Icons.check, size: 14, color: catColor),
-                                            ],
-                                          ],
-                                        ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      entry.key,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: isCurrent
+                                            ? catColor
+                                            : Colors.black87,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey.shade200,
                                       ),
                                     ),
-                                  );
-                                },
+                                    child: Text(
+                                      '${entry.value}',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isCurrent) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(Icons.check, size: 14, color: catColor),
+                                  ],
+                                ],
                               ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             );
           },
         );
@@ -7288,7 +7202,7 @@ class _PosScreenState extends State<PosScreen> {
       setState(() {
         _quickAccessFilter = 'cat_$selectedCat';
       });
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusSilently();
     }
   }
 
@@ -7339,17 +7253,18 @@ class _PosScreenState extends State<PosScreen> {
         );
 
         final displayPrice = calc.finalUnitPrice;
+        final unitSuffix = product.effectiveQuantityUnitLabel;
         final formattedMain = isByWeight
-            ? '\$${displayPrice.toCurrency()}/Kg'
+            ? '\$${displayPrice.toCurrency()}/$unitSuffix'
             : '\$${displayPrice.toCurrency()}';
         final isRightAligned = viewMode == 'list' || viewMode == 'compact';
         final Color highlightColor = calc.hasActiveOffer
-            ? const Color(0xFF7B1FA2)
+            ? const Color(0xFFB45309)
             : (isByWeight ? Colors.orange.shade800 : const Color(0xFF1B873A));
 
         if (calc.crossedOutPrice != null) {
           final formattedOrig = isByWeight
-              ? '\$${calc.crossedOutPrice!.toCurrency()}/Kg'
+              ? '\$${calc.crossedOutPrice!.toCurrency()}/$unitSuffix'
               : '\$${calc.crossedOutPrice!.toCurrency()}';
 
           // En modo lista mantenemos el diseño horizontal limpio que ya tiene buen espacio;
@@ -7661,9 +7576,18 @@ class _CartItemStockIndicator extends StatelessWidget {
           : (days != null ? '⏰ Vence ${days}d' : '⏰ Por vencer');
       final String expDate =
           criticalExpAlert['expiration_date']?.toString() ?? '';
+      final String unitSuffixForAlert =
+          currentProduct.unitType.trim().toLowerCase() == 'un' ||
+                  currentProduct.unitType.trim().isEmpty
+              ? 'u'
+              : currentProduct.unitShortLabel;
+      final String weightUnitForAlert =
+          currentProduct.effectiveQuantityUnitLabel == 'Kg'
+              ? 'kg'
+              : currentProduct.effectiveQuantityUnitLabel;
       final String stockNote = (isCriticalLocally ||
               (status == 'out_of_stock' && !staleReactiveOverriddenByFreshStock))
-          ? ' · Stock proyectado: ${projectedStock.toUnitStockDisplay(isSoldByWeight: currentProduct.isSoldByWeight, unitSuffix: 'u')}'
+          ? ' · Stock proyectado: ${projectedStock.toUnitStockDisplay(isSoldByWeight: currentProduct.isSoldByWeight, unitSuffix: unitSuffixForAlert, weightUnit: weightUnitForAlert)}'
           : '';
       final String tooltip = (isExpired
               ? 'Lote vencido${expDate.isNotEmpty ? ' ($expDate)' : ''}'
@@ -7693,9 +7617,19 @@ class _CartItemStockIndicator extends StatelessWidget {
         ),
       );
     } else {
+      final String unitSuffixForAlert =
+          currentProduct.unitType.trim().toLowerCase() == 'un' ||
+                  currentProduct.unitType.trim().isEmpty
+              ? 'u'
+              : currentProduct.unitShortLabel;
+      final String weightUnitForAlert =
+          currentProduct.effectiveQuantityUnitLabel == 'Kg'
+              ? 'kg'
+              : currentProduct.effectiveQuantityUnitLabel;
       final stockDisp = projectedStock.toUnitStockDisplay(
         isSoldByWeight: currentProduct.isSoldByWeight,
-        unitSuffix: 'u',
+        unitSuffix: unitSuffixForAlert,
+        weightUnit: weightUnitForAlert,
       );
       final String labelText =
           isCritical ? '🔴 Crítico: $stockDisp' : '🟠 <3d';
@@ -8027,202 +7961,170 @@ class _UnrecognizedBarcodeDialogState
           _isSearchingCatalog = false;
         });
       },
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
+      child: AppModalShell(
+        title: 'Código de Barras No Registrado',
+        subtitle: 'EAN escaneado: ${widget.scannedBarcode}',
+        icon: Icons.qr_code_scanner_rounded,
+        accent: AppModalAccent.amber,
+        compact: true,
+        maxWidth: 500,
+        onClose: _close,
+        bodyPadding: const EdgeInsets.all(18),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
+            if (lastItem != null) ...[
+              InkWell(
                 borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.qr_code_scanner_rounded,
-                color: Colors.amber.shade900,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Código de Barras No Registrado',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  Text(
-                    'EAN escaneado: ${widget.scannedBarcode}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (lastItem != null) ...[
-                InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => widget.onAssignBarcode(
-                    context,
-                    lastItem.product,
-                    addToCartAfter: false,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF93C5FD)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.bolt_rounded,
-                          color: Color(0xFF1D4ED8),
-                          size: 22,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Asociar en 1 clic al último ítem del carrito:',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: Color(0xFF1E40AF),
-                                ),
-                              ),
-                              Text(
-                                lastItem.product.name,
-                                style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF1E3A8A),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 15,
-                          color: Color(0xFF1D4ED8),
-                        ),
-                      ],
-                    ),
-                  ),
+                onTap: () => widget.onAssignBarcode(
+                  context,
+                  lastItem.product,
+                  addToCartAfter: false,
                 ),
-                const SizedBox(height: 12),
-              ],
-              TextField(
-                controller: _searchCtrl,
-                autofocus: lastItem == null,
-                decoration: InputDecoration(
-                  labelText:
-                      'Buscar producto en catálogo para asociarle este código...',
-                  hintText: 'Escribí el nombre del producto...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  border: OutlineInputBorder(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
                     borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.primaryBorder),
                   ),
-                  isDense: true,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.bolt_rounded,
+                        color: AppColors.primaryDark,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Asociar en 1 clic al último ítem del carrito:',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Color(0xFF1E40AF),
+                              ),
+                            ),
+                            Text(
+                              lastItem.product.name,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1E3A8A),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 15,
+                        color: AppColors.primaryDark,
+                      ),
+                    ],
+                  ),
                 ),
-                onChanged: (val) async {
-                  final q = val.trim();
-                  if (q.length < 2) {
-                    setState(() {
-                      _candidateProducts = [];
-                      _isSearchingCatalog = false;
-                    });
-                    return;
-                  }
-                  setState(() => _isSearchingCatalog = true);
-                  final found = await widget.onSearchCatalog(q);
-                  if (!mounted || _searchCtrl.text.trim() != q) return;
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: _searchCtrl,
+              autofocus: lastItem == null,
+              decoration: InputDecoration(
+                labelText:
+                    'Buscar producto en catálogo para asociarle este código...',
+                hintText: 'Escribí el nombre del producto...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                isDense: true,
+              ),
+              onChanged: (val) async {
+                final q = val.trim();
+                if (q.length < 2) {
                   setState(() {
-                    _candidateProducts =
-                        found.where((p) => !p.isCombo).take(8).toList();
+                    _candidateProducts = [];
                     _isSearchingCatalog = false;
                   });
-                },
+                  return;
+                }
+                setState(() => _isSearchingCatalog = true);
+                final found = await widget.onSearchCatalog(q);
+                if (!mounted || _searchCtrl.text.trim() != q) return;
+                setState(() {
+                  _candidateProducts =
+                      found.where((p) => !p.isCombo).take(8).toList();
+                  _isSearchingCatalog = false;
+                });
+              },
+            ),
+            if (_isSearchingCatalog)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(
+                  child: SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
               ),
-              if (_isSearchingCatalog)
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Center(
-                    child: SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
+            if (_candidateProducts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _candidateProducts.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, idx) {
+                    final p = _candidateProducts[idx];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      title: Text(
+                        p.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                      subtitle: Text(
+                        '\$${p.sellingPrice.toCurrency()} · ${p.barcode != null && p.barcode!.isNotEmpty ? "EAN actual: ${p.barcode}" : "Sin EAN"}',
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      trailing: FilledButton.tonalIcon(
+                        onPressed: () => widget.onAssignBarcode(
+                          context,
+                          p,
+                          addToCartAfter: true,
+                        ),
+                        icon: const Icon(Icons.link_rounded, size: 16),
+                        label: const Text(
+                          'Asociar y Agregar',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              if (_candidateProducts.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _candidateProducts.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, idx) {
-                      final p = _candidateProducts[idx];
-                      return ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        title: Text(
-                          p.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 13),
-                        ),
-                        subtitle: Text(
-                          '\$${p.sellingPrice.toCurrency()} · ${p.barcode != null && p.barcode!.isNotEmpty ? "EAN actual: ${p.barcode}" : "Sin EAN"}',
-                          style: const TextStyle(fontSize: 11.5),
-                        ),
-                        trailing: FilledButton.tonalIcon(
-                          onPressed: () => widget.onAssignBarcode(
-                            context,
-                            p,
-                            addToCartAfter: true,
-                          ),
-                          icon: const Icon(Icons.link_rounded, size: 16),
-                          label: const Text(
-                            'Asociar y Agregar',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+              ),
             ],
+          ],
+        ),
+        footerLeading: OutlinedButton.icon(
+          onPressed: _triggerQuickCreate,
+          icon: const Icon(Icons.flash_on_rounded, size: 17),
+          label: const Text('Crear Ítem Rápido (F3)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFB45309),
+            side: const BorderSide(color: AppColors.amber),
           ),
         ),
-        actions: [
-          TextButton.icon(
-            onPressed: _triggerQuickCreate,
-            icon: const Icon(Icons.flash_on_rounded, size: 17),
-            label: const Text('Crear Ítem Rápido (F3)'),
-          ),
+        footerActions: [
           TextButton(
             onPressed: _close,
             child: const Text('Cerrar (Esc)'),

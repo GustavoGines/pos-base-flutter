@@ -1,7 +1,11 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -55,6 +59,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   // Se calcula en initState() una vez que se conocen los productos.
   bool _printDates = false;
   bool _useBatchBarcode = false;
+  bool _isHardwareStore = false;
+
+  bool _isScaleWeightProduct(Product p) {
+    if (!p.isSoldByWeight) return false;
+    if (_isHardwareStore) return false;
+    final u = p.unitType.trim().toLowerCase();
+    return u == 'kg' || u == 'g' || u == 'un' || u.isEmpty;
+  }
 
   // Debounce + UniqueKey para forzar rebuild del PdfPreview
   Key _previewKey = UniqueKey();
@@ -76,27 +88,40 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   @override
   void initState() {
     super.initState();
+    try {
+      _isHardwareStore =
+          Provider.of<SettingsProvider?>(context, listen: false)?.safeIsHardwareStore ??
+              false;
+    } catch (_) {
+      _isHardwareStore = false;
+    }
     for (var p in widget.products) {
       final preset = widget.initialQuantities?[p.id];
       _quantities[p.id] = (preset != null && preset >= 0) ? preset : 1;
-      if (p.isSoldByWeight) {
+      if (_isScaleWeightProduct(p)) {
         _weights[p.id] = 100.0;
       }
     }
     // Smart default del toggle ENV/VTO:
-    // Si algún producto tiene balanza O tiene días de vencimiento configurados,
+    // Si algún producto tiene balanza (retail kg/g) O tiene días de vencimiento configurados,
     // activamos el check automáticamente — el cajero quiere esas fechas.
-    // Para productos simples sin fechas (gaseosas, snacks), arranca desmarcado.
+    // Para productos simples o de ferretería (mt/m2/m3), arranca desmarcado.
     _printDates = widget.products.any(
       (p) =>
-          p.isSoldByWeight ||
+          _isScaleWeightProduct(p) ||
           (p.vencimientoDias != null && p.vencimientoDias! > 0) ||
           (widget.batchByProductId?.containsKey(p.id) ?? false),
     );
     // Leer settings una sola vez para tenerlos disponibles en el motor PDF
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final s = context.read<SettingsProvider>().settings;
+      final s = () {
+        try {
+          return Provider.of<SettingsProvider?>(context, listen: false)?.settings;
+        } catch (_) {
+          return null;
+        }
+      }();
       setState(() {
         _companyName = s?.companyName ?? 'Mi Negocio';
         _companyAddress = s?.address ?? '';
@@ -184,7 +209,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       final ProductBatchModel? batch = widget.batchByProductId?[product.id];
       final double? customWeight = _weights[product.id];
       final bool hasWeight =
-          product.isSoldByWeight && customWeight != null && customWeight > 0;
+          _isScaleWeightProduct(product) && customWeight != null && customWeight > 0;
 
       // Determinamos el PLU numérico: Priorizamos el Código Interno (si es numérico), sino usamos el ID
       final int numericPlu = int.tryParse(product.internalCode) ?? product.id;
@@ -318,11 +343,20 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     mainAxisSize: pw.MainAxisSize.min,
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('UNIDADES',
-                          style: const pw.TextStyle(fontSize: 5)),
-                      pw.Text('1',
-                          style: pw.TextStyle(
-                              fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      if (product.unitType.trim().toLowerCase() != 'un' &&
+                          product.unitType.trim().isNotEmpty) ...[
+                        pw.Text('UNIDAD',
+                            style: const pw.TextStyle(fontSize: 5)),
+                        pw.Text('1 ${product.unitShortLabel.toUpperCase()}',
+                            style: pw.TextStyle(
+                                fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      ] else ...[
+                        pw.Text('UNIDADES',
+                            style: const pw.TextStyle(fontSize: 5)),
+                        pw.Text('1',
+                            style: pw.TextStyle(
+                                fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      ],
                     ],
                   )
                 else
@@ -561,31 +595,37 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   // ═══════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final screenH = MediaQuery.of(context).size.height;
     return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 960,
-        height: 660,
-        child: Column(
-          children: [
-            _buildHeader(),
-            const Divider(height: 1),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // ── Panel Izquierdo — Controles ───────────────
-                  SizedBox(width: 320, child: _buildLeftPanel()),
-                  const VerticalDivider(width: 1),
-                  // ── Panel Derecho — Vista Previa ──────────────
-                  Expanded(child: _buildPreviewPanel()),
-                ],
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 960,
+          maxHeight: math.min(660, screenH * 0.92),
+        ),
+        child: SizedBox(
+          width: 960,
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Panel Izquierdo — Controles ───────────────
+                    SizedBox(width: 320, child: _buildLeftPanel()),
+                    const VerticalDivider(width: 1),
+                    // ── Panel Derecho — Vista Previa ──────────────
+                    Expanded(child: _buildPreviewPanel()),
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            _buildFooter(),
-          ],
+              _buildFooter(),
+            ],
+          ),
         ),
       ),
     );
@@ -593,43 +633,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
 
   // ── Header ──────────────────────────────────────────────────────────
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      color: Colors.deepPurple.shade50,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.label_important,
-                color: Colors.deepPurple.shade700, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Imprimir Etiquetas de Precio',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${widget.products.length} producto${widget.products.length > 1 ? 's' : ''} · Vista previa en tiempo real',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-            ],
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(),
-            tooltip: 'Cancelar',
-          ),
-        ],
-      ),
+    return AppModalHeader(
+      title: 'Imprimir Etiquetas de Precio',
+      subtitle:
+          '${widget.products.length} producto${widget.products.length > 1 ? 's' : ''} · Vista previa en tiempo real',
+      icon: Icons.label_important_rounded,
+      accent: AppModalAccent.indigo,
+      closeTooltip: 'Cancelar',
+      onClose: () => Navigator.of(context).pop(),
     );
   }
 
@@ -727,7 +738,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                             _schedulePreviewRebuild();
                           });
                         },
-                        color: Colors.deepPurple,
+                        color: AppColors.indigo,
                       ),
                     ),
                     SizedBox(
@@ -800,7 +811,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                           'Útil para códigos de góndola o deteriorados.',
                           style: TextStyle(fontSize: 10)),
                       value: _printDates,
-                      activeColor: Colors.deepPurple,
+                      activeColor: AppColors.indigo,
                       contentPadding:
                           const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                       visualDensity: VisualDensity.compact,
@@ -832,7 +843,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                             'Desmarcado: usa el código EAN-13 del producto.',
                             style: TextStyle(fontSize: 10)),
                         value: _useBatchBarcode,
-                        activeColor: Colors.deepPurple,
+                        activeColor: AppColors.indigo,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 0),
                         visualDensity: VisualDensity.compact,
@@ -863,7 +874,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                   Icons.summarize_outlined,
                   size: 16,
                   color: _totalLabels > 0
-                      ? Colors.deepPurple
+                      ? AppColors.indigo
                       : Colors.grey.shade400,
                 ),
                 const SizedBox(width: 8),
@@ -876,7 +887,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: _totalLabels > 0
-                          ? Colors.deepPurple.shade700
+                          ? AppColors.indigo
                           : Colors.grey.shade500,
                     ),
                   ),
@@ -900,7 +911,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         decoration: BoxDecoration(
           color: qty > 0 ? Colors.white : Colors.grey.shade100,
           border: Border.all(
-            color: qty > 0 ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+            color: qty > 0 ? Colors.indigo.shade200 : Colors.grey.shade200,
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -966,7 +977,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: qty > 0
-                            ? Colors.deepPurple.shade700
+                            ? AppColors.indigo
                             : Colors.grey.shade400,
                       ),
                     ),
@@ -983,7 +994,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               ),
             ],
           ),
-          if (p.isSoldByWeight && qty > 0) ...[
+          if (_isScaleWeightProduct(p) && qty > 0) ...[
             const SizedBox(height: 12),
             Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1061,7 +1072,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                           '\$${NumberFormat('#,##0', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
                           style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.deepPurple,
+                              color: AppColors.indigo,
                               fontWeight: FontWeight.bold),
                         )
                       ])
@@ -1102,18 +1113,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             ],
           ),
         ),
-        // PdfPreview
+        // Visor PDF unificado con zoom Ctrl + rueda
         Expanded(
           child: _totalLabels == 0
               ? _buildEmptyPreview()
-              : PdfPreview(
+              : AppPdfPreview(
                   key: _previewKey,
                   build: _buildPdfForPreview,
-                  // Ocultar toda la barra de herramientas nativa
-                  allowPrinting: false,
-                  allowSharing: false,
-                  canDebug: false,
-                  // Formato inicial para el preview
                   initialPageFormat: _paperFormat == 'a4'
                       ? PdfPageFormat.a4
                       : _paperFormat == 'custom_55_45'
@@ -1130,20 +1136,11 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                                   80 * PdfPageFormat.mm,
                                   50 * PdfPageFormat.mm,
                                 ),
-                  // Estilo de página con sombra
-                  pdfPreviewPageDecoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.15),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  scrollViewDecoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                  ),
+                  showPrintAction: false,
+                  showSaveAction: false,
+                  showShareAction: false,
+                  compactToolbar: true,
+                  autofocus: false,
                 ),
         ),
       ],
@@ -1177,39 +1174,36 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
 
   // ── Footer ──────────────────────────────────────────────────────────
   Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      color: Colors.white,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          TextButton(
-            onPressed: _isPrinting ? null : () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+    return AppModalFooter(
+      actions: [
+        TextButton(
+          onPressed: _isPrinting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.indigo,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
-          const SizedBox(width: 12),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            onPressed: (_isPrinting || _totalLabels == 0) ? null : _print,
-            icon: _isPrinting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.print_outlined, size: 18),
-            label: Text(
-              _isPrinting
-                  ? 'Enviando...'
-                  : 'Imprimir $_totalLabels etiqueta${_totalLabels != 1 ? 's' : ''}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+          onPressed: (_isPrinting || _totalLabels == 0) ? null : _print,
+          icon: _isPrinting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.print_outlined, size: 18),
+          label: Text(
+            _isPrinting
+                ? 'Enviando...'
+                : 'Imprimir $_totalLabels etiqueta${_totalLabels != 1 ? 's' : ''}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

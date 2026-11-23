@@ -31,6 +31,11 @@ class Product {
   final double? minStock;
   final int salesCount;
   final String unitType;
+  final String? supplierSku;
+  final String? storageLocation;
+  final String? technicalSpec;
+  final String? purchasePackageName;
+  final double? conversionFactor;
   final Map<String, dynamic>? calcConfig;
   final double ivaRate;
   final bool needsCatalogReview;
@@ -68,6 +73,11 @@ class Product {
     this.recipeYieldQuantity = 1.0,
     this.recipeIngredients,
     this.unitType = 'un',
+    this.supplierSku,
+    this.storageLocation,
+    this.technicalSpec,
+    this.purchasePackageName,
+    this.conversionFactor,
     this.calcConfig,
     this.ivaRate = 21.0,
     this.needsCatalogReview = false,
@@ -77,6 +87,114 @@ class Product {
     this.brand,
     this.supplier,
   });
+
+  static const Set<String> discreteUnitTypes = {
+    'un',
+    'bolsa',
+    'rollo',
+    'caja',
+    'par',
+  };
+
+  static const Set<String> metricOrLiquidUnitTypes = {
+    'mt',
+    'm2',
+    'm3',
+    'lt',
+  };
+
+  bool get isDiscreteUnit =>
+      discreteUnitTypes.contains(unitType.trim().toLowerCase());
+
+  bool get isMetricOrLiquidUnit =>
+      metricOrLiquidUnitTypes.contains(unitType.trim().toLowerCase());
+
+  String get unitShortLabel => shortLabelFor(unitType);
+
+  /// Etiqueta corta de unidad efectiva para cantidades/stock/precios fraccionados:
+  /// Si `unitType` es explícito y distinto de `'un'` (ej. `'mt'`, `'m2'`, `'m3'`, `'lt'`, `'kg'`, `'g'`, `'bolsa'`, `'rollo'`, `'caja'`, `'par'`),
+  /// devuelve `shortLabelFor(unitType)`. Si es `'un'` (o vacío), devuelve `'Kg'` cuando `isSoldByWeight == true` o `'un.'` cuando es `false`.
+  String get effectiveQuantityUnitLabel =>
+      resolveQuantityUnitLabel(unitType: unitType, isSoldByWeight: isSoldByWeight);
+
+  /// Sufijo corto para tickets/recibos UI o PDF (ej. `'mt'`, `'m²'`, `'m³'`, `'Lt'`, `'kg'`, `'g'`, `'un'`).
+  String get effectiveReceiptUnitSuffix =>
+      resolveReceiptUnitSuffix(unitType: unitType, isSoldByWeight: isSoldByWeight);
+
+  /// Sufijo ASCII puro para impresoras térmicas ESC/POS (ej. `'mt'`, `'m2'`, `'m3'`, `'lt'`, `'kg'`, `'g'`, `'un'`).
+  String get effectiveAsciiReceiptUnitSuffix =>
+      resolveReceiptUnitSuffix(
+        unitType: unitType,
+        isSoldByWeight: isSoldByWeight,
+        asciiOnly: true,
+      );
+
+  static String resolveQuantityUnitLabel({
+    String? unitType,
+    required bool isSoldByWeight,
+  }) {
+    final norm = (unitType ?? '').trim().toLowerCase();
+    if (norm.isNotEmpty && norm != 'un') {
+      return shortLabelFor(norm);
+    }
+    return isSoldByWeight ? 'Kg' : 'un.';
+  }
+
+  static String resolveReceiptUnitSuffix({
+    String? unitType,
+    required bool isSoldByWeight,
+    bool asciiOnly = false,
+  }) {
+    final norm = (unitType ?? '').trim().toLowerCase();
+    if (norm.isNotEmpty && norm != 'un') {
+      switch (norm) {
+        case 'mt':
+          return 'mt';
+        case 'm2':
+          return asciiOnly ? 'm2' : 'm²';
+        case 'm3':
+          return asciiOnly ? 'm3' : 'm³';
+        case 'kg':
+          return 'kg';
+        case 'g':
+          return 'g';
+        case 'lt':
+          return asciiOnly ? 'lt' : 'Lt';
+        default:
+          return norm;
+      }
+    }
+    return isSoldByWeight ? 'kg' : 'un';
+  }
+
+  static String shortLabelFor(String rawUnitType) {
+    switch (rawUnitType.trim().toLowerCase()) {
+      case 'un':
+        return 'un.';
+      case 'mt':
+        return 'mt';
+      case 'm2':
+        return 'm²';
+      case 'm3':
+        return 'm³';
+      case 'kg':
+        return 'Kg';
+      case 'g':
+        return 'g';
+      case 'lt':
+        return 'Lt';
+      case 'bolsa':
+        return 'bolsa';
+      case 'rollo':
+        return 'rollo';
+      case 'caja':
+        return 'caja';
+      case 'par':
+        return 'par';
+      default:
+        return rawUnitType.isNotEmpty ? rawUnitType : 'un.';
+    }
+  }
 
   Product copyWith({
     int? id,
@@ -107,6 +225,16 @@ class Product {
     double? recipeYieldQuantity,
     List<Map<String, dynamic>>? recipeIngredients,
     String? unitType,
+    String? supplierSku,
+    bool clearSupplierSku = false,
+    String? storageLocation,
+    bool clearStorageLocation = false,
+    String? technicalSpec,
+    bool clearTechnicalSpec = false,
+    String? purchasePackageName,
+    bool clearPurchasePackageName = false,
+    double? conversionFactor,
+    bool clearConversionFactor = false,
     Map<String, dynamic>? calcConfig,
     bool clearCalcConfig = false,
     double? ivaRate,
@@ -149,6 +277,15 @@ class Product {
       recipeYieldQuantity: recipeYieldQuantity ?? this.recipeYieldQuantity,
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       unitType: unitType ?? this.unitType,
+      supplierSku: clearSupplierSku ? null : (supplierSku ?? this.supplierSku),
+      storageLocation: clearStorageLocation ? null : (storageLocation ?? this.storageLocation),
+      technicalSpec: clearTechnicalSpec ? null : (technicalSpec ?? this.technicalSpec),
+      purchasePackageName: clearPurchasePackageName
+          ? null
+          : (purchasePackageName ?? this.purchasePackageName),
+      conversionFactor: clearConversionFactor
+          ? null
+          : (conversionFactor ?? this.conversionFactor),
       calcConfig: clearCalcConfig ? null : (calcConfig ?? this.calcConfig),
       ivaRate: ivaRate ?? this.ivaRate,
       needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,

@@ -713,7 +713,10 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.enterText(
-          find.widgetWithText(TextField, 'Buscar producto por nombre o código...'),
+          find.widgetWithText(
+            TextField,
+            'Buscar por nombre, EAN, PLU, Cód. Prov. o medida...',
+          ),
           'Azucar Ledesma',
         );
         await tester.pump(const Duration(milliseconds: 50));

@@ -423,8 +423,9 @@ class ReceiptPrinterService {
     int totalItemsQty = 0;
     for (final item in quote.items) {
       final isWeight = item.product?.isSoldByWeight == true;
+      final weightSuffix = item.product?.effectiveAsciiReceiptUnitSuffix ?? 'kg';
       final cantStr = isWeight
-          ? '${item.quantity.toQty()} kg'
+          ? '${item.quantity.toQty()} $weightSuffix'
           : (item.quantity % 1 == 0
               ? '${item.quantity.toInt()}'
               : item.quantity.toQty());
@@ -927,8 +928,9 @@ class ReceiptPrinterService {
       }
       totalTierSurcharge += item.surchargeAmount;
       final isWeight = item.product.isSoldByWeight;
+      final weightSuffix = item.product.effectiveAsciiReceiptUnitSuffix;
       final cantStr = isWeight
-          ? '${item.quantity.toQty()} kg'
+          ? '${item.quantity.toQty()} $weightSuffix'
           : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
 
       if (!isWeight) {
@@ -1494,8 +1496,9 @@ class ReceiptPrinterService {
       }
       splitTotalTierSurcharge += item.surchargeAmount;
       final isWeight = item.product.isSoldByWeight;
+      final weightSuffix = item.product.effectiveAsciiReceiptUnitSuffix;
       final cantStr = isWeight
-          ? '${item.quantity.toQty()} kg'
+          ? '${item.quantity.toQty()} $weightSuffix'
           : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
       if (!isWeight) {
         totalItemsQty +=
@@ -1824,11 +1827,12 @@ class ReceiptPrinterService {
 
     for (final item in items) {
       final isWeight = item.product.isSoldByWeight;
+      final unitSuffix = item.product.effectiveAsciiReceiptUnitSuffix;
       final qtyStr = isWeight
-          ? '${item.quantity.toQty()} kg'
+          ? '${item.quantity.toQty()} $unitSuffix'
           : (item.quantity % 1 == 0
-              ? '${item.quantity.toInt()} un'
-              : '${item.quantity.toQty()} un');
+              ? '${item.quantity.toInt()} $unitSuffix'
+              : '${item.quantity.toQty()} $unitSuffix');
       bytes += generator.row([
         PosColumn(text: _cleanText(item.effectiveDisplayName.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
         PosColumn(text: qtyStr, width: 3, styles: const PosStyles(align: PosAlign.right)),

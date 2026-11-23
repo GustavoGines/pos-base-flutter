@@ -354,11 +354,14 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
 
   Widget _buildItemRow(QuoteItem item, double factor) {
     final isWeight = item.product?.isSoldByWeight == true;
+    final unitSuffix = item.product != null
+        ? item.product!.effectiveReceiptUnitSuffix
+        : (isWeight ? 'kg' : 'un');
     final cantStr = isWeight
-        ? '${item.quantity.toQty()} kg'
+        ? '${item.quantity.toQty()} $unitSuffix'
         : (item.quantity % 1 == 0
-            ? '${item.quantity.toInt()} un'
-            : '${item.quantity.toQty()} un');
+            ? '${item.quantity.toInt()} $unitSuffix'
+            : '${item.quantity.toQty()} $unitSuffix');
 
     final rawCode = item.product?.internalCode.trim() ?? '';
     final codePrefix = rawCode.isNotEmpty ? '[$rawCode] ' : '';

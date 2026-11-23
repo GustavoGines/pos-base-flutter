@@ -179,8 +179,20 @@ class WoodInchPreset {
 class HardwareCalculatorEngine {
   static const String _prefsKeyPrefix = 'hw_calc_config_v1_';
 
-  /// Presets estándar de aserradero / ferretería para Machimbre.
+  /// Presets estándar de aserradero / ferretería para Maderas, Machimbre y Tirantes.
   static const List<WoodInchPreset> woodInchPresets = [
+    WoodInchPreset(
+      key: '1',
+      label: '1" (Nom: 2.54 cm · Útil: 2.2 cm)',
+      nominalWidthM: 0.0254,
+      usefulWidthM: 0.022,
+    ),
+    WoodInchPreset(
+      key: '2',
+      label: '2" (Nom: 5.08 cm · Útil: 4.5 cm)',
+      nominalWidthM: 0.0508,
+      usefulWidthM: 0.045,
+    ),
     WoodInchPreset(
       key: '3',
       label: '3" (Nom: 7.6 cm · Útil: 6.5 cm)',
@@ -204,6 +216,12 @@ class HardwareCalculatorEngine {
       label: '6" (Nom: 15.24 cm · Útil: 13.7 cm)',
       nominalWidthM: 0.1524,
       usefulWidthM: 0.137,
+    ),
+    WoodInchPreset(
+      key: '8',
+      label: '8" (Nom: 20.32 cm · Útil: 18.8 cm)',
+      nominalWidthM: 0.2032,
+      usefulWidthM: 0.188,
     ),
   ];
 
@@ -252,6 +270,16 @@ class HardwareCalculatorEngine {
     if (productId <= 0) return;
     final sp = prefs ?? await SharedPreferences.getInstance();
     await sp.setString('$_prefsKeyPrefix$productId', jsonEncode(config));
+  }
+
+  /// Elimina la configuración guardada en caché local cuando se desactiva la calculadora F7.
+  static Future<void> clearLocalCacheForProduct(
+    int productId, {
+    SharedPreferences? prefs,
+  }) async {
+    if (productId <= 0) return;
+    final sp = prefs ?? await SharedPreferences.getInstance();
+    await sp.remove('$_prefsKeyPrefix$productId');
   }
 
   // ── 2. AUTO-DETECTOR INTELIGENTE POR NOMBRE DE CATÁLOGO ───────────────────
@@ -357,27 +385,23 @@ class HardwareCalculatorEngine {
       RegExp(r'\b\d+\s*/\s*\d+\s*"?'),
       ' ',
     );
-    final inchMatch = RegExp(
-      r'(?:(?<![\d.,/])([3456])\s*(?:"|pulg(?:adas?)?)|(?:^|[\s,])(?:x|de)\s*([3456])(?![.,\d/\w]))',
+    final afterXMatch = RegExp(
+      r'(?:^|[\s,"])(?:x|de)\s*([1234568])(?:\s*(?:"|pulg(?:adas?)?))?(?![.,\d/\w])',
       caseSensitive: false,
     ).firstMatch(nameForInches);
-    final matchedInch = inchMatch?.group(1) ?? inchMatch?.group(2);
-    if (matchedInch == '3') {
-      inchPreset = '3';
-      nominalW = 0.0762;
-      usefulW = 0.065;
-    } else if (matchedInch == '4') {
-      inchPreset = '4';
-      nominalW = 0.1016;
-      usefulW = 0.088;
-    } else if (matchedInch == '5') {
-      inchPreset = '5';
-      nominalW = 0.127;
-      usefulW = 0.112;
-    } else if (matchedInch == '6') {
-      inchPreset = '6';
-      nominalW = 0.1524;
-      usefulW = 0.137;
+    final standaloneInchMatch = RegExp(
+      r'(?<![\d.,/])([1234568])\s*(?:"|pulg(?:adas?)?)',
+      caseSensitive: false,
+    ).firstMatch(nameForInches);
+    final matchedInch =
+        afterXMatch?.group(1) ?? standaloneInchMatch?.group(1);
+    final matchedPreset = matchedInch == null
+        ? null
+        : woodInchPresets.where((p) => p.key == matchedInch).firstOrNull;
+    if (matchedPreset != null) {
+      inchPreset = matchedPreset.key;
+      nominalW = matchedPreset.nominalWidthM;
+      usefulW = matchedPreset.usefulWidthM;
     }
 
     double lengthM = 3.00;

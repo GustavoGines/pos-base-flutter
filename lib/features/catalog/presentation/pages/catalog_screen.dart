@@ -14,8 +14,13 @@ import '../widgets/production_orders_dialog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../widgets/catalog_import_dialog.dart';
+import '../widgets/supplier_quick_grid_dialog.dart';
 import '../../domain/entities/brand.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/pos_search_history_popover.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
@@ -26,6 +31,9 @@ import '../widgets/rubros_manager_dialog.dart';
 import '../../../suppliers/presentation/widgets/supplier_form_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../widgets/product_image_preview_dialog.dart';
+import '../widgets/product_hardware_fields_section.dart';
+import '../widgets/product_f7_calc_config_panel.dart';
+import '../../../pos/domain/services/hardware_calculator_engine.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
@@ -51,13 +59,28 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  final _searchHistoryPortalController = OverlayPortalController();
+  static const Object _searchHistoryTapGroupId =
+      'catalog_search_history_popover';
+  int _historyHighlightIndex = -1;
   Timer? _debounceTimer;
   final Map<int, Product> _selectedProducts = {};
   int? _contextMenuProductId;
+  CatalogProvider? _catalogProviderRef;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      _catalogProviderRef = context.read<CatalogProvider?>();
+    } catch (_) {}
+  }
 
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleCatalogSearchHistoryKey);
     // Cargar productos al inicio asegurando catálogo completo sin filtros residuales
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchController.text = '';
@@ -82,6 +105,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   void _handleRemoteBarcodeScan(String barcode) {
     _debounceTimer?.cancel();
+    _hideSearchHistoryPopover();
     setState(() {
       _searchController.text = barcode;
     });
@@ -91,16 +115,192 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   void dispose() {
+    _catalogProviderRef?.safeClearSupplierFilterSilently();
+    HardwareKeyboard.instance.removeHandler(_handleCatalogSearchHistoryKey);
     _debounceTimer?.cancel();
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  bool _handleCatalogSearchHistoryKey(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
+        _searchHistoryPortalController.isShowing) {
+      _hideSearchHistoryPopover();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        _searchHistoryPortalController.isShowing) {
+      _hideSearchHistoryPopover();
+      return false;
+    }
+    if (_searchController.text.trim().isEmpty &&
+        (_searchFocusNode.hasFocus ||
+            _searchHistoryPortalController.isShowing)) {
+      final localTerminal =
+          tryGetLocalTerminalProvider(context, listen: false);
+      final terms = localTerminal?.recentTermsForScope(
+            LocalTerminalProvider.scopeCatalog,
+          ) ??
+          const <String>[];
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+          terms.isNotEmpty) {
+        if (!_searchHistoryPortalController.isShowing) {
+          _showSearchHistoryPopoverIfAvailable(initialHighlightIndex: 0);
+        } else {
+          setState(() {
+            _historyHighlightIndex =
+                (_historyHighlightIndex + 1).clamp(0, terms.length - 1);
+          });
+        }
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+          _searchHistoryPortalController.isShowing) {
+        setState(() {
+          _historyHighlightIndex =
+              _historyHighlightIndex <= 0 ? -1 : _historyHighlightIndex - 1;
+        });
+        return true;
+      }
+      if ((event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+          _searchHistoryPortalController.isShowing &&
+          _historyHighlightIndex >= 0 &&
+          _historyHighlightIndex < terms.length) {
+        _applyCatalogSearchTerm(terms[_historyHighlightIndex]);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _showSearchHistoryPopoverIfAvailable({int initialHighlightIndex = -1}) {
+    if (!mounted || _searchController.text.trim().isNotEmpty) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    if (localTerminal == null) return;
+    final terms =
+        localTerminal.recentTermsForScope(LocalTerminalProvider.scopeCatalog);
+    if (terms.isEmpty) return;
+    if (_historyHighlightIndex != initialHighlightIndex) {
+      setState(() => _historyHighlightIndex = initialHighlightIndex);
+    }
+    if (!_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.show();
+    }
+  }
+
+  void _hideSearchHistoryPopover() {
+    if (_historyHighlightIndex != -1 && mounted) {
+      setState(() => _historyHighlightIndex = -1);
+    } else {
+      _historyHighlightIndex = -1;
+    }
+    if (_searchHistoryPortalController.isShowing) {
+      _searchHistoryPortalController.hide();
+    }
+  }
+
+  void _recordCatalogSearchTermIfValid(String term) {
+    if (!LocalTerminalProvider.isValidRecentSearchTerm(term)) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    if (localTerminal == null) return;
+    unawaited(localTerminal.recordRecentSearchForScope(
+      LocalTerminalProvider.scopeCatalog,
+      term: term,
+    ));
+  }
+
+  void _applyCatalogSearchTerm(String term) {
+    final clean = term.trim();
+    if (clean.isEmpty || !mounted) return;
+    _hideSearchHistoryPopover();
+    _debounceTimer?.cancel();
+    _searchController.text = clean;
+    _searchController.selection = TextSelection.collapsed(offset: clean.length);
+    _recordCatalogSearchTermIfValid(clean);
+    _searchFocusNode.requestFocus();
+    unawaited(
+      context.read<CatalogProvider>().loadProducts(page: 1, search: clean),
+    );
+  }
+
+  Widget _buildCatalogSearchHistoryOverlay(
+    BuildContext overlayContext,
+    OverlayChildLayoutInfo info,
+  ) {
+    return PosSearchHistoryPopover.buildAnchoredOverlay(
+      info: info,
+      maxWidth: 560.0,
+      maxOverlayHeight: 280.0,
+      child: Builder(
+        builder: (ctx) {
+          final localTerminal = tryGetLocalTerminalProvider(ctx, listen: true);
+          final terms = localTerminal?.recentTermsForScope(
+                LocalTerminalProvider.scopeCatalog,
+              ) ??
+              const <String>[];
+
+          if (localTerminal == null || terms.isEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _hideSearchHistoryPopover();
+            });
+            return const SizedBox.shrink();
+          }
+
+          return PosSearchHistoryPopover(
+            containerKey: const ValueKey('catalog_search_history_overlay'),
+            terms: terms,
+            products: const [],
+            showProducts: false,
+            highlightedIndex: _historyHighlightIndex,
+            tapGroupId: _searchHistoryTapGroupId,
+            maxWidth: 560.0,
+            maxHeight: 280.0,
+            onDismiss: _hideSearchHistoryPopover,
+            onClearAll: () {
+              unawaited(localTerminal.clearRecentSearchesForScope(
+                LocalTerminalProvider.scopeCatalog,
+              ));
+              _hideSearchHistoryPopover();
+              _searchFocusNode.requestFocus();
+            },
+            onSelectTerm: _applyCatalogSearchTerm,
+            onRemoveTerm: (term) {
+              final willBeEmpty = terms.length <= 1;
+              unawaited(localTerminal.removeRecentTermForScope(
+                LocalTerminalProvider.scopeCatalog,
+                term,
+              ));
+              if (willBeEmpty) {
+                _hideSearchHistoryPopover();
+              } else if (_historyHighlightIndex != -1) {
+                setState(() => _historyHighlightIndex = -1);
+              }
+            },
+            onSelectProduct: (_) {},
+            onRemoveProduct: (_) {},
+          );
+        },
+      ),
+    );
+  }
+
   void _onSearchChanged(String value) {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        context.read<CatalogProvider>().loadProducts(page: 1, search: value);
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty) {
+      _hideSearchHistoryPopover();
+    }
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted || _searchController.text.trim() != trimmed) return;
+      final catalog = context.read<CatalogProvider>();
+      await catalog.loadProducts(page: 1, search: value);
+      if (!mounted || _searchController.text.trim() != trimmed) return;
+      if (trimmed.isNotEmpty && catalog.products.isNotEmpty) {
+        _recordCatalogSearchTermIfValid(trimmed);
       }
     });
   }
@@ -153,7 +353,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
       child: Consumer<CatalogProvider>(
         builder: (context, provider, _) {
         return Scaffold(
-          appBar: GlobalAppBar(currentRoute: '/catalog'),
+          appBar: GlobalAppBar(
+            currentRoute: '/catalog',
+            showBackButton: Navigator.of(context).canPop(),
+          ),
           body: Column(
             children: [
               // ── Toolbar: Search + Actions ─────────────────────────
@@ -161,25 +364,83 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final searchWidget = ListenableBuilder(
-                      listenable: _searchController,
-                      builder: (context, _) => TextField(
-                        controller: _searchController,
-                        onChanged: _onSearchChanged,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar por nombre, código de barras o código interno...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    context.read<CatalogProvider>().loadProducts(page: 1, search: '');
-                                  },
-                                )
-                              : null,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    final searchWidget = TapRegion(
+                      groupId: _searchHistoryTapGroupId,
+                      child: OverlayPortal.overlayChildLayoutBuilder(
+                        controller: _searchHistoryPortalController,
+                        overlayChildBuilder: _buildCatalogSearchHistoryOverlay,
+                        child: ListenableBuilder(
+                          listenable: _searchController,
+                          builder: (context, _) => TextField(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            onTap: () {
+                              if (_searchController.text.trim().isEmpty) {
+                                _showSearchHistoryPopoverIfAvailable();
+                              }
+                            },
+                            onChanged: _onSearchChanged,
+                            decoration: InputDecoration(
+                              hintText: 'Buscar por nombre, código de barras o código interno...',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+                                      },
+                                    )
+                                  : Builder(
+                                      builder: (ctx) {
+                                        final localTerminal =
+                                            tryGetLocalTerminalProvider(ctx,
+                                                listen: true);
+                                        final hasTerms = localTerminal != null &&
+                                            localTerminal
+                                                .recentTermsForScope(
+                                                    LocalTerminalProvider
+                                                        .scopeCatalog)
+                                                .isNotEmpty;
+                                        if (!hasTerms) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Focus(
+                                          canRequestFocus: false,
+                                          descendantsAreFocusable: false,
+                                          child: Tooltip(
+                                            message: 'Búsquedas recientes',
+                                            child: IconButton(
+                                              key: const ValueKey(
+                                                  'catalog_search_history_toggle_btn'),
+                                              icon: Icon(
+                                                Icons.history_rounded,
+                                                size: 20,
+                                                color:
+                                                    _searchHistoryPortalController
+                                                            .isShowing
+                                                        ? const Color(0xFF0F766E)
+                                                        : Colors
+                                                            .blueGrey.shade600,
+                                              ),
+                                              onPressed: () {
+                                                if (_searchHistoryPortalController
+                                                    .isShowing) {
+                                                  _hideSearchHistoryPopover();
+                                                } else {
+                                                  _showSearchHistoryPopoverIfAvailable();
+                                                }
+                                                _searchFocusNode.requestFocus();
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -324,28 +585,36 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         const SizedBox(width: 6),
                         PopupMenuButton<String>(
                           tooltip: 'Opciones de Excel',
-                          offset: const Offset(0, 40),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                            const PopupMenuItem<String>(
-                              value: 'import',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.upload_file, color: Colors.green, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('Importar Excel'),
-                                ],
-                              ),
+                          offset: const Offset(0, 42),
+                          elevation: 14,
+                          color: GlobalAppBar.kNavDropdownBg,
+                          surfaceTintColor: Colors.transparent,
+                          shadowColor: const Color(0x73020617),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: GlobalAppBar.kNavDropdownBorder,
+                              width: 1.5,
                             ),
-                            const PopupMenuItem<String>(
+                          ),
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            _buildDarkPopupOption<String>(
+                              value: 'import',
+                              icon: Icons.upload_file,
+                              label: 'Importar Excel',
+                              accent: AppColors.emeraldLight,
+                            ),
+                            _buildDarkPopupOption<String>(
                               value: 'export',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.download, color: Colors.green, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('Exportar Lista'),
-                                ],
-                              ),
+                              icon: Icons.download,
+                              label: 'Exportar Lista',
+                              accent: AppColors.tealLight,
+                            ),
+                            _buildDarkPopupOption<String>(
+                              value: 'quick_grid',
+                              icon: Icons.grid_on_rounded,
+                              label: 'Carga en Grilla',
+                              accent: AppColors.indigoLight,
                             ),
                           ],
                           onSelected: (String result) async {
@@ -354,13 +623,31 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               if (auth && context.mounted) {
                                 showDialog(
                                   context: context,
-                                  builder: (_) => const CatalogImportDialog(),
+                                  builder: (_) => CatalogImportDialog(
+                                    initialSupplierId: provider.safeFilterSupplierId,
+                                    initialSupplierName: provider.safeFilterSupplierName,
+                                  ),
                                 );
                               }
                             } else if (result == 'export') {
                               final auth = await AdminPinDialog.verify(context, action: 'Exportar Catálogo', permissionKey: 'manage_catalog');
                               if (auth && context.mounted) {
                                 provider.exportCatalogToExcel(context);
+                              }
+                            } else if (result == 'quick_grid') {
+                              final pin = await AdminPinDialog.verifyAndGetPin(
+                                context,
+                                action: 'Carga Rápida en Grilla',
+                                permissionKey: 'manage_catalog',
+                              );
+                              if (pin != null && context.mounted) {
+                                _showSupplierQuickGridDialog(
+                                  context,
+                                  provider,
+                                  alreadyAuthorized: true,
+                                  authorizedAdminPin:
+                                      pin == 'ALREADY_AUTHORIZED' ? null : pin,
+                                );
                               }
                             }
                           },
@@ -382,7 +669,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                           ),
                         ),
-                        if (context.watch<SettingsProvider?>()?.features.production ?? false) ...[
+                        if (!(context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false) &&
+                            (context.watch<SettingsProvider?>()?.features.production ?? false)) ...[
                           const SizedBox(width: 6),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
@@ -471,6 +759,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
+              // ── Filtro Activo por Proveedor ────────────────────────────────
+              if (provider.safeFilterSupplierId != null)
+                _buildSupplierFilterBanner(provider),
               // ── Barra de acciones en lote (encima del checkbox "seleccionar todos") ──
               if (_selectedProducts.isNotEmpty) _buildBulkActionsBar(provider),
               // ── Product Table ───────────────────────────────────────────────
@@ -599,8 +890,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
         children: [
           PopupMenuButton<int>(
             tooltip: 'Acciones en Lote',
-            offset: const Offset(0, 45),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            offset: const Offset(0, 46),
+            elevation: 14,
+            color: GlobalAppBar.kNavDropdownBg,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: const Color(0x73020617),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(
+                color: GlobalAppBar.kNavDropdownBorder,
+                width: 1.5,
+              ),
+            ),
             onSelected: (val) {
               switch (val) {
                 case 1: _bulkUpdateCategory(provider); break;
@@ -621,17 +922,81 @@ class _CatalogScreenState extends State<CatalogScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Categoría'))])),
-              const PopupMenuItem(value: 8, child: Row(children: [Icon(Icons.branding_watermark_outlined, color: Colors.indigo, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Marca'))])),
-              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Proveedor'))])),
-              const PopupMenuItem(value: 12, child: Row(children: [Icon(Icons.request_quote_outlined, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Generar Presupuesto'))])),
-              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Cambiar Estado'))])),
-              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Expanded(child: Text('Actualizar Precios'))])),
-              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Expanded(child: Text('Imprimir Etiquetas'))])),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Expanded(child: Text('Eliminar Todo'))])),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Expanded(child: Text('Cancelar Selección'))])),
+              _buildDarkPopupOption<int>(
+                value: 1,
+                icon: Icons.folder_outlined,
+                label: 'Asignar Categoría',
+                accent: AppColors.amberLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 8,
+                icon: Icons.branding_watermark_outlined,
+                label: 'Asignar Marca',
+                accent: AppColors.indigoLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 7,
+                icon: Icons.local_shipping_outlined,
+                label: 'Asignar Proveedor',
+                accent: AppColors.orangeLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 12,
+                icon: Icons.request_quote_outlined,
+                label: 'Generar Presupuesto',
+                accent: AppColors.tealLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 2,
+                icon: Icons.power_settings_new,
+                label: 'Cambiar Estado',
+                accent: AppColors.emeraldLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 3,
+                icon: Icons.trending_up,
+                label: 'Actualizar Precios',
+                accent: AppColors.amberLight,
+              ),
+              _buildDarkPopupOption<int>(
+                value: 4,
+                icon: Icons.print_outlined,
+                label: 'Imprimir Etiquetas',
+                accent: const Color(0xFF60A5FA),
+              ),
+              const PopupMenuItem<int>(
+                enabled: false,
+                height: 10,
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFF263859),
+                ),
+              ),
+              _buildDarkPopupOption<int>(
+                value: 5,
+                icon: Icons.delete_outline,
+                label: 'Eliminar Todo',
+                accent: const Color(0xFFFB7185),
+                isDanger: true,
+              ),
+              const PopupMenuItem<int>(
+                enabled: false,
+                height: 10,
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFF263859),
+                ),
+              ),
+              _buildDarkPopupOption<int>(
+                value: 6,
+                icon: Icons.deselect,
+                label: 'Cancelar Selección',
+                accent: AppColors.darkSubtitle,
+              ),
             ],
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -952,18 +1317,196 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13));
   }
 
+  Widget _buildSupplierFilterBanner(CatalogProvider provider) {
+    final supplierName = provider.safeFilterSupplierName ??
+        'Proveedor #${provider.safeFilterSupplierId}';
+    final isFallback185 = provider.safeSupplierFilterFallbackActive;
+    final canPopBack = Navigator.of(context).canPop();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.navyStart, AppColors.navyEnd],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border(
+          bottom: BorderSide(color: AppColors.teal, width: 2),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.teal.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.tealLight.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_outlined,
+                  size: 18,
+                  color: AppColors.tealLight,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Mostrando catálogo de proveedor: $supplierName',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (isFallback185)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.amber.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                            color: AppColors.amberLight.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: const Text(
+                          'Compatibilidad v1.8.5: filtrado local',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.amberLight,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('catalog_new_for_supplier_btn'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: AppColors.teal,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.add, size: 17),
+                label: const Text('Nuevo de este Proveedor'),
+                onPressed: () async {
+                  final auth = await AdminPinDialog.verify(
+                    context,
+                    action: 'Crear Nuevo Producto',
+                    permissionKey: 'manage_catalog',
+                  );
+                  if (auth && mounted) {
+                    _showProductForm(context, provider);
+                  }
+                },
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('catalog_supplier_quick_grid_btn'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: AppColors.tealLight,
+                  side: BorderSide(
+                    color: AppColors.tealLight.withValues(alpha: 0.5),
+                  ),
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                ),
+                icon: const Icon(Icons.grid_on_rounded, size: 16),
+                label: const Text('Carga en Grilla'),
+                onPressed: () async {
+                  final pin = await AdminPinDialog.verifyAndGetPin(
+                    context,
+                    action: 'Carga Rápida en Grilla',
+                    permissionKey: 'manage_catalog',
+                  );
+                  if (pin != null && mounted) {
+                    _showSupplierQuickGridDialog(
+                      context,
+                      provider,
+                      alreadyAuthorized: true,
+                      authorizedAdminPin:
+                          pin == 'ALREADY_AUTHORIZED' ? null : pin,
+                    );
+                  }
+                },
+              ),
+              if (canPopBack)
+                OutlinedButton.icon(
+                  key: const ValueKey('catalog_back_to_suppliers_btn'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                  label: const Text('Volver a Proveedores'),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              OutlinedButton.icon(
+                key: const ValueKey('catalog_clear_supplier_filter_btn'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: AppColors.darkSubtitle,
+                  side: BorderSide(
+                    color: AppColors.darkSubtitle.withValues(alpha: 0.45),
+                  ),
+                ),
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Quitar filtro'),
+                onPressed: () {
+                  setState(() => _selectedProducts.clear());
+                  provider.setSupplierFilter(null);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
     final sp = context.watch<SettingsProvider?>();
+    final isHardwareStore = sp?.safeIsHardwareStore ?? false;
     final canSeeSupplier = sp?.features.suppliers ?? false;
-    final canUseBatches = sp == null
-        ? true
-        : (sp.features.batchExpiration || sp.features.production);
+    final canUseBatches = !isHardwareStore &&
+        (sp == null
+            ? true
+            : (sp.features.batchExpiration || sp.features.production));
 
     // Anchos fijos calibrados para columnas cortas/fechas y flex equilibrado para texto/precios
     const double wCheck = 38;
     const double wFoto = 46;
     const double wId = 48;
     const double wBal = 58;
+    const double wUnidad = 92;
     const double wActivo = 70;
     const double wVto = 116;
     final double wAcciones = canUseBatches ? 168 : 136;
@@ -971,6 +1514,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const int fNombre = 5;
     const int fBarcode = 3;
     const int fInterno = 2;
+    const int fSupplierSku = 2;
+    const int fStorageLoc = 2;
     const int fCat = 2;
     const int fBrand = 2;
     const int fProv = 2;
@@ -1082,18 +1627,40 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(flex: fNombre, label: 'Nombre', sortKey: 'name'),
               sortHeader(flex: fBarcode, label: 'Cód. Barras', sortKey: 'barcode'),
               sortHeader(flex: fInterno, label: 'Cód. Interno', sortKey: 'internal_code'),
+              if (isHardwareStore)
+                sortHeader(
+                  flex: fSupplierSku,
+                  label: 'Cód. Prov.',
+                  sortKey: 'supplier_sku',
+                  tooltip: 'Código de artículo del proveedor',
+                ),
               sortHeader(flex: fCat, label: 'Categoría', sortKey: 'category_id'),
               sortHeader(flex: fBrand, label: 'Marca', sortKey: 'brand_id'),
               if (canSeeSupplier) sortHeader(flex: fProv, label: 'Proveedor', sortKey: 'supplier_id'),
+              if (isHardwareStore)
+                sortHeader(
+                  flex: fStorageLoc,
+                  label: 'Ubicación',
+                  sortKey: 'storage_location',
+                  tooltip: 'Ubicación en depósito o estantería',
+                ),
               sortHeader(flex: fCosto, label: 'Costo', sortKey: 'cost_price'),
               sortHeader(flex: fVenta, label: 'Venta', sortKey: 'selling_price'),
               sortHeader(flex: fStock, label: 'Stock', sortKey: 'stock'),
-              sortHeader(
-                width: wBal,
-                label: 'Bal.',
-                sortKey: 'is_sold_by_weight',
-                tooltip: 'Venta por peso / Balanza',
-              ),
+              if (isHardwareStore)
+                sortHeader(
+                  width: wUnidad,
+                  label: 'Unidad',
+                  sortKey: 'unit_type',
+                  tooltip: 'Unidad de venta y fraccionamiento',
+                )
+              else
+                sortHeader(
+                  width: wBal,
+                  label: 'Bal.',
+                  sortKey: 'is_sold_by_weight',
+                  tooltip: 'Venta por peso / Balanza',
+                ),
               sortHeader(
                 width: wActivo,
                 label: 'Activo',
@@ -1176,6 +1743,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     Flexible(
                       child: Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1),
                     ),
+                    if (p.technicalSpec != null && p.technicalSpec!.trim().isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.blueGrey.shade200),
+                        ),
+                        child: Text(
+                          p.technicalSpec!.trim(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey.shade800,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (p.needsCatalogReview) ...[
                       const SizedBox(width: 6),
                       Tooltip(
@@ -1203,6 +1789,21 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               tableCell(flex: fBarcode, child: Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               tableCell(flex: fInterno, child: Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
+              if (isHardwareStore)
+                tableCell(
+                  flex: fSupplierSku,
+                  child: Text(
+                    (p.supplierSku != null && p.supplierSku!.isNotEmpty) ? p.supplierSku! : '—',
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      color: (p.supplierSku != null && p.supplierSku!.isNotEmpty)
+                          ? Colors.brown.shade700
+                          : Colors.grey.shade400,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               tableCell(flex: fCat, child: Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
               tableCell(
                 flex: fBrand,
@@ -1211,6 +1812,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
               ),
               if (canSeeSupplier) tableCell(flex: fProv, child: Text(p.supplier?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              if (isHardwareStore)
+                tableCell(
+                  flex: fStorageLoc,
+                  child: Text(
+                    (p.storageLocation != null && p.storageLocation!.isNotEmpty)
+                        ? p.storageLocation!
+                        : '—',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: (p.storageLocation != null && p.storageLocation!.isNotEmpty)
+                          ? const Color(0xFF0F766E)
+                          : Colors.grey.shade400,
+                      fontWeight: (p.storageLocation != null && p.storageLocation!.isNotEmpty)
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               tableCell(flex: fCosto, child: Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
               tableCell(flex: fVenta, child: Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
 
@@ -1237,12 +1857,61 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     : Text(
                         p.stock.toUnitStockDisplay(
                           isSoldByWeight: p.isSoldByWeight,
-                          unitSuffix: 'un.',
+                          unitSuffix: p.unitShortLabel,
+                          weightUnit: p.unitShortLabel,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
               ),
-              tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
+              if (isHardwareStore)
+                tableCell(
+                  width: wUnidad,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: p.isSoldByWeight
+                            ? Colors.deepPurple.shade50
+                            : Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: p.isSoldByWeight
+                              ? Colors.deepPurple.shade200
+                              : Colors.blueGrey.shade200,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            p.unitShortLabel,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: p.isSoldByWeight
+                                  ? Colors.deepPurple.shade800
+                                  : Colors.blueGrey.shade800,
+                            ),
+                          ),
+                          if (p.calcConfig != null && p.calcConfig!.isNotEmpty) ...[
+                            const SizedBox(width: 3),
+                            Tooltip(
+                              message: 'Calculadora F7 configurada',
+                              child: Icon(
+                                Icons.straighten_rounded,
+                                size: 12,
+                                color: Colors.teal.shade700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               tableCell(width: wActivo, child: Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
               if (canUseBatches) tableCell(width: wVto, child: _buildExpiryCell(p, provider)),
               tableCell(width: wAcciones, child: Wrap(
@@ -1344,6 +2013,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     Product? product,
     Product? duplicateFrom,
   }) {
+    final useActiveSupplier = product == null && duplicateFrom == null;
     showDialog<Product>(
       context: ctx,
       barrierDismissible: true,
@@ -1351,9 +2021,36 @@ class _CatalogScreenState extends State<CatalogScreen> {
         provider: provider,
         product: product,
         duplicateFrom: duplicateFrom,
+        initialSupplierId:
+            useActiveSupplier ? provider.safeFilterSupplierId : null,
+        initialSupplierName:
+            useActiveSupplier ? provider.safeFilterSupplierName : null,
       ),
     ).then((_) {
       if (mounted) {
+        context.read<InventoryAlertsProvider>().fetchAlerts();
+      }
+    });
+  }
+
+  void _showSupplierQuickGridDialog(
+    BuildContext ctx,
+    CatalogProvider provider, {
+    bool alreadyAuthorized = false,
+    String? authorizedAdminPin,
+  }) {
+    showDialog<int>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => SupplierQuickGridDialog(
+        provider: provider,
+        initialSupplierId: provider.safeFilterSupplierId,
+        initialSupplierName: provider.safeFilterSupplierName,
+        alreadyAuthorized: alreadyAuthorized,
+        authorizedAdminPin: authorizedAdminPin,
+      ),
+    ).then((createdCount) {
+      if (mounted && (createdCount ?? 0) > 0) {
         context.read<InventoryAlertsProvider>().fetchAlerts();
       }
     });
@@ -1370,21 +2067,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final auth = await AdminPinDialog.verify(context, action: 'Eliminar Múltiples Productos', permissionKey: 'manage_catalog');
     if (!auth) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Lote', style: TextStyle(color: Colors.red)),
-        content: Text('¿Está seguro que desea eliminar DEFINITIVAMENTE los ${_selectedProducts.length} productos seleccionados?\nEsta acción no se puede deshacer.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton.icon(
-            icon: const Icon(Icons.delete_forever),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            label: const Text('Eliminar Todo'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Eliminar Lote',
+      message:
+          '¿Está seguro que desea eliminar DEFINITIVAMENTE los ${_selectedProducts.length} productos seleccionados?\nEsta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar Todo',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_forever,
+      isDestructive: true,
     );
 
     if (confirmed == true && mounted) {
@@ -1423,47 +2114,51 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (ctx) {
         int? selected = defaultCat;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: const Text('Asignar Categoría'),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: SearchableSelectField<int?>(
-                value: selected,
-                clearValue: -1,
-                showClearButton: false,
-                labelText: 'Elige la nueva categoría',
-                dialogTitle: 'Seleccionar Categoría',
-                searchHintText: 'Buscar categoría o rubro...',
-                prefixIcon: Icons.category_outlined,
-                border: const OutlineInputBorder(),
-                options: [
-                  const SearchableSelectOption<int?>(
-                    value: -1,
-                    label: '— Quitar Categoría —',
-                    isResetOption: true,
-                  ),
-                  ...sortedCategories.map((c) {
-                    final rId = c.rubroId ?? c.rubro?.id;
-                    final rubroName = (rId != null
-                            ? provider.rubros.where((r) => r.id == rId).firstOrNull?.name
-                            : null) ??
-                        c.rubro?.name;
-                    final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
-                    return SearchableSelectOption<int?>(
-                      value: c.id,
-                      label: c.name,
-                      subtitle: hasRubro ? 'Rubro: $rubroName' : null,
-                      searchKeywords: hasRubro ? [rubroName] : const [],
-                    );
-                  }),
-                ],
-                onChanged: (val) => setDialogState(() => selected = val),
-              ),
+          builder: (ctx, setDialogState) => AppModalShell(
+            title: 'Asignar Categoría',
+            subtitle: 'Aplicá o quitá la categoría a los productos seleccionados',
+            icon: Icons.category_outlined,
+            accent: AppModalAccent.orange,
+            compact: true,
+            maxWidth: 460,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            body: SearchableSelectField<int?>(
+              value: selected,
+              clearValue: -1,
+              showClearButton: false,
+              labelText: 'Elige la nueva categoría',
+              dialogTitle: 'Seleccionar Categoría',
+              searchHintText: 'Buscar categoría o rubro...',
+              prefixIcon: Icons.category_outlined,
+              border: const OutlineInputBorder(),
+              options: [
+                const SearchableSelectOption<int?>(
+                  value: -1,
+                  label: '— Quitar Categoría —',
+                  isResetOption: true,
+                ),
+                ...sortedCategories.map((c) {
+                  final rId = c.rubroId ?? c.rubro?.id;
+                  final rubroName = (rId != null
+                          ? provider.rubros.where((r) => r.id == rId).firstOrNull?.name
+                          : null) ??
+                      c.rubro?.name;
+                  final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
+                  return SearchableSelectOption<int?>(
+                    value: c.id,
+                    label: c.name,
+                    subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                    searchKeywords: hasRubro ? [rubroName] : const [],
+                  );
+                }),
+              ],
+              onChanged: (val) => setDialogState(() => selected = val),
             ),
-            actions: [
+            footerActions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
                 onPressed: () {
                   if (selected == null) {
                     SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
@@ -1586,36 +2281,40 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (ctx) {
         int? selected = defaultBrand;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: const Text('Asignar Marca en Lote'),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: SearchableSelectField<int?>(
-                value: selected,
-                clearValue: -1,
-                showClearButton: false,
-                labelText: 'Elige la nueva marca',
-                dialogTitle: 'Seleccionar Marca',
-                searchHintText: 'Buscar marca...',
-                prefixIcon: Icons.branding_watermark_outlined,
-                border: const OutlineInputBorder(),
-                options: [
-                  const SearchableSelectOption<int?>(
-                    value: -1,
-                    label: '— Quitar Marca —',
-                    isResetOption: true,
-                  ),
-                  ...sortedBrands.map(
-                    (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
-                  ),
-                ],
-                onChanged: (val) => setDialogState(() => selected = val),
-              ),
+          builder: (ctx, setDialogState) => AppModalShell(
+            title: 'Asignar Marca en Lote',
+            subtitle: 'Aplicá o quitá la marca a los productos seleccionados',
+            icon: Icons.branding_watermark_outlined,
+            accent: AppModalAccent.indigo,
+            compact: true,
+            maxWidth: 460,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            body: SearchableSelectField<int?>(
+              value: selected,
+              clearValue: -1,
+              showClearButton: false,
+              labelText: 'Elige la nueva marca',
+              dialogTitle: 'Seleccionar Marca',
+              searchHintText: 'Buscar marca...',
+              prefixIcon: Icons.branding_watermark_outlined,
+              border: const OutlineInputBorder(),
+              options: [
+                const SearchableSelectOption<int?>(
+                  value: -1,
+                  label: '— Quitar Marca —',
+                  isResetOption: true,
+                ),
+                ...sortedBrands.map(
+                  (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+                ),
+              ],
+              onChanged: (val) => setDialogState(() => selected = val),
             ),
-            actions: [
+            footerActions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
                 onPressed: () {
                   if (selected == null) {
                     SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
@@ -1689,44 +2388,48 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (ctx) {
         int? selected = defaultSupplier;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: const Text('Asignar Proveedor'),
-            content: supplierProv.isLoading
+          builder: (ctx, setDialogState) => AppModalShell(
+            title: 'Asignar Proveedor',
+            subtitle: 'Asociá un proveedor a los productos seleccionados',
+            icon: Icons.local_shipping_outlined,
+            accent: AppModalAccent.indigo,
+            compact: true,
+            maxWidth: 460,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            body: supplierProv.isLoading
                 ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: SearchableSelectField<int?>(
-                      value: selected,
-                      clearValue: -1,
-                      showClearButton: false,
-                      labelText: 'Elige el nuevo proveedor',
-                      dialogTitle: 'Seleccionar Proveedor',
-                      searchHintText: 'Buscar proveedor o CUIT...',
-                      prefixIcon: Icons.local_shipping_outlined,
-                      border: const OutlineInputBorder(),
-                      options: [
-                        const SearchableSelectOption<int?>(
-                          value: -1,
-                          label: '— Quitar Proveedor —',
-                          isResetOption: true,
-                        ),
-                        ...sortedSuppliers.map((s) {
-                          final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
-                          return SearchableSelectOption<int?>(
-                            value: s.id,
-                            label: s.name,
-                            subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
-                            searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
-                          );
-                        }),
-                      ],
-                      onChanged: (val) => setDialogState(() => selected = val),
-                    ),
+                : SearchableSelectField<int?>(
+                    value: selected,
+                    clearValue: -1,
+                    showClearButton: false,
+                    labelText: 'Elige el nuevo proveedor',
+                    dialogTitle: 'Seleccionar Proveedor',
+                    searchHintText: 'Buscar proveedor o CUIT...',
+                    prefixIcon: Icons.local_shipping_outlined,
+                    border: const OutlineInputBorder(),
+                    options: [
+                      const SearchableSelectOption<int?>(
+                        value: -1,
+                        label: '— Quitar Proveedor —',
+                        isResetOption: true,
+                      ),
+                      ...sortedSuppliers.map((s) {
+                        final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
+                        return SearchableSelectOption<int?>(
+                          value: s.id,
+                          label: s.name,
+                          subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                          searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                        );
+                      }),
+                    ],
+                    onChanged: (val) => setDialogState(() => selected = val),
                   ),
-            actions: [
+            footerActions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.brown.shade600),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
                 onPressed: () {
                   if (selected == null) {
                     SnackBarService.error(ctx, 'Selecciona un proveedor o "— Quitar Proveedor —"');
@@ -1763,20 +2466,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
     bool? activeStatus = await showDialog<bool?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cambiar Estado (Activo/Inactivo)'),
-        content: const Text('¿Qué estado desea aplicar a los productos seleccionados?'),
-        actions: [
+      builder: (ctx) => AppModalShell(
+        title: 'Cambiar Estado (Activo/Inactivo)',
+        subtitle: 'Aplicá el estado en POS a los productos seleccionados',
+        icon: Icons.published_with_changes_outlined,
+        accent: AppModalAccent.blue,
+        compact: true,
+        maxWidth: 520,
+        onClose: () => Navigator.pop(ctx, null),
+        body: const Text(
+          '¿Qué estado desea aplicar a los productos seleccionados?',
+          style: TextStyle(fontSize: 13.5, color: AppColors.textPrimary),
+        ),
+        footerActions: [
           TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancelar')),
           FilledButton.icon(
             icon: const Icon(Icons.cancel_outlined),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             label: const Text('Dar de Baja (Desactivar)'),
             onPressed: () => Navigator.pop(ctx, false),
           ),
           FilledButton.icon(
             icon: const Icon(Icons.check_circle_outline),
-            style: FilledButton.styleFrom(backgroundColor: Colors.green),
+            style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
             label: const Text('Dar de Alta (Activar)'),
             onPressed: () => Navigator.pop(ctx, true),
           ),
@@ -1796,20 +2508,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _confirmDelete(BuildContext ctx, CatalogProvider provider, Product p) async {
-    final confirmed = await showDialog<bool>(
-      context: ctx,
-      builder: (dctx) => AlertDialog(
-        title: const Text('Confirmar Eliminación'),
-        content: Text('¿Seguro de eliminar el producto "${p.name}"?\nEsta acción no se puede deshacer.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      ctx,
+      title: 'Confirmar Eliminación',
+      message: '¿Seguro de eliminar el producto "${p.name}"?\nEsta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
     if (confirmed == true && ctx.mounted) {
       final ok = await provider.deleteProduct(p.id);
@@ -1831,6 +2537,51 @@ class _CatalogScreenState extends State<CatalogScreen> {
         uri.hasScheme &&
         uri.hasAuthority &&
         uri.host.isNotEmpty;
+  }
+
+  PopupMenuItem<T> _buildDarkPopupOption<T>({
+    required T value,
+    required IconData icon,
+    required String label,
+    required Color accent,
+    bool isDanger = false,
+  }) {
+    return PopupMenuItem<T>(
+      value: value,
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.32),
+              ),
+            ),
+            child: Icon(icon, size: 16.5, color: accent),
+          ),
+          const SizedBox(width: 11),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: isDanger ? FontWeight.w700 : FontWeight.w500,
+                color: isDanger
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFFF1F5F9),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   PopupMenuItem<String> _buildContextMenuItem({
@@ -1888,12 +2639,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (overlay == null) return;
 
     final sp = ctx.read<SettingsProvider?>();
+    final isHardwareStore = sp?.safeIsHardwareStore ?? false;
     final canSeeSupplier = sp?.features.suppliers ?? false;
     final canUseQuotes = sp?.features.quotes ?? false;
-    final canUseBatches = sp == null
-        ? true
-        : (sp.features.batchExpiration || sp.features.production);
-    final canUseProduction = sp?.features.production ?? false;
+    final canUseBatches = !isHardwareStore &&
+        (sp == null
+            ? true
+            : (sp.features.batchExpiration || sp.features.production));
+    final canUseProduction =
+        !isHardwareStore && (sp?.features.production ?? false);
     final isBulkContext =
         _selectedProducts.length > 1 && _selectedProducts.containsKey(p.id);
     final resolvedImgUrl =
@@ -2023,7 +2777,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       Text(
                         p.isService
                             ? '\$${p.sellingPrice.toCurrency()} • Servicio'
-                            : '\$${p.sellingPrice.toCurrency()} • Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight, unitSuffix: 'un.')}',
+                            : '\$${p.sellingPrice.toCurrency()} • Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight, unitSuffix: p.unitShortLabel, weightUnit: p.unitShortLabel)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
@@ -2090,7 +2844,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   color: Colors.blueGrey,
                   label: (p.barcode != null && p.barcode!.trim().isNotEmpty)
                       ? 'Copiar código de barras'
-                      : 'Copiar código interno',
+                      : (p.internalCode.trim().isNotEmpty
+                          ? 'Copiar código interno'
+                          : (p.supplierSku != null && p.supplierSku!.trim().isNotEmpty
+                              ? 'Copiar código de proveedor'
+                              : 'Copiar código interno')),
                 ),
                 if (canUseQuotes)
                   _buildContextMenuItem(
@@ -2241,16 +2999,33 @@ class _CatalogScreenState extends State<CatalogScreen> {
         await ProductShareHelper.shareProduct(p, context: context);
         break;
       case 'copy_code':
-        final hasBarcode = p.barcode != null && p.barcode!.trim().isNotEmpty;
-        final code = hasBarcode ? p.barcode!.trim() : p.internalCode;
-        await Clipboard.setData(ClipboardData(text: code));
+        final barcodeText = p.barcode?.trim() ?? '';
+        final internalText = p.internalCode.trim();
+        final supplierSkuText = p.supplierSku?.trim() ?? '';
+        final String code;
+        final String snackMessage;
+        if (barcodeText.isNotEmpty) {
+          code = barcodeText;
+          snackMessage = 'Código de barras copiado: $code';
+        } else if (internalText.isNotEmpty) {
+          code = internalText;
+          snackMessage = 'Código interno copiado: $code';
+        } else if (supplierSkuText.isNotEmpty) {
+          code = supplierSkuText;
+          snackMessage = 'Código de proveedor copiado: $code';
+        } else {
+          code = '';
+          snackMessage = 'El producto no tiene código para copiar.';
+        }
+        if (code.isNotEmpty) {
+          await Clipboard.setData(ClipboardData(text: code));
+        }
         if (mounted) {
-          SnackBarService.success(
-            context,
-            hasBarcode
-                ? 'Código de barras copiado: $code'
-                : 'Código interno copiado: $code',
-          );
+          if (code.isNotEmpty) {
+            SnackBarService.success(context, snackMessage);
+          } else {
+            SnackBarService.info(context, snackMessage);
+          }
         }
         break;
       case 'quote':
@@ -2315,6 +3090,8 @@ class ProductFormDialog extends StatefulWidget {
   final String? initialSupplierName;
   final String? initialName;
   final String? initialBarcode;
+  final String? initialSupplierSku;
+  final bool lockInitialStockToZero;
 
   const ProductFormDialog({
     super.key,
@@ -2325,6 +3102,8 @@ class ProductFormDialog extends StatefulWidget {
     this.initialSupplierName,
     this.initialName,
     this.initialBarcode,
+    this.initialSupplierSku,
+    this.lockInitialStockToZero = false,
   });
 
   @override
@@ -2336,11 +3115,21 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _nameCtrl;
   late TextEditingController _barcodeCtrl;
   late TextEditingController _internalCodeCtrl;
+  late TextEditingController _supplierSkuCtrl;
+  late TextEditingController _technicalSpecCtrl;
+  late TextEditingController _storageLocationCtrl;
+  late TextEditingController _purchasePackageCtrl;
+  late TextEditingController _conversionFactorCtrl;
+  late TextEditingController _packageCostCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _marginCtrl;
   late TextEditingController _stockCtrl;
   late TextEditingController _minStockCtrl;
+  final FocusNode _nameFocusNode = FocusNode();
+  int _batchCreatedCount = 0;
+  Map<String, dynamic>? _calcConfig;
+  bool _clearCalcConfig = false;
   bool _isAutoCalculating = false;
   String? _priceAnchor; // 'cost' | 'selling' | null (detecta automáticamente qué precio ingresó primero el usuario)
   bool _costIsAuto = false;
@@ -2397,6 +3186,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final source = p ?? widget.duplicateFrom;
     final cleanInitialName = widget.initialName?.trim();
     final cleanInitialBarcode = widget.initialBarcode?.trim();
+    final cleanInitialSupplierSku = widget.initialSupplierSku?.trim();
     _nameCtrl = TextEditingController(
       text: p?.name ??
           (_isDuplicating
@@ -2407,6 +3197,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       text: p?.barcode ?? (_isDuplicating ? '' : (cleanInitialBarcode ?? '')),
     );
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
+    _supplierSkuCtrl = TextEditingController(
+      text: source?.supplierSku ??
+          (_isDuplicating ? '' : (cleanInitialSupplierSku ?? '')),
+    );
+    _technicalSpecCtrl = TextEditingController(text: source?.technicalSpec ?? '');
+    _storageLocationCtrl = TextEditingController(text: source?.storageLocation ?? '');
+    _purchasePackageCtrl =
+        TextEditingController(text: source?.purchasePackageName ?? '');
+    _conversionFactorCtrl = TextEditingController(
+      text: source?.conversionFactor != null && source!.conversionFactor! > 0
+          ? formatQuantityInput(source.conversionFactor!)
+          : '',
+    );
+    _packageCostCtrl = TextEditingController(
+      text: (source != null &&
+              source.costPrice > 0 &&
+              source.conversionFactor != null &&
+              source.conversionFactor! > 0)
+          ? (source.costPrice * source.conversionFactor!).toArsInput()
+          : '',
+    );
+    _calcConfig = source?.calcConfig != null
+        ? Map<String, dynamic>.from(source!.calcConfig!)
+        : null;
     _costCtrl = TextEditingController(
       text: (source != null && source.costPrice > 0)
           ? source.costPrice.toArsInput()
@@ -2419,11 +3233,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final hasFractionalStock =
         p != null && (p.stock - p.stock.roundToDouble()).abs() > 0.0005;
     _stockCtrl = TextEditingController(
-      text: p != null
-          ? ((p.isSoldByWeight || hasFractionalStock)
-              ? _formatComboQtyForInput(p.stock)
-              : p.stock.toStringAsFixed(0))
-          : '0',
+      text: (widget.lockInitialStockToZero && p == null)
+          ? '0'
+          : (p != null
+              ? ((p.isSoldByWeight || hasFractionalStock)
+                  ? _formatComboQtyForInput(p.stock)
+                  : p.stock.toStringAsFixed(0))
+              : '0'),
     );
     
     _loadSavedMargin();
@@ -2615,9 +3431,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _comboInlineSearchDebounce?.cancel();
     _comboInlineSearchCtrl.dispose();
     _comboInlineSearchFocus.dispose();
+    _nameFocusNode.dispose();
     _nameCtrl.dispose();
     _barcodeCtrl.dispose();
     _internalCodeCtrl.dispose();
+    _supplierSkuCtrl.dispose();
+    _technicalSpecCtrl.dispose();
+    _storageLocationCtrl.dispose();
+    _purchasePackageCtrl.dispose();
+    _conversionFactorCtrl.dispose();
+    _packageCostCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
     _marginCtrl.dispose();
@@ -2889,7 +3712,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool keepOpenForNext = false}) async {
     if (!_formKey.currentState!.validate()) return;
     if (_isCombo && _comboIngredients.isEmpty) {
       SnackBarService.error(
@@ -2906,11 +3729,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
-    final parsedStock = double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final isStockLockedToZero = widget.lockInitialStockToZero && !_isEditing;
+    final parsedStock = isStockLockedToZero
+        ? 0.0
+        : (double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0);
     final initialStock = widget.product != null
         ? (double.tryParse(widget.product!.stock.toStringAsFixed(widget.product!.isSoldByWeight ? 3 : 0)) ?? widget.product!.stock)
         : null;
-    final stockModified = !_isEditing || initialStock == null || (parsedStock - initialStock).abs() > 0.0001;
+    final stockModified = isStockLockedToZero ||
+        !_isEditing ||
+        initialStock == null ||
+        (parsedStock - initialStock).abs() > 0.0001;
 
     final effectiveCostPrice = (_isCombo && !_isService && _comboRecipeTotalCost > 0)
         ? ((_comboRecipeTotalCost * 100).roundToDouble() / 100.0)
@@ -2925,10 +3754,31 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           }).toList()
         : null;
 
+    final supplierSkuText = _supplierSkuCtrl.text.trim();
+    final storageLocationText = _storageLocationCtrl.text.trim();
+    final technicalSpecText = _technicalSpecCtrl.text.trim();
+    final purchasePackageText = _purchasePackageCtrl.text.trim();
+    final parsedConversionFactor = _conversionFactorCtrl.text.trim().isNotEmpty
+        ? double.tryParse(_conversionFactorCtrl.text.trim().replaceAll(',', '.'))
+        : null;
+
     final data = {
       'name': _nameCtrl.text.trim(),
       'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
+      'supplier_sku': _isService || supplierSkuText.isEmpty ? null : supplierSkuText,
+      'storage_location':
+          _isService || storageLocationText.isEmpty ? null : storageLocationText,
+      'technical_spec':
+          _isService || technicalSpecText.isEmpty ? null : technicalSpecText,
+      'purchase_package_name': (_isService || _isCombo || purchasePackageText.isEmpty)
+          ? null
+          : purchasePackageText,
+      'conversion_factor': (_isService || _isCombo || parsedConversionFactor == null)
+          ? null
+          : roundQtyForStorage(parsedConversionFactor),
+      if (!_isService && !_isCombo && (_calcConfig != null || _clearCalcConfig))
+        'calc_config': _calcConfig,
       'cost_price': effectiveCostPrice,
       'selling_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
       'iva_rate': _ivaRate,
@@ -3065,12 +3915,39 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           } catch (_) {}
         }
         if (resultProd != null) {
+          if (targetProductId != null && _calcConfig != null) {
+            await HardwareCalculatorEngine.saveLocalCacheForProduct(
+              targetProductId!,
+              _calcConfig!,
+            );
+          } else if (targetProductId != null && _clearCalcConfig) {
+            await HardwareCalculatorEngine.clearLocalCacheForProduct(
+              targetProductId!,
+            );
+          }
+          if (!mounted) return;
           try {
             context.read<PosProvider?>()?.syncUpdatedCatalogProduct(resultProd);
           } catch (_) {}
           try {
             context.read<OfferProvider?>()?.syncUpdatedProduct(resultProd);
           } catch (_) {}
+        }
+        if (keepOpenForNext && !_isEditing) {
+          final savedName = _nameCtrl.text.trim();
+          _resetFormForNextProduct();
+          if (imageUploadSuccess) {
+            SnackBarService.success(
+              context,
+              '¡"$savedName" guardado (#$_batchCreatedCount)! Cargá el siguiente.',
+            );
+          } else {
+            SnackBarService.warning(
+              context,
+              '"$savedName" guardado, pero falló la foto: ${imageUploadError ?? "Error al procesar imagen."}',
+            );
+          }
+          return;
         }
         Navigator.of(context).pop(resultProd);
         if (imageUploadSuccess) {
@@ -3085,6 +3962,56 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         SnackBarService.error(context, widget.provider.errorMessage ?? 'Error desconocido.');
       }
     }
+  }
+
+  void _resetFormForNextProduct() {
+    setState(() {
+      _batchCreatedCount++;
+      _isAutoCalculating = true;
+      _nameCtrl.clear();
+      _barcodeCtrl.clear();
+      _internalCodeCtrl.clear();
+      _supplierSkuCtrl.clear();
+      _technicalSpecCtrl.clear();
+      _storageLocationCtrl.clear();
+      _conversionFactorCtrl.clear();
+      _packageCostCtrl.clear();
+      _costCtrl.clear();
+      _priceCtrl.clear();
+      _stockCtrl.text = '0';
+      _minStockCtrl.clear();
+      _isAutoCalculating = false;
+
+      _costIsAuto = false;
+      _priceIsAuto = false;
+      _priceAnchor = null;
+      _calcConfig = null;
+      _clearCalcConfig = false;
+      _selectedImagePath = null;
+      _selectedImageBytes = null;
+      _selectedImageName = null;
+      _deleteExistingImage = false;
+      _comboIngredients.clear();
+      for (final c in _comboQtyCtrls.values) {
+        c.dispose();
+      }
+      _comboQtyCtrls.clear();
+      for (final c in _comboCustomPartsCtrls.values) {
+        c.dispose();
+      }
+      _comboCustomPartsCtrls.clear();
+      _expandedComboFractionIds.clear();
+      _priceTiers.clear();
+      _expandPriceTiers = false;
+      _initialBatchCodeCtrl.clear();
+      // Mantiene fijados: _supplierId, _categoryId, _brandId, _unitType,
+      // _isSoldByWeight, _ivaRate, _marginCtrl y _purchasePackageCtrl.
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _nameFocusNode.requestFocus();
+      }
+    });
   }
 
   String? _resolveCategoryRubroName(Category? cat) {
@@ -3122,10 +4049,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             helperText: (selectedRubroName != null && selectedRubroName.trim().isNotEmpty)
                 ? 'Rubro: $selectedRubroName'
                 : null,
-            helperStyle: TextStyle(
+            helperStyle: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.deepPurple.shade700,
+              color: AppColors.indigo,
             ),
             options: [
               const SearchableSelectOption<int?>(
@@ -3191,84 +4118,87 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             }
           }
 
-          return AlertDialog(
-            title: const Text('Nueva Categoría'),
-            content: SizedBox(
-              width: 360,
-              child: Consumer<CatalogProvider>(
-                builder: (_, p, __) {
-                  final sortedRubros =
-                      sortByAlphabeticalName(p.rubros, (r) => r.name);
-                  if (isPremium &&
-                      sortedRubros.isNotEmpty &&
-                      !sortedRubros.any((r) => r.id == selectedRubroId)) {
-                    selectedRubroId = sortedRubros.first.id;
-                  }
+          return AppModalShell(
+            title: 'Nueva Categoría',
+            subtitle: 'Creá una categoría rápida para este producto',
+            icon: Icons.label_outline,
+            accent: AppModalAccent.blue,
+            compact: true,
+            maxWidth: 440,
+            onClose: () => Navigator.pop(ctx),
+            body: Consumer<CatalogProvider>(
+              builder: (_, p, __) {
+                final sortedRubros =
+                    sortByAlphabeticalName(p.rubros, (r) => r.name);
+                if (isPremium &&
+                    sortedRubros.isNotEmpty &&
+                    !sortedRubros.any((r) => r.id == selectedRubroId)) {
+                  selectedRubroId = sortedRubros.first.id;
+                }
 
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre *',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.label_outline),
-                        ),
-                        autofocus: true,
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.label_outline),
                       ),
-                      if (isPremium) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: SearchableSelectField<int?>(
-                                value: selectedRubroId,
-                                showClearButton: false,
-                                labelText: 'Rubro Padre',
-                                hintText: sortedRubros.isEmpty
-                                    ? 'Sin rubros creados aún'
-                                    : null,
-                                dialogTitle: 'Seleccionar Rubro Padre',
-                                searchHintText: 'Buscar rubro...',
-                                emptySearchText: 'No hay rubros registrados',
-                                prefixIcon: Icons.category_outlined,
-                                border: const OutlineInputBorder(),
-                                options: sortedRubros
-                                    .map((r) => SearchableSelectOption<int?>(
-                                          value: r.id,
-                                          label: r.name,
-                                        ))
-                                    .toList(),
-                                onChanged: (val) {
-                                  setDialogState(() {
-                                    selectedRubroId = val;
-                                  });
-                                },
-                                onCreateNew: (query) =>
-                                    openCreateRubro(suggestedName: query),
-                                createLabelBuilder: (query) =>
-                                    query.trim().isEmpty
-                                        ? 'Crear nuevo rubro'
-                                        : 'Crear rubro "${query.trim()}"',
-                              ),
+                      autofocus: true,
+                    ),
+                    if (isPremium) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: SearchableSelectField<int?>(
+                              value: selectedRubroId,
+                              showClearButton: false,
+                              labelText: 'Rubro Padre',
+                              hintText: sortedRubros.isEmpty
+                                  ? 'Sin rubros creados aún'
+                                  : null,
+                              dialogTitle: 'Seleccionar Rubro Padre',
+                              searchHintText: 'Buscar rubro...',
+                              emptySearchText: 'No hay rubros registrados',
+                              prefixIcon: Icons.category_outlined,
+                              border: const OutlineInputBorder(),
+                              options: sortedRubros
+                                  .map((r) => SearchableSelectOption<int?>(
+                                        value: r.id,
+                                        label: r.name,
+                                      ))
+                                  .toList(),
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  selectedRubroId = val;
+                                });
+                              },
+                              onCreateNew: (query) =>
+                                  openCreateRubro(suggestedName: query),
+                              createLabelBuilder: (query) =>
+                                  query.trim().isEmpty
+                                      ? 'Crear nuevo rubro'
+                                      : 'Crear rubro "${query.trim()}"',
                             ),
-                            const SizedBox(width: 6),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline),
-                              tooltip: 'Crear nuevo rubro',
-                              onPressed: () => openCreateRubro(),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                          const SizedBox(width: 6),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            tooltip: 'Crear nuevo rubro',
+                            onPressed: () => openCreateRubro(),
+                          ),
+                        ],
+                      ),
                     ],
-                  );
-                },
-              ),
+                  ],
+                );
+              },
             ),
-            actions: [
+            footerActions: [
               TextButton(
                   onPressed: () => Navigator.pop(ctx),
                   child: const Text('Cancelar')),
@@ -3305,9 +4235,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final nameCtrl = TextEditingController(text: initialName ?? '');
     final createdId = await showDialog<int?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nueva Marca'),
-        content: TextField(
+      builder: (ctx) => AppModalShell(
+        title: 'Nueva Marca',
+        subtitle: 'Creá una marca rápida para asignarla al producto',
+        icon: Icons.branding_watermark_outlined,
+        accent: AppModalAccent.blue,
+        compact: true,
+        maxWidth: 440,
+        onClose: () => Navigator.pop(ctx),
+        body: TextField(
           controller: nameCtrl,
           decoration: const InputDecoration(
             labelText: 'Nombre',
@@ -3316,7 +4252,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           ),
           autofocus: true,
         ),
-        actions: [
+        footerActions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           Consumer<CatalogProvider>(
             builder: (_, p, __) => FilledButton(
@@ -3721,6 +4657,193 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
+  List<DropdownMenuItem<String>> _buildUnitDropdownItems(bool isHardwareStore) {
+    final items = <MapEntry<String, String>>[
+      const MapEntry('un', 'Unidades'),
+      const MapEntry('kg', 'Kilogramos'),
+      const MapEntry('g', 'Gramos'),
+      const MapEntry('lt', 'Litros'),
+    ];
+    const hardwareExtras = <MapEntry<String, String>>[
+      MapEntry('mt', 'Metros (mt)'),
+      MapEntry('m2', 'Metros² (m²)'),
+      MapEntry('m3', 'Metros³ (m³)'),
+      MapEntry('bolsa', 'Bolsa'),
+      MapEntry('rollo', 'Rollo'),
+      MapEntry('caja', 'Caja'),
+      MapEntry('par', 'Par'),
+    ];
+
+    if (isHardwareStore) {
+      items.addAll(hardwareExtras);
+    } else {
+      for (final extra in hardwareExtras) {
+        if (extra.key == _unitType) {
+          items.add(extra);
+        }
+      }
+    }
+
+    final normalizedCurrent = _unitType.trim();
+    if (normalizedCurrent.isNotEmpty &&
+        !items.any((entry) => entry.key == normalizedCurrent)) {
+      items.add(
+        MapEntry(normalizedCurrent, Product.shortLabelFor(normalizedCurrent)),
+      );
+    }
+
+    return items
+        .map(
+          (entry) => DropdownMenuItem<String>(
+            value: entry.key,
+            child: Text(entry.value),
+          ),
+        )
+        .toList();
+  }
+
+  void _onUnitTypeChanged(String? val) {
+    final nextUnit = (val == null || val.trim().isEmpty) ? 'un' : val.trim();
+    setState(() {
+      _unitType = nextUnit;
+      // Unidades discretas (un, bolsa, rollo, caja, par) NO activan fraccionado por defecto;
+      // unidades métricas/peso/líquido sí habilitan venta decimal/corte.
+      _isSoldByWeight = !Product.discreteUnitTypes.contains(nextUnit);
+    });
+  }
+
+  void _onFractionalSwitchChanged(bool v, bool isHardwareStore) {
+    setState(() {
+      _isSoldByWeight = v;
+      if (!isHardwareStore) {
+        if (v && Product.discreteUnitTypes.contains(_unitType)) {
+          _unitType = 'kg';
+        } else if (!v) {
+          _unitType = 'un';
+        }
+      }
+    });
+  }
+
+  Widget _buildUnitAndWeightSection({
+    required bool isNarrow,
+    required bool isHardwareStore,
+  }) {
+    final unitDropdown = DropdownButtonFormField<String>(
+      key: ValueKey('unit_type_${isNarrow ? 'narrow' : 'wide'}_$_unitType'),
+      isExpanded: true,
+      initialValue: _unitType,
+      decoration: const InputDecoration(
+        labelText: 'Unidad de Medida',
+        prefixIcon: Icon(Icons.square_foot),
+        isDense: true,
+      ),
+      items: _buildUnitDropdownItems(isHardwareStore),
+      onChanged: _onUnitTypeChanged,
+    );
+
+    final fractionSwitch = SwitchListTile(
+      key: const ValueKey('product_fractional_switch'),
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        isHardwareStore
+            ? (isNarrow ? 'Permite venta fraccionada / corte' : 'Permite fraccionar')
+            : (isNarrow ? 'Venta p/peso (balanza)' : 'Venta p/peso'),
+        style: isNarrow ? null : const TextStyle(fontSize: 13),
+      ),
+      value: _isSoldByWeight,
+      onChanged: (v) => _onFractionalSwitchChanged(v, isHardwareStore),
+    );
+
+    final activeSwitch = SwitchListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        isNarrow ? 'Activo (Visible en POS)' : 'Activo en POS',
+        style: isNarrow ? null : const TextStyle(fontSize: 13),
+      ),
+      value: _active,
+      onChanged: (v) => setState(() => _active = v),
+    );
+
+    final unitShort = Product.shortLabelFor(_unitType);
+    final Widget fractionalExplanationBanner = isHardwareStore
+        ? Container(
+            key: const ValueKey('product_fractional_explanation_banner'),
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: _isSoldByWeight
+                  ? const Color(0xFFF0FDFA)
+                  : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _isSoldByWeight
+                    ? const Color(0xFF99F6E4)
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _isSoldByWeight
+                      ? Icons.content_cut_rounded
+                      : Icons.inventory_2_outlined,
+                  size: 14,
+                  color: _isSoldByWeight
+                      ? const Color(0xFF0F766E)
+                      : const Color(0xFF64748B),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _isSoldByWeight
+                        ? 'Fraccionable / Corte activo: En mostrador POS pedirá la cantidad o medida exacta en $unitShort (ej. 0.5, 1.25, 2.5 $unitShort) o permitirá usar la Calculadora F7.'
+                        : 'Venta por unidad entera: En mostrador POS sumará 1 $unitShort directo al carrito sin pedir medida decimal.',
+                    style: TextStyle(
+                      fontSize: 11.2,
+                      fontWeight: FontWeight.w600,
+                      color: _isSoldByWeight
+                          ? const Color(0xFF0F766E)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        : const SizedBox.shrink();
+
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          unitDropdown,
+          fractionSwitch,
+          activeSwitch,
+          if (isHardwareStore) fractionalExplanationBanner,
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(flex: 4, child: unitDropdown),
+            const SizedBox(width: 10),
+            Expanded(flex: 4, child: fractionSwitch),
+            const SizedBox(width: 8),
+            Expanded(flex: 4, child: activeSwitch),
+          ],
+        ),
+        if (isHardwareStore) fractionalExplanationBanner,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // IMPORTANTE: usar context.watch (no widget.provider) para que el dropdown
@@ -3728,9 +4851,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     // (ej: cuando se crea una categoría/marca nueva desde el diálogo rápido).
     final provider = context.watch<CatalogProvider>();
     final supplierProv = context.watch<SupplierProvider>();
-    final settingsProv = context.watch<SettingsProvider>();
-    final canSeeSupplier = settingsProv.features.suppliers;
-    final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.watch<SettingsProvider?>();
+    } catch (_) {}
+    final canSeeSupplier = settingsProv?.features.suppliers ?? true;
+    final isResponsableInscripto = settingsProv?.settings?.isResponsableInscripto ?? false;
+    final isHardwareStore = settingsProv?.safeIsHardwareStore ?? false;
     final isNarrow = MediaQuery.of(context).size.width < 450;
     
     final categories = provider.categories;
@@ -3738,139 +4865,216 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final suppliers = supplierProv.suppliers;
     final isBusy = provider.isLoading || _isUploadingImage;
 
+    final screenSize = MediaQuery.of(context).size;
+    final horizontalInset = isNarrow ? 10.0 : 24.0;
+    final verticalInset = isNarrow ? 10.0 : 18.0;
+    final dialogWidth =
+        (screenSize.width - (horizontalInset * 2)).clamp(240.0, 660.0);
+
     return RemoteScannerListener(
       debugLabel: 'ProductFormDialog',
       onBarcodeScanned: _handleFormBarcodeScan,
       child: PopScope(
         canPop: !isBusy,
         child: AlertDialog(
-      alignment: Alignment.center,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Text(
-              _isEditing
-                  ? 'Editar Producto'
-                  : (_isDuplicating ? 'Duplicar Producto' : 'Nuevo Producto'),
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19),
-            ),
+          alignment: Alignment.center,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: horizontalInset,
+            vertical: verticalInset,
           ),
-          if (_isEditing && widget.product != null)
-            IconButton(
-              key: const Key('product_share_button'),
-              icon: const Icon(Icons.share_outlined),
-              tooltip: 'Compartir producto',
-              onPressed: () => ProductShareHelper.shareProduct(
-                widget.product!,
-                context: context,
-              ),
-            ),
-          IconButton(
-            onPressed: isBusy ? null : () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded, size: 20),
-            tooltip: 'Cerrar',
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          minWidth: isNarrow ? 260 : 640,
-          maxWidth: 640,
-        ),
-        child: SizedBox(
-          width: 640,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Selector Superior de Tipo de Ítem (Fijo arriba: 0px salto al cambiar pestaña) ──
-                SizedBox(
-                  width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: SegmentedButton<String>(
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        padding: const WidgetStatePropertyAll(
-                          EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        ),
-                        backgroundColor: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            if (_isCombo) return Colors.deepPurple.shade50;
-                            if (_isService) return Colors.teal.shade50;
-                            return const Color(0xFFEFF6FF);
-                          }
-                          return const Color(0xFFF8FAFC);
-                        }),
-                        foregroundColor: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            if (_isCombo) return Colors.deepPurple.shade800;
-                            if (_isService) return Colors.teal.shade800;
-                            return const Color(0xFF1D4ED8);
-                          }
-                          return const Color(0xFF475569);
-                        }),
-                        side: WidgetStatePropertyAll(
-                          BorderSide(color: Colors.blueGrey.shade200),
+          clipBehavior: Clip.antiAlias,
+          titlePadding: EdgeInsets.zero,
+          contentPadding: EdgeInsets.zero,
+          actionsPadding: EdgeInsets.zero,
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: isNarrow ? 240 : 640,
+              maxWidth: 660,
+              maxHeight: screenSize.height * (screenSize.height < 580 ? 0.96 : 0.92),
+            ),
+            child: SizedBox(
+              width: dialogWidth,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppModalHeader(
+                      title: _isEditing
+                          ? 'Editar Producto'
+                          : (_isDuplicating
+                              ? 'Duplicar Producto'
+                              : 'Nuevo Producto'),
+                      subtitle: _isCombo
+                          ? 'Combo / Pack o Fracción con descuento automático'
+                          : (_isService
+                              ? 'Servicio / Honorario sin control de stock'
+                              : 'Ficha completa de catálogo, stock y precios'),
+                      icon: _isCombo
+                          ? Icons.layers_outlined
+                          : (_isService
+                              ? Icons.work_outline_rounded
+                              : Icons.inventory_2_outlined),
+                      accent: _isCombo
+                          ? AppModalAccent.indigo
+                          : (_isService
+                              ? AppModalAccent.teal
+                              : AppModalAccent.blue),
+                      compact: isNarrow,
+                      closeTooltip: 'Cerrar',
+                      onClose:
+                          isBusy ? null : () => Navigator.of(context).pop(),
+                      trailing: _isEditing && widget.product != null
+                          ? IconButton(
+                              key: const Key('product_share_button'),
+                              icon: const Icon(
+                                Icons.share_outlined,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              tooltip: 'Compartir producto',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => ProductShareHelper.shareProduct(
+                                widget.product!,
+                                context: context,
+                              ),
+                            )
+                          : null,
+                    ),
+                    // ── Selector Superior de Tipo de Ítem (Fijo arriba: 0px salto al cambiar pestaña) ──
+                    Container(
+                      padding: EdgeInsets.fromLTRB(
+                        isNarrow ? 12 : 20,
+                        10,
+                        isNarrow ? 12 : 20,
+                        10,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: AppColors.surfaceMuted,
+                        border: Border(
+                          bottom: BorderSide(color: AppColors.border),
                         ),
                       ),
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: 'product',
-                          icon: Icon(Icons.inventory_2_outlined, size: 16),
-                          label: Text(
-                            'Producto Físico',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: SegmentedButton<String>(
+                            style: ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              padding: const WidgetStatePropertyAll(
+                                EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                              ),
+                              backgroundColor:
+                                  WidgetStateProperty.resolveWith((states) {
+                                if (states.contains(WidgetState.selected)) {
+                                  if (_isCombo) return Colors.indigo.shade50;
+                                  if (_isService) return AppColors.tealSoft;
+                                  return AppColors.primarySoft;
+                                }
+                                return Colors.white;
+                              }),
+                              foregroundColor:
+                                  WidgetStateProperty.resolveWith((states) {
+                                if (states.contains(WidgetState.selected)) {
+                                  if (_isCombo) return AppColors.indigo;
+                                  if (_isService) return AppColors.tealDark;
+                                  return AppColors.primaryDark;
+                                }
+                                return AppColors.textSecondary;
+                              }),
+                              side: WidgetStatePropertyAll(
+                                BorderSide(color: Colors.blueGrey.shade200),
+                              ),
+                            ),
+                            segments: [
+                              ButtonSegment<String>(
+                                value: 'product',
+                                icon: const Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  isHardwareStore
+                                      ? 'Artículo / Material'
+                                      : 'Producto Físico',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'service',
+                                icon: const Icon(
+                                  Icons.work_outline_rounded,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  isHardwareStore
+                                      ? 'Servicio / Flete'
+                                      : 'Servicio / Honorario',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'combo',
+                                icon: const Icon(
+                                  Icons.layers_outlined,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  isHardwareStore
+                                      ? 'Kit / Fracción'
+                                      : 'Combo / Fracción',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            selected: {
+                              _isCombo
+                                  ? 'combo'
+                                  : (_isService ? 'service' : 'product')
+                            },
+                            onSelectionChanged: (selection) {
+                              final mode = selection.first;
+                              setState(() {
+                                _isCombo = mode == 'combo';
+                                _isService = mode == 'service';
+                                if (_isService) {
+                                  _isSoldByWeight = false;
+                                  _unitType = 'un';
+                                }
+                              });
+                            },
                           ),
                         ),
-                        ButtonSegment<String>(
-                          value: 'service',
-                          icon: Icon(Icons.work_outline_rounded, size: 16),
-                          label: Text(
-                            'Servicio / Honorario',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'combo',
-                          icon: Icon(Icons.layers_outlined, size: 16),
-                          label: Text(
-                            'Combo / Fracción',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                      selected: {
-                        _isCombo ? 'combo' : (_isService ? 'service' : 'product')
-                      },
-                      onSelectionChanged: (selection) {
-                        final mode = selection.first;
-                        setState(() {
-                          _isCombo = mode == 'combo';
-                          _isService = mode == 'service';
-                          if (_isService) {
-                            _isSoldByWeight = false;
-                            _unitType = 'un';
-                          }
-                        });
-                      },
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: AnimatedSize(
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          isNarrow ? 14 : 20,
+                          12,
+                          isNarrow ? 14 : 20,
+                          12,
+                        ),
+                        child: AnimatedSize(
                       duration: const Duration(milliseconds: 250),
                       curve: Curves.easeOutCubic,
                       alignment: Alignment.topCenter,
@@ -3884,8 +5088,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           // Nombre
                           TextFormField(
                             controller: _nameCtrl,
+                            focusNode: _nameFocusNode,
                             decoration: InputDecoration(
-                              labelText: _isService ? 'Nombre del Servicio / Honorario *' : 'Nombre del Producto *',
+                              labelText: _isService
+                                  ? (isHardwareStore
+                                      ? 'Nombre del Servicio / Flete *'
+                                      : 'Nombre del Servicio / Honorario *')
+                                  : (isHardwareStore
+                                      ? 'Nombre del Artículo / Material *'
+                                      : 'Nombre del Producto *'),
                               prefixIcon: const Icon(Icons.label_outline),
                               isDense: true,
                             ),
@@ -3909,10 +5120,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _barcodeCtrl,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Código de Barras (EAN)',
-                                prefixIcon: Icon(Icons.qr_code_scanner),
-                                helperText: 'Dejar vacío si es pesable',
+                                prefixIcon: const Icon(Icons.qr_code_scanner),
+                                helperText: isHardwareStore
+                                    ? 'Opcional en artículos a granel / corte'
+                                    : 'Dejar vacío si es pesable',
                                 isDense: true,
                               ),
                             ),
@@ -3931,8 +5144,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   children: [
                                     TextFormField(
                                       controller: _nameCtrl,
+                                      focusNode: _nameFocusNode,
                                       decoration: InputDecoration(
-                                        labelText: _isService ? 'Nombre del Servicio / Honorario *' : 'Nombre del Producto *',
+                                        labelText: _isService
+                                            ? (isHardwareStore
+                                                ? 'Nombre del Servicio / Flete *'
+                                                : 'Nombre del Servicio / Honorario *')
+                                            : (isHardwareStore
+                                                ? 'Nombre del Artículo / Material *'
+                                                : 'Nombre del Producto *'),
                                         prefixIcon: const Icon(Icons.label_outline),
                                         isDense: true,
                                       ),
@@ -3969,7 +5189,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                               decoration: InputDecoration(
                                                 labelText: 'Código de Barras (EAN)',
                                                 prefixIcon: const Icon(Icons.qr_code_scanner),
-                                                helperText: _isService ? 'No aplica en servicios' : 'Dejar vacío si es pesable',
+                                                helperText: _isService
+                                                    ? 'No aplica en servicios'
+                                                    : (isHardwareStore
+                                                        ? 'Opcional en artículos a granel / corte'
+                                                        : 'Dejar vacío si es pesable'),
                                                 isDense: true,
                                               ),
                                             ),
@@ -4076,6 +5300,24 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   ],
                                 );
                               },
+                            ),
+                          ),
+                        if (!_isService)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: ProductHardwareAndSupplierFieldsSection(
+                              isHardwareStore: isHardwareStore,
+                              isService: _isService,
+                              isCombo: _isCombo,
+                              isNarrow: isNarrow,
+                              unitLabel: Product.shortLabelFor(_unitType),
+                              supplierSkuCtrl: _supplierSkuCtrl,
+                              technicalSpecCtrl: _technicalSpecCtrl,
+                              storageLocationCtrl: _storageLocationCtrl,
+                              purchasePackageCtrl: _purchasePackageCtrl,
+                              conversionFactorCtrl: _conversionFactorCtrl,
+                              packageCostCtrl: _packageCostCtrl,
+                              unitCostCtrl: _costCtrl,
                             ),
                           ),
                         // --- SECCIÓN CONTEXTUAL POR TIPO DE ÍTEM ---
@@ -4232,9 +5474,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                   children: [
                                                     TextFormField(
                                                       controller: _stockCtrl,
+                                                      enabled: !(widget.lockInitialStockToZero && !_isEditing),
+                                                      readOnly: widget.lockInitialStockToZero && !_isEditing,
                                                       decoration: InputDecoration(
-                                                        labelText: 'Stock inicial',
-                                                        suffixText: _unitType,
+                                                        labelText: (widget.lockInitialStockToZero && !_isEditing)
+                                                            ? 'Stock inicial (0 por comprobante)'
+                                                            : 'Stock inicial',
+                                                        helperText: (widget.lockInitialStockToZero && !_isEditing)
+                                                            ? 'El stock se sumará al confirmar el comprobante.'
+                                                            : null,
+                                                        suffixText: Product.shortLabelFor(_unitType),
                                                         prefixIcon: const Icon(Icons.inventory_2_outlined),
                                                         isDense: true,
                                                       ),
@@ -4259,9 +5508,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                       flex: 4,
                                                       child: TextFormField(
                                                         controller: _stockCtrl,
+                                                        enabled: !(widget.lockInitialStockToZero && !_isEditing),
+                                                        readOnly: widget.lockInitialStockToZero && !_isEditing,
                                                         decoration: InputDecoration(
-                                                          labelText: 'Stock inicial',
-                                                          suffixText: _unitType,
+                                                          labelText: (widget.lockInitialStockToZero && !_isEditing)
+                                                              ? 'Stock inicial (0 por comprobante)'
+                                                              : 'Stock inicial',
+                                                          helperText: (widget.lockInitialStockToZero && !_isEditing)
+                                                              ? 'Se sumará al confirmar el comprobante.'
+                                                              : null,
+                                                          suffixText: Product.shortLabelFor(_unitType),
                                                           prefixIcon: const Icon(Icons.inventory_2_outlined),
                                                           isDense: true,
                                                         ),
@@ -4285,109 +5541,24 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                   ],
                                                 ),
                                         ),
-                                        if (isNarrow)
-                                          Column(
-                                            children: [
-                                              DropdownButtonFormField<String>(
-                                                key: ValueKey('unit_type_narrow_$_unitType'),
-                                                isExpanded: true,
-                                                initialValue: _unitType,
-                                                decoration: const InputDecoration(
-                                                  labelText: 'Unidad de Medida',
-                                                  prefixIcon: Icon(Icons.square_foot),
-                                                  isDense: true,
-                                                ),
-                                                items: const [
-                                                  DropdownMenuItem(value: 'un', child: Text('Unidades')),
-                                                  DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
-                                                  DropdownMenuItem(value: 'g', child: Text('Gramos')),
-                                                  DropdownMenuItem(value: 'lt', child: Text('Litros')),
-                                                ],
-                                                onChanged: (val) => setState(() {
-                                                  _unitType = val ?? 'un';
-                                                  _isSoldByWeight = _unitType != 'un';
-                                                }),
-                                              ),
-                                              SwitchListTile(
-                                                dense: true,
-                                                contentPadding: EdgeInsets.zero,
-                                                title: const Text('Venta p/peso (balanza)'),
-                                                value: _isSoldByWeight,
-                                                onChanged: (v) => setState(() {
-                                                  _isSoldByWeight = v;
-                                                  if (v && _unitType == 'un') {
-                                                    _unitType = 'kg';
-                                                  } else if (!v) {
-                                                    _unitType = 'un';
-                                                  }
-                                                }),
-                                              ),
-                                              SwitchListTile(
-                                                dense: true,
-                                                contentPadding: EdgeInsets.zero,
-                                                title: const Text('Activo (Visible en POS)'),
-                                                value: _active,
-                                                onChanged: (v) => setState(() => _active = v),
-                                              ),
-                                            ],
-                                          )
-                                        else
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                flex: 4,
-                                                child: DropdownButtonFormField<String>(
-                                                  key: ValueKey('unit_type_wide_$_unitType'),
-                                                  isExpanded: true,
-                                                  initialValue: _unitType,
-                                                  decoration: const InputDecoration(
-                                                    labelText: 'Unidad de Medida',
-                                                    prefixIcon: Icon(Icons.square_foot),
-                                                    isDense: true,
-                                                  ),
-                                                  items: const [
-                                                    DropdownMenuItem(value: 'un', child: Text('Unidades')),
-                                                    DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
-                                                    DropdownMenuItem(value: 'g', child: Text('Gramos')),
-                                                    DropdownMenuItem(value: 'lt', child: Text('Litros')),
-                                                  ],
-                                                  onChanged: (val) => setState(() {
-                                                    _unitType = val ?? 'un';
-                                                    _isSoldByWeight = _unitType != 'un';
-                                                  }),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                flex: 4,
-                                                child: SwitchListTile(
-                                                  dense: true,
-                                                  contentPadding: EdgeInsets.zero,
-                                                  title: const Text('Venta p/peso', style: TextStyle(fontSize: 13)),
-                                                  value: _isSoldByWeight,
-                                                  onChanged: (v) => setState(() {
-                                                    _isSoldByWeight = v;
-                                                    if (v && _unitType == 'un') {
-                                                      _unitType = 'kg';
-                                                    } else if (!v) {
-                                                      _unitType = 'un';
-                                                    }
-                                                  }),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                flex: 4,
-                                                child: SwitchListTile(
-                                                  dense: true,
-                                                  contentPadding: EdgeInsets.zero,
-                                                  title: const Text('Activo en POS', style: TextStyle(fontSize: 13)),
-                                                  value: _active,
-                                                  onChanged: (v) => setState(() => _active = v),
-                                                ),
-                                              ),
-                                            ],
+                                        _buildUnitAndWeightSection(
+                                          isNarrow: isNarrow,
+                                          isHardwareStore: isHardwareStore,
+                                        ),
+                                        if (isHardwareStore) ...[
+                                          const SizedBox(height: 10),
+                                          ProductF7CalcConfigPanel(
+                                            calcConfig: _calcConfig,
+                                            productNameHint: _nameCtrl.text.trim(),
+                                            productNameListenable: _nameCtrl,
+                                            onChanged: (nextConfig) {
+                                              setState(() {
+                                                _calcConfig = nextConfig;
+                                                _clearCalcConfig = nextConfig == null;
+                                              });
+                                            },
                                           ),
+                                        ],
                                         // ── Control de Vencimiento y Alertas ──
                                         Builder(
                                           builder: (ctx) {
@@ -4395,11 +5566,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                             try {
                                               sp = ctx.watch<SettingsProvider?>();
                                             } catch (_) {}
-                                            final canUseBatches = sp == null
-                                                ? true
-                                                : (sp.features.batchExpiration || sp.features.production);
-                                            final canUseProduction =
-                                                sp == null ? true : sp.features.production;
+                                            final canUseBatches = !isHardwareStore &&
+                                                (sp == null
+                                                    ? true
+                                                    : (sp.features.batchExpiration || sp.features.production));
+                                            final canUseProduction = !isHardwareStore &&
+                                                (sp == null ? true : sp.features.production);
                                             final showExpBox = canUseBatches ||
                                                 _trackBatches ||
                                                 _expirationDate != null ||
@@ -4618,35 +5790,69 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                AppModalFooter(
+                  padding: EdgeInsets.fromLTRB(
+                    isNarrow ? 12 : 20,
+                    10,
+                    isNarrow ? 12 : 20,
+                    10,
+                  ),
+                  actions: [
+                    Consumer<CatalogProvider>(
+                      builder: (_, p, __) {
+                        final isBusy = p.isLoading || _isUploadingImage;
+                        return TextButton(
+                          onPressed:
+                              isBusy ? null : () => Navigator.of(context).pop(),
+                          child: const Text('Cancelar'),
+                        );
+                      },
+                    ),
+                    if (!_isEditing)
+                      Consumer<CatalogProvider>(
+                        builder: (_, p, __) {
+                          final isBusy = p.isLoading || _isUploadingImage;
+                          return OutlinedButton.icon(
+                            key: const Key('product_save_and_create_another_btn'),
+                            onPressed:
+                                isBusy ? null : () => _submit(keepOpenForNext: true),
+                            icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                            label: Text(
+                              _batchCreatedCount > 0
+                                  ? 'Guardar y Crear Otro ($_batchCreatedCount)'
+                                  : 'Guardar y Crear Otro',
+                            ),
+                          );
+                        },
+                      ),
+                    Consumer<CatalogProvider>(
+                      builder: (_, p, __) {
+                        final isBusy = p.isLoading || _isUploadingImage;
+                        return FilledButton(
+                          key: const Key('product_submit_btn'),
+                          onPressed: isBusy ? null : () => _submit(),
+                          child: isBusy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  _isEditing ? 'Guardar Cambios' : 'Crear Producto',
+                                ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
       ),
-      actions: [
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) {
-            final isBusy = p.isLoading || _isUploadingImage;
-            return TextButton(
-              onPressed: isBusy ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            );
-          },
-        ),
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) {
-            final isBusy = p.isLoading || _isUploadingImage;
-            return FilledButton(
-              onPressed: isBusy ? null : _submit,
-              child: isBusy
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text(_isEditing ? 'Guardar Cambios' : 'Crear Producto'),
-            );
-          },
-        ),
-      ],
       ),
       ),
     );
@@ -4830,34 +6036,37 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     int? selectedId;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Agregar Insumo / Semi-Elaborado a Receta'),
-        content: SizedBox(
-          width: 440,
-          child: SearchableSelectField<int>(
-            value: selectedId,
-            labelText: 'Materia prima o sub-receta',
-            prefixIcon: Icons.search,
-            searchHintText: 'Buscar por nombre, código o barras...',
-            options: options.map(buildOption).toList(),
-            onRemoteSearch: (q) async {
-              final found = await widget.provider.searchProductsRemote(q, perPage: 80);
-              final matched = <SearchableSelectOption<int>>[];
-              for (final p in found) {
-                pool[p.id] = p;
-                if (isEligibleIngredient(p)) {
-                  matched.add(buildOption(p));
-                }
+      builder: (ctx) => AppModalShell(
+        title: 'Agregar Insumo / Semi-Elaborado a Receta',
+        subtitle: 'Buscá la materia prima o sub-receta a descontar al elaborar',
+        icon: Icons.restaurant_menu_outlined,
+        accent: AppModalAccent.orange,
+        compact: true,
+        maxWidth: 480,
+        onClose: () => Navigator.pop(ctx),
+        body: SearchableSelectField<int>(
+          value: selectedId,
+          labelText: 'Materia prima o sub-receta',
+          prefixIcon: Icons.search,
+          searchHintText: 'Buscar por nombre, código o barras...',
+          options: options.map(buildOption).toList(),
+          onRemoteSearch: (q) async {
+            final found = await widget.provider.searchProductsRemote(q, perPage: 80);
+            final matched = <SearchableSelectOption<int>>[];
+            for (final p in found) {
+              pool[p.id] = p;
+              if (isEligibleIngredient(p)) {
+                matched.add(buildOption(p));
               }
-              return matched;
-            },
-            onChanged: (id) {
-              selectedId = id;
-              if (id != null) Navigator.pop(ctx);
-            },
-          ),
+            }
+            return matched;
+          },
+          onChanged: (id) {
+            selectedId = id;
+            if (id != null) Navigator.pop(ctx);
+          },
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
@@ -5440,8 +6649,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       margin: const EdgeInsets.only(top: 2),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.deepPurple.shade50.withValues(alpha: 0.45),
-        border: Border.all(color: Colors.deepPurple.shade200),
+        color: Colors.indigo.shade50.withValues(alpha: 0.45),
+        border: Border.all(color: Colors.indigo.shade200),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -5459,7 +6668,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.layers_rounded,
-                        size: 17, color: Colors.deepPurple.shade700),
+                        size: 17, color: Colors.indigo.shade700),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -5467,7 +6676,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 13,
-                          color: Colors.deepPurple.shade900,
+                          color: Colors.indigo.shade900,
                         ),
                       ),
                     ),
@@ -5476,8 +6685,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  foregroundColor: Colors.deepPurple.shade800,
-                  side: BorderSide(color: Colors.deepPurple.shade300),
+                  foregroundColor: Colors.indigo.shade800,
+                  side: BorderSide(color: Colors.indigo.shade300),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
                 icon: const Icon(Icons.playlist_add_rounded, size: 17),
@@ -5545,7 +6754,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 160),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.deepPurple.shade200),
+                    border: Border.all(color: Colors.indigo.shade200),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: ListView.separated(
@@ -5574,7 +6783,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             ? Icon(Icons.check_circle,
                                 color: Colors.green.shade600, size: 18)
                             : Icon(Icons.add_circle_outline,
-                                color: Colors.deepPurple.shade600, size: 19),
+                                color: Colors.indigo.shade600, size: 19),
                         onTap: () => _addProductToComboRecipe(p),
                       );
                     },
@@ -5651,7 +6860,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.bold,
-                            color: Colors.deepPurple.shade700,
+                            color: Colors.indigo.shade700,
                           ),
                         ),
                     ],
@@ -5713,13 +6922,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             horizontal: 7, vertical: 7),
                         decoration: BoxDecoration(
                           color: (showFractionBar || hasFractionalQty)
-                              ? Colors.deepPurple.shade600
-                              : Colors.deepPurple.shade50,
+                              ? AppColors.indigo
+                              : Colors.indigo.shade50,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
                             color: (showFractionBar || hasFractionalQty)
-                                ? Colors.deepPurple.shade600
-                                : Colors.deepPurple.shade200,
+                                ? AppColors.indigo
+                                : Colors.indigo.shade200,
                           ),
                         ),
                         child: Text(
@@ -5729,7 +6938,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             fontWeight: FontWeight.w800,
                             color: (showFractionBar || hasFractionalQty)
                                 ? Colors.white
-                                : Colors.deepPurple.shade700,
+                                : Colors.indigo.shade700,
                           ),
                         ),
                       ),
@@ -5760,7 +6969,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   border: Border.all(
                     color: exceedsStock
                         ? Colors.red.shade300
-                        : Colors.deepPurple.shade100,
+                        : Colors.indigo.shade100,
                   ),
                 ),
                 child: Column(
@@ -6028,12 +7237,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: selected
-                      ? Colors.deepPurple.shade600
+                      ? AppColors.indigo
                       : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: selected
-                        ? Colors.deepPurple.shade600
+                        ? AppColors.indigo
                         : Colors.grey.shade300,
                   ),
                 ),
@@ -6091,16 +7300,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
+                color: Colors.indigo.shade50,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.deepPurple.shade300),
+                border: Border.all(color: Colors.indigo.shade300),
               ),
               child: Text(
                 '1/N',
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w800,
-                  color: Colors.deepPurple.shade800,
+                  color: Colors.indigo.shade800,
                 ),
               ),
             ),
@@ -6129,12 +7338,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         foregroundColor:
-            isApplied ? Colors.green.shade800 : Colors.deepPurple.shade800,
+            isApplied ? Colors.green.shade800 : Colors.indigo.shade800,
         backgroundColor:
-            isApplied ? Colors.green.shade50 : Colors.deepPurple.shade50,
+            isApplied ? Colors.green.shade50 : Colors.indigo.shade50,
         side: BorderSide(
           color:
-              isApplied ? Colors.green.shade300 : Colors.deepPurple.shade300,
+              isApplied ? Colors.green.shade300 : Colors.indigo.shade300,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
@@ -6215,7 +7424,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.deepPurple.shade200),
+        border: Border.all(color: Colors.indigo.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6232,7 +7441,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.calculate_outlined,
-                        size: 17, color: Colors.deepPurple.shade700),
+                        size: 17, color: Colors.indigo.shade700),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -6242,7 +7451,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12.5,
-                          color: Colors.deepPurple.shade900,
+                          color: Colors.indigo.shade900,
                         ),
                       ),
                     ),
@@ -6344,9 +7553,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
-                          foregroundColor: Colors.deepPurple.shade800,
-                          backgroundColor: Colors.deepPurple.shade50,
-                          side: BorderSide(color: Colors.deepPurple.shade300),
+                          foregroundColor: Colors.indigo.shade800,
+                          backgroundColor: Colors.indigo.shade50,
+                          side: BorderSide(color: Colors.indigo.shade300),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
                           ),
@@ -6386,7 +7595,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Colors.deepPurple.shade800,
+                            color: Colors.indigo.shade800,
                           ),
                         ),
                         for (final s in suggestions)
@@ -6647,78 +7856,92 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
     return RemoteScannerListener(
       debugLabel: 'ComboIngredientPickerDialog',
       onBarcodeScanned: _onSearchSubmittedOrScanned,
-      child: AlertDialog(
-        title: const Text('Buscar Producto para el Combo'),
-        content: SizedBox(
-          width: 440,
-          height: 320,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                onSubmitted: _onSearchSubmittedOrScanned,
-                decoration: InputDecoration(
-                  labelText: 'Nombre, código de barras o PLU...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: _loading
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : (_searchCtrl.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                _doSearch('');
-                              },
-                            )
-                          : null),
-                ),
-                onChanged: _onQueryChanged,
-              ),
-            const SizedBox(height: 10),
-            if (_firstLoad)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (_results.isEmpty)
-              const Expanded(child: Center(child: Text('No hay resultados')))
-            else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _results.length,
-                  itemBuilder: (_, i) {
-                    final p = _results[i];
-                    final alreadyAdded = widget.comboIngredients.any((ing) => ing['id'] == p.id);
-                    return ListTile(
-                      title: Text(p.name),
-                      subtitle: Text('Stock: ${p.stock.toQty()} ${p.unitType} | Costo: \$${p.costPrice.toCurrency()} | Venta: \$${p.sellingPrice.toCurrency()}'),
-                      onTap: alreadyAdded ? null : () => _addIngredient(p),
-                      trailing: alreadyAdded
-                          ? const Icon(Icons.check_circle, color: Colors.green)
-                          : IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: Colors.deepOrange),
-                              tooltip: 'Agregar al Combo',
-                              onPressed: () => _addIngredient(p),
-                            ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        FilledButton.icon(
-          icon: const Icon(Icons.check),
-          label: Text(
-            'Listo (${widget.comboIngredients.length} producto${widget.comboIngredients.length == 1 ? '' : 's'})',
+      child: AppModalShell(
+        title: 'Buscar Producto para el Combo',
+        subtitle: 'Escaneá código o buscá por nombre / PLU',
+        icon: Icons.layers_outlined,
+        accent: AppModalAccent.indigo,
+        compact: true,
+        maxWidth: 480,
+        maxHeight: 460,
+        expandBody: true,
+        topBar: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
           ),
-          onPressed: () => Navigator.pop(context),
+          child: TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            onSubmitted: _onSearchSubmittedOrScanned,
+            decoration: InputDecoration(
+              labelText: 'Nombre, código de barras o PLU...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              suffixIcon: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : (_searchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            _doSearch('');
+                          },
+                        )
+                      : null),
+            ),
+            onChanged: _onQueryChanged,
+          ),
         ),
-      ],
+        bodyPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        body: _firstLoad
+            ? const Center(child: CircularProgressIndicator())
+            : (_results.isEmpty
+                ? const Center(child: Text('No hay resultados'))
+                : ListView.builder(
+                    itemCount: _results.length,
+                    itemBuilder: (_, i) {
+                      final p = _results[i];
+                      final alreadyAdded =
+                          widget.comboIngredients.any((ing) => ing['id'] == p.id);
+                      return ListTile(
+                        title: Text(p.name),
+                        subtitle: Text(
+                          'Stock: ${p.stock.toQty()} ${p.unitType} | Costo: \$${p.costPrice.toCurrency()} | Venta: \$${p.sellingPrice.toCurrency()}',
+                        ),
+                        onTap: alreadyAdded ? null : () => _addIngredient(p),
+                        trailing: alreadyAdded
+                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            : IconButton(
+                                icon: const Icon(
+                                  Icons.add_circle_outline,
+                                  color: Colors.deepOrange,
+                                ),
+                                tooltip: 'Agregar al Combo',
+                                onPressed: () => _addIngredient(p),
+                              ),
+                      );
+                    },
+                  )),
+        footerActions: [
+          FilledButton.icon(
+            icon: const Icon(Icons.check),
+            label: Text(
+              'Listo (${widget.comboIngredients.length} producto${widget.comboIngredients.length == 1 ? '' : 's'})',
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
       ),
     );
   }
@@ -6836,27 +8059,19 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     // 2. Mostrar diálogo de Confirmación con Previsualización (sin ListView dentro de IntrinsicWidth)
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        title: Row(
+      builder: (ctx) => AppModalShell(
+        title: 'Confirmar Aumento',
+        subtitle: 'Revisá el impacto antes de actualizar el catálogo',
+        icon: Icons.warning_amber_rounded,
+        accent: AppModalAccent.orange,
+        compact: true,
+        maxWidth: 480,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.all(18),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Confirmar Aumento'),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
                 Text.rich(
                   TextSpan(
                     style: Theme.of(ctx).textTheme.bodyMedium,
@@ -6985,12 +8200,13 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     ),
                   ),
                 ],
-              ],
-            ),
-          ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
             onPressed: () => Navigator.pop(ctx, true),
@@ -7029,27 +8245,19 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     final brands = widget.provider.brands;
     final supplierProv = context.watch<SupplierProvider?>();
     final canSeeSupplier = (context.watch<SettingsProvider?>()?.features.suppliers ?? false) && supplierProv != null;
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      title: Row(
+    return AppModalShell(
+      title: 'Aumento Masivo de Precios',
+      subtitle: 'Actualización porcentual con redondeo y reversión',
+      icon: Icons.trending_up_rounded,
+      accent: AppModalAccent.orange,
+      compact: true,
+      maxWidth: 480,
+      expandBody: false,
+      bodyPadding: const EdgeInsets.all(18),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.trending_up, color: Colors.deepOrange.shade700),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text('Aumento Masivo de Precios'),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -7227,17 +8435,25 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                   ),
                 ),
               ],
-            ],
-          ),
-        ),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
         Consumer<CatalogProvider>(
           builder: (_, p, __) => FilledButton.icon(
             icon: const Icon(Icons.preview),
             label: p.isLoading
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Text('Previsualizar Impacto'),
             style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
             onPressed: p.isLoading ? null : _previewAndApply,
@@ -7274,20 +8490,14 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
   }
 
   Future<void> _revert(int id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Revertir Aumento'),
-        content: const Text('¿Estás seguro de que deseas deshacer este lote de aumentos? Los precios de todos los productos afectados volverán a su estado anterior.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Revertir Lote'),
-          ),
-        ],
-      ),
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Revertir Aumento',
+      message:
+          '¿Estás seguro de que deseas deshacer este lote de aumentos? Los precios de todos los productos afectados volverán a su estado anterior.',
+      confirmLabel: 'Revertir Lote',
+      icon: Icons.settings_backup_restore_rounded,
+      isDestructive: true,
     );
 
     if (confirm != true) return;
@@ -7304,19 +8514,16 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      title: const Row(
-        children: [
-          Icon(Icons.history),
-          SizedBox(width: 8),
-          Expanded(child: Text('Historial de Aumentos')),
-        ],
-      ),
-      content: SizedBox(
-        width: 600,
-        height: 400,
-        child: Consumer<CatalogProvider>(
+    return AppModalShell(
+      title: 'Historial de Aumentos',
+      subtitle: 'Auditoría y reversión de ajustes masivos',
+      icon: Icons.history_rounded,
+      accent: AppModalAccent.orange,
+      maxWidth: 640,
+      maxHeight: 500,
+      expandBody: true,
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      body: Consumer<CatalogProvider>(
           builder: (_, p, __) {
             if (p.isLoading && p.priceHistory.isEmpty) {
               return const Center(child: CircularProgressIndicator());
@@ -7389,9 +8596,11 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
             );
           },
         ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
       ],
     );
   }
@@ -7613,112 +8822,95 @@ class _QuickPriceEditDialogState extends State<_QuickPriceEditDialog> {
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
-      title: Row(
-        children: [
-          Icon(Icons.price_change_outlined, color: Colors.deepOrange.shade700),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Cambiar Precio Rápido',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+    return AppModalShell(
+      title: 'Cambiar Precio Rápido',
+      subtitle: p.name,
+      icon: Icons.price_change_outlined,
+      accent: AppModalAccent.amber,
+      compact: true,
+      maxWidth: 460,
+      onClose: _saving ? null : () => Navigator.of(context).pop(),
+      bodyPadding: const EdgeInsets.all(18),
+      body: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              p.name,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded, size: 20),
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: SizedBox(
-          width: 420,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            const SizedBox(height: 4),
+            Text(
+              'Actual: Costo \$${p.costPrice.toCurrency()} • Venta \$${p.sellingPrice.toCurrency()}',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  p.name,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                Expanded(
+                  flex: 4,
+                  child: TextFormField(
+                    controller: _costCtrl,
+                    readOnly: p.isCombo,
+                    decoration: InputDecoration(
+                      labelText: p.isCombo ? 'Costo Combo' : 'Costo (\$)',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [ArsThousandsInputFormatter()],
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Actual: Costo \$${p.costPrice.toCurrency()} • Venta \$${p.sellingPrice.toCurrency()}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _marginCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '% Margen',
+                      suffixText: '%',
+                      isDense: true,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: TextFormField(
-                        controller: _costCtrl,
-                        readOnly: p.isCombo,
-                        decoration: InputDecoration(
-                          labelText: p.isCombo ? 'Costo Combo' : 'Costo (\$)',
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [ArsThousandsInputFormatter()],
-                      ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 4,
+                  child: TextFormField(
+                    controller: _priceCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Precio Venta *',
+                      isDense: true,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: TextFormField(
-                        controller: _marginCtrl,
-                        decoration: const InputDecoration(
-                          labelText: '% Margen',
-                          suffixText: '%',
-                          isDense: true,
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 4,
-                      child: TextFormField(
-                        controller: _priceCtrl,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Precio Venta *',
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [ArsThousandsInputFormatter()],
-                        validator: (val) {
-                          if (val == null || val.trim().isEmpty) {
-                            return 'Requerido';
-                          }
-                          final parsed = ArsThousandsInputFormatter.tryParse(val);
-                          if (parsed == null || parsed <= 0) {
-                            return 'Mayor a 0';
-                          }
-                          return null;
-                        },
-                        onFieldSubmitted: (_) => _save(),
-                      ),
-                    ),
-                  ],
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [ArsThousandsInputFormatter()],
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Requerido';
+                      }
+                      final parsed = ArsThousandsInputFormatter.tryParse(val);
+                      if (parsed == null || parsed <= 0) {
+                        return 'Mayor a 0';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) => _save(),
+                  ),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
@@ -7728,7 +8920,10 @@ class _QuickPriceEditDialogState extends State<_QuickPriceEditDialog> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Icon(Icons.check_rounded, size: 18),
           label: const Text('Guardar Precio'),

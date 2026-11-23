@@ -27,11 +27,13 @@ import 'package:frontend_desktop/features/customers/providers/customer_provider.
 import 'package:frontend_desktop/features/customers/presentation/widgets/customer_form_dialog.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
-import 'package:printing/printing.dart';
 
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
@@ -1187,46 +1189,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
   Future<void> _handleVoid(BuildContext context) async {
     final sale = widget.sale;
     final provider = widget.provider;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
-          const SizedBox(width: 10),
-          const Text('Anular Ticket'),
-        ]),
-        content: Text.rich(
-          TextSpan(
-            style: Theme.of(ctx).textTheme.bodyMedium,
-            children: [
-              const TextSpan(text: '¿Está seguro de anular el ticket '),
-              TextSpan(
-                  text: '#${sale.id}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              const TextSpan(text: ' por un total de '),
-              TextSpan(
-                  text: '\$${sale.total.toCurrency()}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.red)),
-              const TextSpan(text: '?\n\nEsta acción es irreversible. '),
-              const TextSpan(
-                  text:
-                      'El stock de todos los productos será devuelto al inventario automáticamente.',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sí, Anular Ticket'),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Anular Ticket',
+      message:
+          '¿Está seguro de anular el ticket #${sale.id} por un total de \$${sale.total.toCurrency()}?\n\nEsta acción es irreversible. El stock de todos los productos será devuelto al inventario automáticamente.',
+      confirmLabel: 'Sí, Anular Ticket',
+      cancelLabel: 'Cancelar',
+      icon: Icons.warning_amber_rounded,
+      isDestructive: true,
     );
 
     if (confirmed != true) return;
@@ -1252,14 +1223,23 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           } else {
             showDialog(
               context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Error de ARCA / Anulación', style: TextStyle(color: Colors.red)),
-                content: Text(provider.errorMessage ?? 'Error al anular el ticket.'),
-                actions: [
-                  TextButton(
+              builder: (ctx) => AppModalShell(
+                title: 'Error de ARCA / Anulación',
+                subtitle: 'No se pudo completar la anulación del comprobante',
+                icon: Icons.error_outline,
+                accent: AppModalAccent.red,
+                compact: true,
+                maxWidth: 440,
+                onClose: () => Navigator.pop(ctx),
+                body: Text(
+                  provider.errorMessage ?? 'Error al anular el ticket.',
+                  style: const TextStyle(fontSize: 13.5, color: AppColors.textPrimary),
+                ),
+                footerActions: [
+                  FilledButton(
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('CERRAR'),
-                  )
+                  ),
                 ],
               ),
             );
@@ -1326,6 +1306,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'unit_type': i.unitType,
               'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
@@ -1374,42 +1355,17 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               );
 
         if (context.mounted) {
-          await showDialog(
+          await showAppPdfPreviewDialog(
             context: context,
-            builder: (ctx) => Dialog(
-              child: SizedBox(
-                width: 800,
-                height: 600,
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('Vista Previa de Copia Interna',
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold)),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: PdfPreview(
-                        build: (format) async => pdfBytes,
-                        canChangePageFormat: false,
-                        canChangeOrientation: false,
-                        pdfFileName: 'Copia_Ticket_${sale.id}.pdf',
-                        canDebug: false,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            title: 'Vista Previa de Copia Interna',
+            subtitle:
+                'Documento interno del ticket #${sale.id} • Hoja ${pdfPaperSizeLabel(localTerminal.pdfPaperSize)}',
+            icon: Icons.picture_as_pdf_outlined,
+            accent: AppModalAccent.blue,
+            initialPageFormat:
+                pdfPageFormatFromPaperSize(localTerminal.pdfPaperSize),
+            pdfFileName: 'Copia_Ticket_${sale.id}.pdf',
+            build: (format) async => pdfBytes,
           );
         }
       } else {
@@ -1710,6 +1666,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'unit_type': i.unitType,
               'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
@@ -1736,45 +1693,20 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         );
 
         if (context.mounted) {
-          await showDialog(
+          final arcaTitle =
+              '${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA #${invoice['formatted_number'] ?? sale.id}';
+          await showAppPdfPreviewDialog(
             context: context,
-            builder: (ctx) => Dialog(
-              child: SizedBox(
-                width: 800,
-                height: 600,
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            '${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA #${invoice?['formatted_number'] ?? sale.id}',
-                            style: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: PdfPreview(
-                        build: (format) async => pdfBytes,
-                        canChangePageFormat: false,
-                        canChangeOrientation: false,
-                        pdfFileName:
-                            '${isCreditNote ? "Nota_Credito" : "Factura"}_ARCA_${sale.id}.pdf',
-                        canDebug: false,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            title: arcaTitle,
+            subtitle:
+                'Documento fiscal emitido • Hoja ${pdfPaperSizeLabel(localTerminal.pdfPaperSize)}',
+            icon: Icons.picture_as_pdf_outlined,
+            accent: AppModalAccent.emerald,
+            initialPageFormat:
+                pdfPageFormatFromPaperSize(localTerminal.pdfPaperSize),
+            pdfFileName:
+                '${isCreditNote ? "Nota_Credito" : "Factura"}_ARCA_${sale.id}.pdf',
+            build: (format) async => pdfBytes,
           );
         }
       } else {
@@ -2252,9 +2184,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                                 ),
                               ),
                               DataCell(Text(
-                                  item.isSoldByWeight
-                                      ? '${item.quantity.toQty()} Kg'
-                                      : '${item.quantity.toQty()} u',
+                                  '${item.quantity.toQty()} ${item.effectiveUnitLabel}',
                                   style: textStyle)),
                               DataCell(Text(
                                   '\$${item.unitPrice.toCurrency()}',
@@ -3131,12 +3061,12 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.deepPurple.shade700 : Colors.white,
+          color: isSelected ? Colors.indigo.shade700 : Colors.white,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: isSelected
-                ? Colors.deepPurple.shade800
-                : Colors.deepPurple.shade200,
+                ? Colors.indigo.shade800
+                : Colors.indigo.shade200,
           ),
         ),
         child: Text(
@@ -3144,7 +3074,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : Colors.deepPurple.shade900,
+            color: isSelected ? Colors.white : Colors.indigo.shade900,
           ),
         ),
       ),
@@ -3178,9 +3108,9 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.deepPurple.shade50.withValues(alpha: 0.6),
+        color: Colors.indigo.shade50.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.deepPurple.shade200),
+        border: Border.all(color: Colors.indigo.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3188,7 +3118,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
           Row(
             children: [
               Icon(Icons.tune_rounded,
-                  size: 16, color: Colors.deepPurple.shade800),
+                  size: 16, color: Colors.indigo.shade800),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -3197,7 +3127,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple.shade900,
+                    color: Colors.indigo.shade900,
                   ),
                 ),
               ),
@@ -3209,7 +3139,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                   fontSize: 12.5,
                   fontWeight: FontWeight.bold,
                   color: currentIibb > 0
-                      ? Colors.deepPurple.shade900
+                      ? Colors.indigo.shade900
                       : Colors.grey.shade600,
                 ),
               ),
@@ -3238,7 +3168,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.8),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.deepPurple.shade100),
+              border: Border.all(color: Colors.indigo.shade100),
             ),
             child: Column(
               children: [
@@ -3266,14 +3196,14 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                     Text(
                       'Percepción IIBB (${_formatPercentLabel(effectiveRate)}%):',
                       style: TextStyle(
-                          fontSize: 11.5, color: Colors.deepPurple.shade800),
+                          fontSize: 11.5, color: Colors.indigo.shade800),
                     ),
                     Text(
                       '\$${currentIibb.toCurrency()}',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.bold,
-                        color: Colors.deepPurple.shade900,
+                        color: Colors.indigo.shade900,
                       ),
                     ),
                   ],
@@ -3368,69 +3298,38 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
         _normalizeTaxConditionForVoucher(_taxCondition, _voucherType);
     final formValid = _isFormValid(settings);
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Cabecera
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.indigo.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(Icons.verified_outlined,
-                          color: Colors.indigo.shade700, size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Emitir Comprobante ARCA — Ticket #${widget.sale.id}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Total a facturar: \$${totalToInvoice.toCurrency()}',
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.green.shade700,
-                            ),
-                          ),
-                          if (currentIibb > 0.009)
-                            Text(
-                              'Subtotal: \$${_baseGrossTotal.toCurrency()} + Percepción IIBB (${_formatPercentLabel(effectiveRate)}%): +\$${currentIibb.toCurrency()}',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple.shade700,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed:
-                          _isSubmitting ? null : () => Navigator.pop(context),
-                    ),
-                  ],
+    return AppModalShell(
+      title: 'Emitir Comprobante ARCA — Ticket #${widget.sale.id}',
+      subtitle: 'Total a facturar: \$${totalToInvoice.toCurrency()}',
+      icon: Icons.verified_outlined,
+      accent: AppModalAccent.emerald,
+      maxWidth: 580,
+      onClose: () {
+        if (!_isSubmitting) Navigator.pop(context);
+      },
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (currentIibb > 0.009) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.indigo.shade200),
+              ),
+              child: Text(
+                'Subtotal: \$${_baseGrossTotal.toCurrency()} + Percepción IIBB (${_formatPercentLabel(effectiveRate)}%): +\$${currentIibb.toCurrency()}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.indigo,
                 ),
-                const SizedBox(height: 16),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
 
                 // Aviso de Tope Consumidor Final Anónimo ($340.000)
                 if (exceedsLimit && _voucherType != 1 && !formValid) ...[
@@ -3841,46 +3740,32 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                   ),
                 ],
 
-                const SizedBox(height: 20),
-
-                // Botones de acción
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    TextButton(
-                      onPressed:
-                          _isSubmitting ? null : () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    FilledButton.icon(
-                      icon: _isSubmitting
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Icon(Icons.cloud_upload_outlined),
-                      label: Text(_isSubmitting
-                          ? 'Autorizando en ARCA...'
-                          : 'Autorizar Factura en ARCA'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.indigo.shade700,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 14),
-                      ),
-                      onPressed: (formValid && !_isSubmitting) ? _submit : null,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ),
+      footerActions: [
+        TextButton(
+          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          icon: _isSubmitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2),
+                )
+              : const Icon(Icons.cloud_upload_outlined),
+          label: Text(_isSubmitting
+              ? 'Autorizando en ARCA...'
+              : 'Autorizar Factura en ARCA'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.indigo,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          ),
+          onPressed: (formValid && !_isSubmitting) ? _submit : null,
+        ),
+      ],
     );
   }
 }
@@ -3905,111 +3790,102 @@ class _QuickCustomerPickerDialogState
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 460,
-        height: 540,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Seleccionar Cliente para Facturar',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
+    return AppModalShell(
+      title: 'Seleccionar Cliente para Facturar',
+      subtitle: 'Elegí un cliente registrado o creá uno nuevo',
+      icon: Icons.person_search_outlined,
+      accent: AppModalAccent.blue,
+      maxWidth: 480,
+      maxHeight: 580,
+      expandBody: true,
+      onClose: () => Navigator.pop(context),
+      body: Column(
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Buscar por nombre, DNI o CUIT...',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _searchCtrl,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Buscar por nombre, DNI o CUIT...',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onChanged: (_) => setState(() {}),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.person_add, size: 18),
+              label: const Text('NUEVO CLIENTE'),
+              onPressed: () async {
+                await showDialog(
+                  context: context,
+                  builder: (ctx) => const CustomerFormDialog(),
+                );
+              },
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                icon: const Icon(Icons.person_add, size: 18),
-                label: const Text('NUEVO CLIENTE'),
-                onPressed: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (ctx) => const CustomerFormDialog(),
+          ),
+          Expanded(
+            child: Consumer<CustomerProvider>(
+              builder: (ctx, provider, _) {
+                if (provider.isLoading && provider.customers.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final q = _searchCtrl.text.trim().toLowerCase();
+                final list = provider.customers.where((c) {
+                  return c.name.toLowerCase().contains(q) ||
+                      c.documentNumber.toLowerCase().contains(q);
+                }).toList();
+
+                if (list.isEmpty) {
+                  return const Center(
+                    child: Text('No se encontraron clientes.'),
                   );
-                },
-              ),
-            ),
-            Expanded(
-              child: Consumer<CustomerProvider>(
-                builder: (ctx, provider, _) {
-                  if (provider.isLoading && provider.customers.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final q = _searchCtrl.text.trim().toLowerCase();
-                  final list = provider.customers.where((c) {
-                    return c.name.toLowerCase().contains(q) ||
-                        c.documentNumber.toLowerCase().contains(q);
-                  }).toList();
+                }
 
-                  if (list.isEmpty) {
-                    return const Center(
-                      child: Text('No se encontraron clientes.'),
-                    );
-                  }
-
-                  return ListView.separated(
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (ctx, i) {
-                      final c = list[i];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.indigo.shade50,
-                          child: Text(
-                            c.name.trim().isNotEmpty
-                                ? c.name.trim()[0].toUpperCase()
-                                : '?',
-                            style: TextStyle(
-                              color: Colors.indigo.shade700,
-                              fontWeight: FontWeight.bold,
-                            ),
+                return ListView.separated(
+                  itemCount: list.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, i) {
+                    final c = list[i];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.indigo.shade50,
+                        child: Text(
+                          c.name.trim().isNotEmpty
+                              ? c.name.trim()[0].toUpperCase()
+                              : '?',
+                          style: TextStyle(
+                            color: Colors.indigo.shade700,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        title: Text(
-                          c.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          'Doc: ${c.documentNumber} • ${c.taxCondition.replaceAll('_', ' ').toUpperCase()}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onTap: () => Navigator.pop(context, c),
-                      );
-                    },
-                  );
-                },
-              ),
+                      ),
+                      title: Text(
+                        c.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        'Doc: ${c.documentNumber} • ${c.taxCondition.replaceAll('_', ' ').toUpperCase()}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onTap: () => Navigator.pop(context, c),
+                    );
+                  },
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }

@@ -185,9 +185,9 @@ class ComboFractionPricing {
       child: Container(
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: Colors.deepPurple.shade50,
+          color: Colors.indigo.shade50,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.deepPurple.shade200),
+          border: Border.all(color: Colors.indigo.shade200),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -228,7 +228,7 @@ class _ModeChipButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: selected ? Colors.deepPurple.shade700 : Colors.transparent,
+          color: selected ? Colors.indigo.shade700 : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Text(
@@ -236,7 +236,7 @@ class _ModeChipButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 10.5,
             fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : Colors.deepPurple.shade800,
+            color: selected ? Colors.white : Colors.indigo.shade800,
           ),
         ),
       ),

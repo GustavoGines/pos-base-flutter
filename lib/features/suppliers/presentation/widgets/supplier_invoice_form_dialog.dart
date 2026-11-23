@@ -6,8 +6,10 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart' as fp;
 import 'package:http/http.dart' as http;
 import '../../../../core/network/api_client.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../../../core/services/remote_scanner_service.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
@@ -33,6 +35,7 @@ class _InvoiceItemModel {
   bool updatePrice;
   double vatRate; // 21.0 | 10.5 | 27.0 | 0.0
   String priceAnchor = 'cost'; // 'cost' | 'selling'
+  bool enterByPackage = false;
   int? batchId;
   DateTime? expirationDate;
   bool showLotFields = false;
@@ -42,6 +45,43 @@ class _InvoiceItemModel {
   late final TextEditingController pvpCtrl;
   late final TextEditingController batchCodeCtrl;
   late final TextEditingController validityDaysCtrl;
+
+  bool get hasPackageConversion =>
+      product.conversionFactor != null && product.conversionFactor! > 1;
+
+  double get conversionFactor =>
+      hasPackageConversion ? product.conversionFactor! : 1.0;
+
+  String get packageLabel =>
+      (product.purchasePackageName != null &&
+              product.purchasePackageName!.trim().isNotEmpty)
+          ? product.purchasePackageName!.trim()
+          : 'Bulto';
+
+  void switchInputMode(bool byPackage) {
+    if (!hasPackageConversion || enterByPackage == byPackage) return;
+    enterByPackage = byPackage;
+    if (byPackage) {
+      // Si el usuario acaba de agregar la fila con 1 unidad suelta,
+      // al pasar a bulto asumimos 1 bulto completo para evitar 0.01 bultos.
+      if ((quantity - 1.0).abs() < 0.0001) {
+        quantity = conversionFactor;
+      }
+      final pkgQty = quantity / conversionFactor;
+      qtyCtrl.text = (pkgQty - pkgQty.roundToDouble()).abs() < 0.0005
+          ? pkgQty.round().toString()
+          : pkgQty.toStringAsFixed(2);
+      final pkgCost = newCost * conversionFactor;
+      costCtrl.text = pkgCost > 0 ? pkgCost.toArsInput() : '';
+    } else {
+      qtyCtrl.text = product.isSoldByWeight || product.unitType == 'kg'
+          ? quantity.toStringAsFixed(3)
+          : ((quantity - quantity.roundToDouble()).abs() < 0.0005
+              ? quantity.round().toString()
+              : quantity.toStringAsFixed(2));
+      costCtrl.text = newCost > 0 ? newCost.toArsInput() : '';
+    }
+  }
 
   _InvoiceItemModel({
     required this.product,
@@ -412,6 +452,53 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     super.dispose();
   }
 
+  Future<List<Product>> _searchCatalogForInvoice(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+    final qLower = clean.toLowerCase();
+
+    final posResults = await context.read<PosProvider>().search(clean);
+    final byId = <int, Product>{for (final p in posResults) p.id: p};
+
+    try {
+      final catalogProv = context.read<CatalogProvider?>();
+      if (catalogProv != null) {
+        final remoteAll = await catalogProv.searchProductsRemote(
+          clean,
+          perPage: 25,
+          activeOnly: false,
+        );
+        for (final p in remoteAll) {
+          byId.putIfAbsent(p.id, () => p);
+        }
+      }
+    } catch (_) {}
+
+    bool isExactCode(Product p) {
+      return (p.barcode?.trim().toLowerCase() == qLower) ||
+          (p.internalCode.trim().toLowerCase() == qLower) ||
+          (p.supplierSku?.trim().toLowerCase() == qLower);
+    }
+
+    final merged = byId.values.toList();
+    merged.sort((a, b) {
+      final aExact = isExactCode(a) ? 0 : 1;
+      final bExact = isExactCode(b) ? 0 : 1;
+      if (aExact != bExact) return aExact.compareTo(bExact);
+
+      final aSup = a.supplier?.id == widget.supplierId ? 0 : 1;
+      final bSup = b.supplier?.id == widget.supplierId ? 0 : 1;
+      if (aSup != bSup) return aSup.compareTo(bSup);
+
+      final aAct = a.active ? 0 : 1;
+      final bAct = b.active ? 0 : 1;
+      if (aAct != bAct) return aAct.compareTo(bAct);
+
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return merged;
+  }
+
   Future<void> _onSearchSubmittedOrScanned(String rawQuery) async {
     final q = rawQuery.trim();
     if (q.isEmpty || !mounted) return;
@@ -420,7 +507,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     _searchController.selection = TextSelection.collapsed(offset: q.length);
     setState(() => _isSearching = true);
     try {
-      final results = await context.read<PosProvider>().search(q);
+      final results = await _searchCatalogForInvoice(q);
       if (!mounted) return;
       final exact = RemoteScannerService.findExactProductMatch(
         results,
@@ -461,7 +548,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       setState(() => _isSearching = true);
       try {
-        final results = await context.read<PosProvider>().search(query);
+        final results = await _searchCatalogForInvoice(query);
         if (mounted) {
           setState(() {
             _searchResults = results;
@@ -495,11 +582,20 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     final existingIndex = _items.indexWhere((i) => i.product.id == product.id);
     if (existingIndex >= 0) {
       setState(() {
-        _items[existingIndex].quantity += 1;
         final item = _items[existingIndex];
-        item.qtyCtrl.text = item.product.isSoldByWeight || item.product.unitType == 'kg'
-            ? item.quantity.toStringAsFixed(3)
-            : item.quantity.toInt().toString();
+        if (item.enterByPackage && item.hasPackageConversion) {
+          item.quantity += item.conversionFactor;
+          final pkgQty = item.quantity / item.conversionFactor;
+          item.qtyCtrl.text = (pkgQty - pkgQty.roundToDouble()).abs() < 0.0005
+              ? pkgQty.round().toString()
+              : pkgQty.toStringAsFixed(2);
+        } else {
+          item.quantity += 1;
+          item.qtyCtrl.text =
+              item.product.isSoldByWeight || item.product.unitType == 'kg'
+                  ? item.quantity.toStringAsFixed(3)
+                  : item.quantity.toInt().toString();
+        }
         _autoRecalculateFiscalIfNeeded();
       });
     } else {
@@ -541,7 +637,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   }
 
   void _handleCostChange(_InvoiceItemModel item, String val) {
-    final parsed = ArsThousandsInputFormatter.parse(val);
+    final parsedInput = ArsThousandsInputFormatter.parse(val);
+    final parsed = (item.enterByPackage && item.hasPackageConversion)
+        ? double.parse((parsedInput / item.conversionFactor).toStringAsFixed(4))
+        : parsedInput;
 
     setState(() {
       item.newCost = parsed;
@@ -570,6 +669,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     });
   }
 
+  void _syncCostFieldFromUnitCost(_InvoiceItemModel item) {
+    final displayCost = (item.enterByPackage && item.hasPackageConversion)
+        ? double.parse((item.newCost * item.conversionFactor).toStringAsFixed(2))
+        : item.newCost;
+    item.costCtrl.text = displayCost.toArsInput();
+  }
+
   void _handleMarginChange(_InvoiceItemModel item, String val) {
     final clean = val.replaceAll(',', '.').trim();
     final margin = double.tryParse(clean);
@@ -582,7 +688,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           margin > -100) {
         final calcCost = item.manualPrice / (1 + (margin / 100));
         item.newCost = double.parse(calcCost.toStringAsFixed(2));
-        item.costCtrl.text = item.newCost.toArsInput();
+        _syncCostFieldFromUnitCost(item);
       } else if (item.newCost > 0) {
         final calcPvp = item.newCost * (1 + (margin / 100));
         item.manualPrice = double.parse(calcPvp.toStringAsFixed(2));
@@ -606,7 +712,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         item.priceAnchor = 'selling';
         final calcCost = pvp / (1 + (margin / 100));
         item.newCost = double.parse(calcCost.toStringAsFixed(2));
-        item.costCtrl.text = item.newCost.toArsInput();
+        _syncCostFieldFromUnitCost(item);
       } else if (item.newCost > 0) {
         // Regla Costo como Ancla: si el producto ya tiene costo, editar el PVP
         // solo recalcula la utilidad (%) y mantiene el costo firme como ancla.
@@ -1199,7 +1305,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   'product_id': i.product.id,
                   'quantity': i.quantity,
                   'unit_cost': i.newCost,
-                  'subtotal': i.quantity * i.newCost,
+                  'subtotal': double.parse((i.quantity * i.newCost).toStringAsFixed(2)),
                   'update_price': i.updatePrice,
                   'new_selling_price': i.updatePrice ? i.manualPrice : null,
                   if (canUseBatches && i.batchId != null) 'batch_id': i.batchId,
@@ -1272,7 +1378,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             adminPin: widget.authorizedAdminPin,
           );
           if (catalogProv != null) {
-            unawaited(catalogProv.loadProducts());
+            unawaited(catalogProv.loadProductsWithoutSupplierFilter());
           }
           try {
             unawaited(context.read<InventoryAlertsProvider>().fetchAlerts());
@@ -1292,7 +1398,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
           if (success && mounted) {
             if (catalogProv != null) {
-              unawaited(catalogProv.loadProducts());
+              unawaited(catalogProv.loadProductsWithoutSupplierFilter());
             }
             try {
               unawaited(context.read<InventoryAlertsProvider>().fetchAlerts());
@@ -1385,6 +1491,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       debugLabel: 'SupplierInvoiceFormDialog',
       onBarcodeScanned: _onSearchSubmittedOrScanned,
       child: Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
@@ -1394,76 +1503,41 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         padding: const EdgeInsets.all(0),
         child: Column(
           children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: _isEditing ? Colors.amber.shade900 : Colors.blue.shade800,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _isEditing ? Icons.edit_document : Icons.inventory_2,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _isEditing
-                          ? 'Editar Comprobante de Proveedor #${widget.initialInvoice!['id']}'
-                          : 'Espejo de Ventas - Carga de Remito / Factura',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Proveedor: ${widget.supplierName}${(_supplierCuit != null && _supplierCuit!.isNotEmpty) ? ' ($_supplierCuit)' : ''}',
-                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+            AppModalHeader(
+              title: _isEditing
+                  ? 'Editar Comprobante de Proveedor #${widget.initialInvoice!['id']}'
+                  : 'Espejo de Ventas - Carga de Remito / Factura',
+              subtitle:
+                  'Proveedor: ${widget.supplierName}${(_supplierCuit != null && _supplierCuit!.isNotEmpty) ? ' ($_supplierCuit)' : ''}',
+              icon: _isEditing ? Icons.edit_document : Icons.inventory_2_outlined,
+              accent: _isEditing ? AppModalAccent.amber : AppModalAccent.blue,
+              compact: MediaQuery.of(context).size.height < 640,
+              trailing: isRIHeader &&
+                      _supplierTaxCategory != null &&
+                      _supplierTaxCategory!.isNotEmpty
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.25),
                         ),
-                        if (isRIHeader && _supplierTaxCategory != null && _supplierTaxCategory!.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.white38),
-                            ),
-                            child: Text(
-                              _supplierTaxCategory!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+                      ),
+                      child: Text(
+                        _supplierTaxCategory!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : null,
+              onClose: () => Navigator.pop(context),
             ),
 
             Expanded(
@@ -1524,7 +1598,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     focusNode: _searchFocus,
                                     onSubmitted: _onSearchSubmittedOrScanned,
                                     decoration: InputDecoration(
-                                      hintText: 'Buscar producto por nombre o código...',
+                                      hintText: 'Buscar por nombre, EAN, PLU, Cód. Prov. o medida...',
                                       prefixIcon: const Icon(Icons.search),
                                       suffixIcon: IconButton(
                                         icon: const Icon(Icons.add_circle, color: Colors.blue),
@@ -1534,6 +1608,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                           final rawQuery = _searchController.text.trim();
                                           final looksLikeBarcode =
                                               RegExp(r'^\d{6,}$').hasMatch(rawQuery);
+                                          final looksLikeSupplierSku = !looksLikeBarcode &&
+                                              rawQuery.isNotEmpty &&
+                                              RegExp(r'^(?=.*\d)[A-Za-z0-9\-_./]{2,24}$')
+                                                  .hasMatch(rawQuery);
                                           final createdProduct = await showDialog<Product>(
                                             context: context,
                                             barrierDismissible: false,
@@ -1541,11 +1619,14 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                               provider: catalogProv,
                                               initialSupplierId: widget.supplierId,
                                               initialSupplierName: widget.supplierName,
-                                              initialName: looksLikeBarcode
+                                              initialName: (looksLikeBarcode || looksLikeSupplierSku)
                                                   ? null
                                                   : (rawQuery.isNotEmpty ? rawQuery : null),
                                               initialBarcode:
                                                   looksLikeBarcode ? rawQuery : null,
+                                              initialSupplierSku:
+                                                  looksLikeSupplierSku ? rawQuery : null,
+                                              lockInitialStockToZero: true,
                                             ),
                                           );
                                           if (createdProduct != null && mounted) {
@@ -1578,15 +1659,93 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                               itemCount: _searchResults.length,
                                               itemBuilder: (context, index) {
                                                 final p = _searchResults[index];
+                                                final hasConv = p.conversionFactor != null &&
+                                                    p.conversionFactor! > 1;
+                                                final convLabel = hasConv
+                                                    ? '${(p.purchasePackageName != null && p.purchasePackageName!.trim().isNotEmpty) ? p.purchasePackageName!.trim() : 'Bulto'} x${(p.conversionFactor! % 1 == 0) ? p.conversionFactor!.toInt() : p.conversionFactor!.toStringAsFixed(2)} ${p.unitShortLabel}'
+                                                    : null;
+                                                final subtitleParts = <String>[
+                                                  if (p.supplierSku != null &&
+                                                      p.supplierSku!.trim().isNotEmpty)
+                                                    'Cód. Prov: ${p.supplierSku!.trim()}',
+                                                  if (p.technicalSpec != null &&
+                                                      p.technicalSpec!.trim().isNotEmpty)
+                                                    p.technicalSpec!.trim(),
+                                                  'Costo: \$${p.costPrice.toCurrency()}',
+                                                  'Stock: ${p.stock.toUnitStockDisplay(isSoldByWeight: p.isSoldByWeight, unitSuffix: p.unitShortLabel, weightUnit: p.unitShortLabel)}',
+                                                  if (convLabel != null) convLabel,
+                                                ];
+                                                final isFromThisSupplier =
+                                                    p.supplier?.id == widget.supplierId;
+                                                final isInactive = !p.active;
                                                 return ListTile(
-                                                  title: Text(
-                                                    p.name,
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                    ),
+                                                  title: Wrap(
+                                                    spacing: 6,
+                                                    runSpacing: 4,
+                                                    crossAxisAlignment:
+                                                        WrapCrossAlignment.center,
+                                                    children: [
+                                                      Text(
+                                                        p.name,
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          color: isInactive
+                                                              ? const Color(0xFF64748B)
+                                                              : null,
+                                                        ),
+                                                      ),
+                                                      if (isFromThisSupplier)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 1.5,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            color: const Color(0xFFCCFBF1),
+                                                            borderRadius:
+                                                                BorderRadius.circular(5),
+                                                            border: Border.all(
+                                                              color: const Color(0xFF5EEAD4),
+                                                            ),
+                                                          ),
+                                                          child: const Text(
+                                                            'De este proveedor',
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              fontWeight: FontWeight.w700,
+                                                              color: Color(0xFF0F766E),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      if (isInactive)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 1.5,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            color: const Color(0xFFFEF3C7),
+                                                            borderRadius:
+                                                                BorderRadius.circular(5),
+                                                            border: Border.all(
+                                                              color: const Color(0xFFFCD34D),
+                                                            ),
+                                                          ),
+                                                          child: const Text(
+                                                            'Inactivo',
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              fontWeight: FontWeight.w700,
+                                                              color: Color(0xFFB45309),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                    ],
                                                   ),
                                                   subtitle: Text(
-                                                    'Costo actual: \$${p.costPrice.toCurrency()} | Stock: ${p.stock}',
+                                                    subtitleParts.join(' · '),
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
                                                   trailing: const Icon(
                                                     Icons.add_shopping_cart,
@@ -2007,7 +2166,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: _isEditing ? Colors.amber.shade900 : Colors.blue.shade900,
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: _isEditing
+                                    ? const [Color(0xFF78350F), Color(0xFF92400E)]
+                                    : const [AppColors.navyStart, AppColors.navyEnd],
+                              ),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
@@ -2043,7 +2208,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             child: FilledButton.icon(
                               style: _isEditing
                                   ? FilledButton.styleFrom(
-                                      backgroundColor: Colors.amber.shade800,
+                                      backgroundColor: AppColors.amber,
                                     )
                                   : null,
                               onPressed: _isLoading ? null : _submit,
@@ -2072,9 +2237,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       final rightPanel = Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: AppColors.surfaceMuted,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: AppColors.border),
                         ),
                         child: isWide
                             ? Column(
@@ -2120,6 +2285,103 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  Widget _buildConversionSelectorAndPreview(_InvoiceItemModel item, int index) {
+    if (!item.hasPackageConversion) return const SizedBox.shrink();
+
+    final factorStr = (item.conversionFactor % 1 == 0)
+        ? item.conversionFactor.toInt().toString()
+        : item.conversionFactor.toStringAsFixed(2);
+    final unitShort = item.product.unitShortLabel;
+    final stockIncoming = item.quantity.toUnitStockDisplay(
+      isSoldByWeight: item.product.isSoldByWeight,
+      unitSuffix: unitShort,
+      weightUnit: unitShort,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(top: 5, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: item.enterByPackage
+            ? const Color(0xFFF0F9FF)
+            : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: item.enterByPackage
+              ? const Color(0xFF7DD3FC)
+              : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Modo de ingreso:',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.blueGrey.shade700,
+                ),
+              ),
+              ChoiceChip(
+                key: ValueKey('invoice_item_unit_mode_${item.product.id}_$index'),
+                label: Text(
+                  'Por Unidad ($unitShort)',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+                selected: !item.enterByPackage,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onSelected: (selected) {
+                  if (selected && item.enterByPackage) {
+                    setState(() {
+                      item.switchInputMode(false);
+                      _autoRecalculateFiscalIfNeeded();
+                    });
+                  }
+                },
+              ),
+              ChoiceChip(
+                key: ValueKey('invoice_item_pkg_mode_${item.product.id}_$index'),
+                label: Text(
+                  'Por ${item.packageLabel} (x$factorStr $unitShort)',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+                selected: item.enterByPackage,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onSelected: (selected) {
+                  if (selected && !item.enterByPackage) {
+                    setState(() {
+                      item.switchInputMode(true);
+                      _autoRecalculateFiscalIfNeeded();
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Entran +$stockIncoming al stock · Costo unit.: \$${item.newCost.toCurrency()} / $unitShort',
+            style: TextStyle(
+              fontSize: 11.2,
+              fontWeight: FontWeight.w700,
+              color: item.enterByPackage
+                  ? const Color(0xFF0369A1)
+                  : Colors.blueGrey.shade700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2190,6 +2452,26 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   color: Color(0xFF0F172A),
                                 ),
                               ),
+                              if (item.product.supplierSku != null &&
+                                  item.product.supplierSku!.trim().isNotEmpty)
+                                TextSpan(
+                                  text: ' [${item.product.supplierSku!.trim()}]',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.indigo.shade700,
+                                  ),
+                                ),
+                              if (item.product.technicalSpec != null &&
+                                  item.product.technicalSpec!.trim().isNotEmpty)
+                                TextSpan(
+                                  text: ' · ${item.product.technicalSpec!.trim()}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blueGrey.shade700,
+                                  ),
+                                ),
                               TextSpan(
                                 text:
                                     '  •  Ant: \$${item.product.costPrice.toCurrency()} | PVP: \$${item.product.sellingPrice.toCurrency()}',
@@ -2201,7 +2483,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               ),
                             ],
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -2284,16 +2566,20 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
+          _buildConversionSelectorAndPreview(item, index),
           const SizedBox(height: 5),
           Row(
             children: [
               Expanded(
                 flex: 2,
                 child: TextFormField(
+                  key: ValueKey('invoice_item_qty_${item.product.id}_$index'),
                   controller: item.qtyCtrl,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
-                    labelText: 'Cant. (${item.product.unitType})',
+                    labelText: item.enterByPackage
+                        ? 'Cant. (${item.packageLabel})'
+                        : 'Cant. (${item.product.unitShortLabel})',
                     isDense: true,
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
@@ -2303,7 +2589,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                     final p = double.tryParse(val.replaceAll(',', '.'));
                     if (p != null) {
                       setState(() {
-                        item.quantity = p;
+                        item.quantity = item.enterByPackage
+                            ? double.parse((p * item.conversionFactor).toStringAsFixed(3))
+                            : p;
                         _autoRecalculateFiscalIfNeeded();
                       });
                     }
@@ -2314,13 +2602,17 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               Expanded(
                 flex: 3,
                 child: TextFormField(
+                  key: ValueKey('invoice_item_cost_${item.product.id}_$index'),
                   controller: item.costCtrl,
                   style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    labelText: 'Costo Un.',
+                  decoration: InputDecoration(
+                    labelText: item.enterByPackage
+                        ? 'Costo x ${item.packageLabel}'
+                        : 'Costo Un.',
                     prefixText: '\$',
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [ArsThousandsInputFormatter()],
@@ -3312,7 +3604,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.4,
-                          color: Colors.deepPurple.shade800,
+                          color: Colors.indigo.shade800,
                         ),
                       ),
                       Text(
@@ -3320,7 +3612,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.w600,
-                          color: Colors.deepPurple.shade600,
+                          color: Colors.indigo.shade600,
                         ),
                       ),
                     ],
@@ -3332,11 +3624,11 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       Expanded(
                         child: TextFormField(
                           controller: _ivaPerceptionCtrl,
-                          style: _fiscalFieldStyle(_ivaPerceptionCtrl, accent: Colors.purple),
+                          style: _fiscalFieldStyle(_ivaPerceptionCtrl, accent: Colors.indigo),
                           decoration: _fiscalBoxDecoration(
                             label: 'Percep. IVA (\$)',
                             ctrl: _ivaPerceptionCtrl,
-                            accent: Colors.purple,
+                            accent: Colors.indigo,
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [ArsThousandsInputFormatter()],
@@ -3351,11 +3643,11 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             final hasIibbRate = iibbBadge != '% ▾';
                             return TextFormField(
                               controller: _iibbPerceptionCtrl,
-                              style: _fiscalFieldStyle(_iibbPerceptionCtrl, accent: Colors.deepPurple),
+                              style: _fiscalFieldStyle(_iibbPerceptionCtrl, accent: Colors.indigo),
                               decoration: _fiscalBoxDecoration(
                                 label: 'Percep. IIBB (\$)',
                                 ctrl: _iibbPerceptionCtrl,
-                                accent: Colors.deepPurple,
+                                accent: Colors.indigo,
                                 suffixIcon: PopupMenuButton<String>(
                                   tooltip: 'Calcular % Percepción IIBB (Rentas / ATP Formosa)',
                                   initialValue: _selectedIibbMode,
@@ -3409,10 +3701,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     margin: const EdgeInsets.only(right: 4),
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: hasIibbRate ? Colors.deepPurple.shade700 : Colors.deepPurple.shade50,
+                                      color: hasIibbRate ? AppColors.indigo : Colors.indigo.shade50,
                                       borderRadius: BorderRadius.circular(5),
                                       border: Border.all(
-                                        color: hasIibbRate ? Colors.deepPurple.shade800 : Colors.deepPurple.shade200,
+                                        color: hasIibbRate ? Colors.indigo.shade800 : Colors.indigo.shade200,
                                       ),
                                     ),
                                     child: Text(
@@ -3420,7 +3712,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                       style: TextStyle(
                                         fontSize: 10.5,
                                         fontWeight: FontWeight.w800,
-                                        color: hasIibbRate ? Colors.white : Colors.deepPurple.shade800,
+                                        color: hasIibbRate ? Colors.white : Colors.indigo.shade800,
                                       ),
                                     ),
                                   ),

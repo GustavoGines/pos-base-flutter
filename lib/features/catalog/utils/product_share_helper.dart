@@ -138,7 +138,12 @@ class ProductShareHelper {
     if (product.supplier != null && product.supplier!.name.trim().isNotEmpty) {
       buffer.writeln('- Proveedor: ${product.supplier!.name.trim()}');
     }
-    if (product.isSoldByWeight) {
+    if (product.technicalSpec != null && product.technicalSpec!.trim().isNotEmpty) {
+      buffer.writeln('- Medida: ${product.technicalSpec!.trim()}');
+    }
+    if (product.isMetricOrLiquidUnit) {
+      buffer.writeln('- Venta por ${product.unitShortLabel}');
+    } else if (product.isSoldByWeight) {
       buffer.writeln('- Producto por peso');
     }
     return buffer.toString().trim();

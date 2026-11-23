@@ -15,6 +15,7 @@ import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
 import '../../data/datasources/catalog_remote_datasource.dart'
     show CatalogHttpException;
+import '../../data/repositories/catalog_repository_impl.dart';
 import '../../data/models/product_model.dart';
 import '../../data/models/product_batch_model.dart';
 import '../../data/models/production_order_model.dart';
@@ -65,6 +66,20 @@ class CatalogProvider with ChangeNotifier {
   bool _prefetchRunning = false;
   // Generación de caché: invalida respuestas en vuelo iniciadas antes de un refresco.
   int _quickAccessCacheGeneration = 0;
+  // Caché de sesión para productos vistos en búsquedas remotas (SKUs >500) y lookups en 0 ms.
+  final Map<int, Product> _recentlySeenProductsById = {};
+  static const int _maxRecentlySeenProducts = 200;
+
+  void _rememberProducts(Iterable<Product> items) {
+    for (final p in items) {
+      if (p.id <= 0) continue;
+      _recentlySeenProductsById.remove(p.id);
+      _recentlySeenProductsById[p.id] = p;
+      while (_recentlySeenProductsById.length > _maxRecentlySeenProducts) {
+        _recentlySeenProductsById.remove(_recentlySeenProductsById.keys.first);
+      }
+    }
+  }
 
   List<Product> getCategoryExtraProducts(int categoryId) =>
       (_categoryExtraProducts[categoryId] ?? const [])
@@ -148,8 +163,37 @@ class CatalogProvider with ChangeNotifier {
   String _searchQuery = '';
   String get searchQuery => _searchQuery;
 
+  int? _filterSupplierId;
+  String? _filterSupplierName;
+  bool _supplierFilterFallbackActive = false;
+  int? get filterSupplierId => _filterSupplierId;
+  String? get filterSupplierName => _filterSupplierName;
+  bool get supplierFilterFallbackActive => _supplierFilterFallbackActive;
+
   void clearSearch() {
     _searchQuery = '';
+  }
+
+  void clearSupplierFilterSilently() {
+    _filterSupplierId = null;
+    _filterSupplierName = null;
+    _supplierFilterFallbackActive = false;
+  }
+
+  Future<void> setSupplierFilter(
+    int? supplierId, {
+    String? supplierName,
+    bool reload = true,
+  }) async {
+    _filterSupplierId = supplierId;
+    _filterSupplierName =
+        supplierId == null ? null : (supplierName?.trim().isNotEmpty == true ? supplierName!.trim() : null);
+    _supplierFilterFallbackActive = false;
+    if (reload) {
+      await loadProducts(page: 1);
+    } else {
+      notifyListeners();
+    }
   }
 
   // ── Sort ─────────────────────────────────────────────────
@@ -210,6 +254,7 @@ class CatalogProvider with ChangeNotifier {
     if (search != null) _searchQuery = search;
     if (sortBy != null) _sortBy = sortBy;
     if (sortDirection != null) _sortDirection = sortDirection;
+    final activeSupplierId = _sortBy == '' ? null : _filterSupplierId;
     notifyListeners();
     try {
       final result = await getProductsUseCase(
@@ -218,8 +263,24 @@ class CatalogProvider with ChangeNotifier {
         sortBy: _sortBy.isNotEmpty ? _sortBy : null,
         sortDirection: _sortBy.isNotEmpty ? _sortDirection : null,
         perPage: perPage,
+        supplierId: activeSupplierId,
       );
-      _products = List<Product>.from(result['data'] as List);
+      var fetched = List<Product>.from(result['data'] as List);
+      _rememberProducts(fetched);
+      if (activeSupplierId != null) {
+        final hasForeignSupplier = fetched.any(
+          (p) => p.supplier?.id != activeSupplierId,
+        );
+        _supplierFilterFallbackActive = hasForeignSupplier;
+        if (hasForeignSupplier) {
+          fetched = fetched
+              .where((p) => p.supplier?.id == activeSupplierId)
+              .toList();
+        }
+      } else {
+        _supplierFilterFallbackActive = false;
+      }
+      _products = fetched;
       _currentPage = result['current_page'] as int;
       _lastPage = result['last_page'] as int;
       _catalogOrderVersion++;
@@ -259,6 +320,7 @@ class CatalogProvider with ChangeNotifier {
       _searchQuery = '';
       _sortBy = '';
       _products = List<Product>.from(result['data'] as List);
+      _rememberProducts(_products);
       _currentPage = result['current_page'] as int;
       _lastPage = result['last_page'] as int;
       if (!preserveVisualOrder) {
@@ -327,6 +389,8 @@ class CatalogProvider with ChangeNotifier {
         if (p.id == productId) return p;
       }
     }
+    final seenCached = _recentlySeenProductsById[productId];
+    if (seenCached != null) return seenCached;
     try {
       final result = await getProductsUseCase(
         page: 1,
@@ -334,7 +398,12 @@ class CatalogProvider with ChangeNotifier {
         ids: [productId],
       );
       final list = List<Product>.from(result['data'] as List);
-      if (list.isNotEmpty) return list.first;
+      for (final p in list) {
+        if (p.id == productId) {
+          _rememberProducts([p]);
+          return p;
+        }
+      }
     } catch (e) {
       debugPrint('Error en resolveProductById(): ');
     }
@@ -355,6 +424,7 @@ class CatalogProvider with ChangeNotifier {
         active: activeOnly ? true : null,
       );
       final list = List<Product>.from(result['data'] as List);
+      _rememberProducts(list);
       return activeOnly ? list.where((p) => p.active).toList() : list;
     } catch (e) {
       debugPrint('Error en searchProductsRemote: $e');
@@ -663,9 +733,12 @@ class CatalogProvider with ChangeNotifier {
       );
       if (generation != _quickAccessCacheGeneration) return;
       final pageData = List<Product>.from(result['data'] as List);
+      final missingSet = missingIds.toSet();
       final List<Product> extras = List<Product>.from(_pinnedExtraProducts);
       for (final p in pageData) {
-        if (!loadedIds.contains(p.id) && !extras.any((e) => e.id == p.id)) {
+        if (!missingSet.contains(p.id)) continue;
+        _rememberProducts([p]);
+        if (p.active && !loadedIds.contains(p.id) && !extras.any((e) => e.id == p.id)) {
           extras.add(p);
         }
       }
@@ -836,6 +909,21 @@ class CatalogProvider with ChangeNotifier {
             changed = true;
           }
         }
+        if (_recentlySeenProductsById.isNotEmpty) {
+          for (final id in updatedStockById.keys) {
+            final cached = _recentlySeenProductsById[id];
+            if (cached == null) continue;
+            final updatedCached = applyStockUpdatesToProductList(
+              [cached],
+              updatedStockById,
+              updatedExpirationById: updatedExpirationById,
+            );
+            if (!identical(cached, updatedCached.first)) {
+              _recentlySeenProductsById[id] = updatedCached.first;
+              changed = true;
+            }
+          }
+        }
       }
 
       if (changed) notifyListeners();
@@ -855,7 +943,13 @@ class CatalogProvider with ChangeNotifier {
     try {
       final product = await repository.createProduct(data);
       _lastCreatedProduct = product;
-      _products = [product, ..._products];
+      final matchesActiveSupplierFilter = _filterSupplierId == null ||
+          product.supplier?.id == _filterSupplierId ||
+          data['supplier_id'] == _filterSupplierId;
+      if (matchesActiveSupplierFilter) {
+        _products = [product, ..._products];
+      }
+      _rememberProducts([product]);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -939,6 +1033,7 @@ class CatalogProvider with ChangeNotifier {
         }
         _lastUpdatedProduct = _products[idx];
       }
+      _rememberProducts([_lastUpdatedProduct!]);
       invalidateQuickAccessExtraCaches();
       unawaited(loadMetadata(force: true));
       return true;
@@ -1004,6 +1099,7 @@ class CatalogProvider with ChangeNotifier {
       }
 
       _lastUpdatedProduct = updated;
+      _rememberProducts([updated]);
       notifyListeners();
       return updated;
     } catch (e) {
@@ -1020,6 +1116,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       await repository.deleteProduct(id);
       _products.removeWhere((p) => p.id == id);
+      _recentlySeenProductsById.remove(id);
       invalidateQuickAccessExtraCaches();
       unawaited(loadMetadata(force: true));
       return true;
@@ -1218,6 +1315,12 @@ class CatalogProvider with ChangeNotifier {
       recipeYieldQuantity: incoming.recipeYieldQuantity,
       recipeIngredients: incoming.recipeIngredients ?? existing.recipeIngredients,
       unitType: incoming.unitType,
+      supplierSku: incoming.supplierSku ?? existing.supplierSku,
+      storageLocation: incoming.storageLocation ?? existing.storageLocation,
+      technicalSpec: incoming.technicalSpec ?? existing.technicalSpec,
+      purchasePackageName:
+          incoming.purchasePackageName ?? existing.purchasePackageName,
+      conversionFactor: incoming.conversionFactor ?? existing.conversionFactor,
       calcConfig: incoming.calcConfig,
       ivaRate: incoming.ivaRate,
       needsCatalogReview: incoming.needsCatalogReview,
@@ -1287,6 +1390,7 @@ class CatalogProvider with ChangeNotifier {
       _products[idx] = merged;
     }
     _lastUpdatedProduct = merged;
+    _rememberProducts([merged]);
     final stockMap = <int, double>{merged.id: merged.stock};
     final expMap = <int, String?>{merged.id: merged.expirationDate};
     _products = applyStockUpdatesToProductList(
@@ -1870,13 +1974,30 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> importProducts(
-      {required List<int> fileBytes, required String filename}) async {
+  Future<Map<String, dynamic>> importProducts({
+    required List<int> fileBytes,
+    required String filename,
+    int? defaultSupplierId,
+    double? defaultMarginPercent,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final result = await repository.importProducts(fileBytes, filename);
+      Map<String, dynamic> result;
+      final hasOptions =
+          defaultSupplierId != null || defaultMarginPercent != null;
+      if (hasOptions && repository is CatalogRepositoryImpl) {
+        result = await (repository as CatalogRepositoryImpl)
+            .importProductsWithOptions(
+          fileBytes,
+          filename,
+          defaultSupplierId: defaultSupplierId,
+          defaultMarginPercent: defaultMarginPercent,
+        );
+      } else {
+        result = await repository.importProducts(fileBytes, filename);
+      }
       // Reload products after a successful import
       await loadProducts(page: 1, search: '');
       return result;
@@ -1924,4 +2045,190 @@ extension CatalogProviderActiveProductsX on CatalogProvider {
   /// Única fuente de verdad para mostrador (Terminal POS, Presupuestos, F5, F7).
   List<Product> get activeProducts =>
       products.where((p) => p.active).toList(growable: false);
+}
+
+/// Extensión segura para registrar y resolver productos recientes (incluidos SKUs >500).
+/// Envuelve lecturas/escrituras internas en `try/catch` para convivir con mocks
+/// que usan `implements CatalogProvider` en tests.
+extension CatalogProviderRecentLookupX on CatalogProvider {
+  static final Expando<Map<int, Product>> _fallbackSeenByInstance =
+      Expando<Map<int, Product>>('_fallbackSeenProducts');
+
+  Map<int, Product> _ensureFallbackSeenMap() {
+    var map = _fallbackSeenByInstance[this];
+    if (map == null) {
+      map = {};
+      _fallbackSeenByInstance[this] = map;
+    }
+    return map;
+  }
+
+  void registerRecentlySeenProducts(Iterable<Product> items) {
+    try {
+      _rememberProducts(items);
+      return;
+    } catch (_) {}
+    final map = _ensureFallbackSeenMap();
+    for (final p in items) {
+      if (p.id > 0) {
+        map[p.id] = p;
+      }
+    }
+  }
+
+  List<Product> resolveRecentProducts(
+    Iterable<int> ids, {
+    bool activeOnly = true,
+  }) {
+    final idList = ids.where((id) => id > 0).toList();
+    if (idList.isEmpty) return const [];
+
+    final byId = <int, Product>{};
+    try {
+      for (final p in products) {
+        if (!activeOnly || p.active) byId[p.id] = p;
+      }
+    } catch (_) {}
+    try {
+      for (final p in pinnedExtraProducts) {
+        if (!activeOnly || p.active) byId.putIfAbsent(p.id, () => p);
+      }
+    } catch (_) {}
+    try {
+      for (final p in weightOnlyProducts) {
+        if (!activeOnly || p.active) byId.putIfAbsent(p.id, () => p);
+      }
+    } catch (_) {}
+    try {
+      for (final extras in _categoryExtraProducts.values) {
+        for (final p in extras) {
+          if (!activeOnly || p.active) byId.putIfAbsent(p.id, () => p);
+        }
+      }
+    } catch (_) {}
+    try {
+      for (final p in _recentlySeenProductsById.values) {
+        if (!activeOnly || p.active) byId.putIfAbsent(p.id, () => p);
+      }
+    } catch (_) {}
+    final fallbackMap = _fallbackSeenByInstance[this];
+    if (fallbackMap != null) {
+      for (final p in fallbackMap.values) {
+        if (!activeOnly || p.active) byId.putIfAbsent(p.id, () => p);
+      }
+    }
+
+    final resolved = <Product>[];
+    for (final id in idList) {
+      final prod = byId[id];
+      if (prod != null && (!activeOnly || prod.active)) {
+        resolved.add(prod);
+      }
+    }
+    return resolved;
+  }
+
+  /// Devuelve solo los IDs de [ids] que aún no existen en memoria (activos o
+  /// inactivos) ni fueron consultados previamente (`isPinnedHydrated`), evitando
+  /// agendar re-hidrataciones repetidas para productos dados de baja.
+  Set<int> unhydratedRecentProductIds(Iterable<int> ids) {
+    final idSet = ids.where((id) => id > 0).toSet();
+    if (idSet.isEmpty) return const <int>{};
+
+    final knownOrChecked = <int>{};
+    try {
+      if (isPinnedHydrated(idSet)) return const <int>{};
+    } catch (_) {
+      // Mocks simples que usan `implements CatalogProvider` sin implementar
+      // `isPinnedHydrated` ni `syncPinnedProducts`.
+      return const <int>{};
+    }
+    try {
+      for (final p in products) {
+        knownOrChecked.add(p.id);
+      }
+    } catch (_) {}
+    try {
+      for (final p in _pinnedExtraProducts) {
+        knownOrChecked.add(p.id);
+      }
+    } catch (_) {}
+    try {
+      for (final p in _weightOnlyProducts) {
+        knownOrChecked.add(p.id);
+      }
+    } catch (_) {}
+    try {
+      for (final extras in _categoryExtraProducts.values) {
+        for (final p in extras) {
+          knownOrChecked.add(p.id);
+        }
+      }
+    } catch (_) {}
+    try {
+      knownOrChecked.addAll(_recentlySeenProductsById.keys);
+    } catch (_) {}
+    try {
+      knownOrChecked.addAll(_pinnedRequestedIds);
+    } catch (_) {}
+    final fallbackMap = _fallbackSeenByInstance[this];
+    if (fallbackMap != null) {
+      knownOrChecked.addAll(fallbackMap.keys);
+    }
+
+    return idSet
+        .where((id) => !knownOrChecked.contains(id))
+        .toSet();
+  }
+}
+
+extension CatalogProviderSupplierFilterX on CatalogProvider {
+  /// Lectura tolerante para mocks heredados (`implements CatalogProvider`) que
+  /// no sobrescriben getters nuevos en tests antiguos.
+  int? get safeFilterSupplierId {
+    try {
+      return filterSupplierId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? get safeFilterSupplierName {
+    try {
+      return filterSupplierName;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get safeSupplierFilterFallbackActive {
+    try {
+      return supplierFilterFallbackActive;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void safeClearSupplierFilterSilently() {
+    try {
+      clearSupplierFilterSilently();
+    } catch (_) {}
+  }
+
+  Future<void> loadProductsWithoutSupplierFilter({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+  }) async {
+    safeClearSupplierFilterSilently();
+    await loadProducts(
+      page: page,
+      search: search,
+      sortBy: sortBy,
+      sortDirection: sortDirection,
+      perPage: perPage,
+    );
+  }
 }

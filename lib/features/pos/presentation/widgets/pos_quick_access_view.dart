@@ -1067,7 +1067,15 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                 const SizedBox(width: 3),
                                 Flexible(
                                   child: Text(
-                                    product.category?.name ?? (isByWeight ? 'Por Peso' : (product.internalCode.isNotEmpty ? product.internalCode : 'N/A')),
+                                    product.category?.name ??
+                                        (isByWeight
+                                            ? ((product.unitType.trim().toLowerCase() != 'un' &&
+                                                    product.unitType.trim().toLowerCase() != 'kg')
+                                                ? 'Por ${product.effectiveQuantityUnitLabel}'
+                                                : 'Por Peso')
+                                            : (product.internalCode.isNotEmpty
+                                                ? product.internalCode
+                                                : 'N/A')),
                                     style: TextStyle(
                                       fontSize: isMedium ? 8.5 : 9.0,
                                       color: accentColor,
@@ -1196,7 +1204,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
       child: Text(
-        isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
+        isByWeight
+            ? '\$${displayPrice.toCurrency()}/${product.effectiveQuantityUnitLabel}'
+            : '\$${displayPrice.toCurrency()}',
         style: TextStyle(
           color: isByWeight ? Colors.orange.shade800 : const Color(0xFF1B873A),
           fontWeight: FontWeight.w800,

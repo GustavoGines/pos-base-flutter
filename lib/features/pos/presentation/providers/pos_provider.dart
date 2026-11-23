@@ -20,6 +20,9 @@ import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -2265,6 +2268,7 @@ class PosProvider with ChangeNotifier {
             if (ctx != null && ctx.mounted) {
               _previewHandledInProvider = true;
               if (showPreview) {
+                final paperSize = localTerminal.pdfPaperSize;
                 final result = await showDialog<String>(
                   context: ctx,
                   barrierDismissible: true,
@@ -2272,105 +2276,140 @@ class PosProvider with ChangeNotifier {
                     bool isVoiding = false;
                     return StatefulBuilder(
                       builder: (context, setState) {
-                        return Dialog(
-                          child: SizedBox(
-                            width: 900,
-                            height: 800,
-                            child: Scaffold(
-                              appBar: AppBar(
-                                title: Text('Vista Previa - Venta #$extractedSaleId'),
-                                automaticallyImplyLeading: false,
-                                actions: [
-                                  if (isVoiding)
-                                    Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                        child: SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    TextButton.icon(
-                                      onPressed: () async {
-                                        final confirm = await showDialog<bool>(
-                                          context: dialogCtx,
-                                          builder: (c) => AlertDialog(
-                                            title: const Text('¿Anular Venta?'),
-                                            content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                            actions: [
-                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
-                                              ElevatedButton(
-                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                                                onPressed: () => Navigator.pop(c, true), 
-                                                child: const Text('SÍ, ANULAR')
-                                              ),
-                                            ],
-                                          ),
-                                        );
-
-                                        if (confirm == true) {
-                                          final hasPermission = await AdminPinDialog.protectAction(
-                                            dialogCtx,
-                                            action: 'Anulación de Venta',
-                                            permissionKey: AppPermissions.voidSales,
-                                            onAuthorized: () async {
-                                            setState(() { isVoiding = true; });
-                                            try {
-                                              // 1. Anular en el servidor
-                                              final success = await voidPendingOrder(int.parse(extractedSaleId!), shiftId: shiftId);
-                                              if (!success) {
-                                                if (dialogCtx.mounted) {
-                                                  SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}');
-                                                }
-                                                setState(() { isVoiding = false; });
-                                                return;
-                                              }
-                                              // 2. Restaurar carrito localmente
-                                              _cart.clear();
-                                              _cart.addAll(_lastSaleCart);
-                                              _shippingCost = _lastSaleShippingCost ?? 0.0;
-                                              notifyListeners();
-                                              // 3. Salir de la vista previa indicando anulación
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
-                                                Navigator.pop(dialogCtx, 'annulled');
-                                              }
-                                            } catch (e) {
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.error(dialogCtx, 'Error al anular: $e');
-                                              }
-                                              setState(() { isVoiding = false; });
-                                            }
-                                          },
-                                        );
-                                        
-                                        if (hasPermission != true) {
-                                          setState(() { isVoiding = false; });
-                                        }
-                                        }
-                                      },
-                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                      label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        return AppPdfPreviewModal(
+                          title: 'Vista Previa - Venta #$extractedSaleId',
+                          subtitle:
+                              'Comprobante emitido • Hoja ${pdfPaperSizeLabel(paperSize)}',
+                          icon: Icons.picture_as_pdf_rounded,
+                          accent: AppModalAccent.blue,
+                          pdfFileName: 'Comprobante_$extractedSaleId.pdf',
+                          initialPageFormat:
+                              pdfPageFormatFromPaperSize(paperSize),
+                          build: (format) async => pdfBytes,
+                          canClose: !isVoiding,
+                          onClose: isVoiding
+                              ? null
+                              : () => Navigator.pop(dialogCtx),
+                          headerTrailing: isVoiding
+                              ? const Padding(
+                                  padding:
+                                      EdgeInsets.symmetric(horizontal: 12),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.dangerLight,
                                     ),
-                                  const SizedBox(width: 16),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
                                   ),
-                                ],
-                              ),
-                              body: PdfPreview(
-                                build: (format) async => pdfBytes,
-                                canChangePageFormat: false,
-                                canChangeOrientation: false,
-                                pdfFileName: 'Comprobante_$extractedSaleId.pdf',
-                                canDebug: false,
-                              ),
-                            ),
-                          ),
+                                )
+                              : OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final confirm =
+                                        await AppConfirmDialog.show(
+                                      dialogCtx,
+                                      title: '¿Anular Venta?',
+                                      message:
+                                          'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.',
+                                      confirmLabel: 'SÍ, ANULAR',
+                                      cancelLabel: 'NO, VOLVER',
+                                      icon: Icons.cancel_outlined,
+                                      isDestructive: true,
+                                    );
+
+                                    if (confirm == true) {
+                                      final hasPermission =
+                                          await AdminPinDialog.protectAction(
+                                        dialogCtx,
+                                        action: 'Anulación de Venta',
+                                        permissionKey: AppPermissions.voidSales,
+                                        onAuthorized: () async {
+                                          setState(() {
+                                            isVoiding = true;
+                                          });
+                                          try {
+                                            // 1. Anular en el servidor
+                                            final success =
+                                                await voidPendingOrder(
+                                              int.parse(extractedSaleId!),
+                                              shiftId: shiftId,
+                                            );
+                                            if (!success) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(
+                                                  dialogCtx,
+                                                  'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}',
+                                                );
+                                              }
+                                              setState(() {
+                                                isVoiding = false;
+                                              });
+                                              return;
+                                            }
+                                            // 2. Restaurar carrito localmente
+                                            _cart.clear();
+                                            _cart.addAll(_lastSaleCart);
+                                            _shippingCost =
+                                                _lastSaleShippingCost ?? 0.0;
+                                            notifyListeners();
+                                            // 3. Salir de la vista previa indicando anulación
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.warning(
+                                                dialogCtx,
+                                                'Venta anulada. Los productos han vuelto al carrito.',
+                                              );
+                                              Navigator.pop(
+                                                dialogCtx,
+                                                'annulled',
+                                              );
+                                            }
+                                          } catch (e) {
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.error(
+                                                dialogCtx,
+                                                'Error al anular: $e',
+                                              );
+                                            }
+                                            setState(() {
+                                              isVoiding = false;
+                                            });
+                                          }
+                                        },
+                                      );
+
+                                      if (hasPermission != true) {
+                                        setState(() {
+                                          isVoiding = false;
+                                        });
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete_forever_rounded,
+                                    size: 17,
+                                  ),
+                                  label:
+                                      const Text('ANULAR COBRO Y VOLVER'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor:
+                                        const Color(0xFFFCA5A5),
+                                    backgroundColor: AppColors.danger
+                                        .withValues(alpha: 0.22),
+                                    side: BorderSide(
+                                      color: AppColors.dangerLight
+                                          .withValues(alpha: 0.55),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    textStyle: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
                         );
                       },
                     );
@@ -2993,6 +3032,7 @@ class PosProvider with ChangeNotifier {
                 if (showPreview) {
                   // Guardar snapshot para restaurar si se anula desde la preview
                   _lastSaleCart = List<CartItem>.from(ticketItems);
+                  final paperSize = localTerminal.pdfPaperSize;
 
                   final result = await showDialog<String>(
                     context: ctx,
@@ -3001,114 +3041,130 @@ class PosProvider with ChangeNotifier {
                       bool isVoiding = false;
                       return StatefulBuilder(
                         builder: (context, setState) {
-                          return Dialog(
-                            child: SizedBox(
-                              width: 800,
-                              height: 700,
-                              child: Scaffold(
-                                appBar: AppBar(
-                                  title: Text('Comprobante #$saleId'),
-                                  automaticallyImplyLeading: false,
-                                  actions: [
-                                    if (isVoiding)
-                                      Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                          child: SizedBox(
-                                            width: 24,
-                                            height: 24,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2, color: Colors.red),
-                                          ),
-                                        ),
-                                      )
-                                    else
-                                      TextButton.icon(
-                                        onPressed: () async {
-                                          final confirm = await showDialog<bool>(
-                                            context: dialogCtx,
-                                            builder: (c) => AlertDialog(
-                                              title: const Text('¿Anular Venta?'),
-                                              content: const Text(
-                                                  'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                              actions: [
-                                                TextButton(
-                                                    onPressed: () => Navigator.pop(c, false),
-                                                    child: const Text('NO, VOLVER')),
-                                                ElevatedButton(
-                                                  style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.red,
-                                                      foregroundColor: Colors.white),
-                                                  onPressed: () => Navigator.pop(c, true),
-                                                  child: const Text('SÍ, ANULAR'),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                          if (confirm == true) {
-                                            final hasPermission = await AdminPinDialog.protectAction(
-                                              dialogCtx,
-                                              action: 'Anulación de Venta',
-                                              permissionKey: AppPermissions.voidSales,
-                                              onAuthorized: () async {
-                                                setState(() => isVoiding = true);
-                                                try {
-                                                  final success = await voidPendingOrder(saleId, shiftId: shiftId);
-                                                  if (!success) {
-                                                    if (dialogCtx.mounted) {
-                                                      SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}');
-                                                    }
-                                                    setState(() => isVoiding = false);
-                                                    return;
-                                                  }
-                                                  // Restaurar carrito al estado previo
-                                                  _cart.clear();
-                                                  _cart.addAll(_lastSaleCart);
-                                                  _shippingCost = shippingCost;
-                                                  notifyListeners();
-                                                  if (dialogCtx.mounted) {
-                                                    SnackBarService.warning(
-                                                        dialogCtx,
-                                                        'Venta anulada. Los productos han vuelto al carrito.');
-                                                    Navigator.pop(dialogCtx, 'annulled');
-                                                  }
-                                                } catch (e) {
-                                                  if (dialogCtx.mounted) {
-                                                    SnackBarService.error(
-                                                        dialogCtx, 'Error al anular: $e');
-                                                    setState(() => isVoiding = false);
-                                                  }
-                                                }
-                                              },
-                                            );
-                                            if (hasPermission != true) {
-                                              setState(() => isVoiding = false);
-                                            }
-                                          }
-                                        },
-                                        icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                        label: const Text('ANULAR COBRO Y VOLVER',
-                                            style: TextStyle(
-                                                color: Colors.red,
-                                                fontWeight: FontWeight.bold)),
+                          return AppPdfPreviewModal(
+                            title: 'Comprobante #$saleId',
+                            subtitle:
+                                'Comprobante emitido • Hoja ${pdfPaperSizeLabel(paperSize)}',
+                            icon: Icons.picture_as_pdf_rounded,
+                            accent: AppModalAccent.blue,
+                            pdfFileName: 'Comprobante_$saleId.pdf',
+                            initialPageFormat:
+                                pdfPageFormatFromPaperSize(paperSize),
+                            build: (format) async => pdfBytes,
+                            canClose: !isVoiding,
+                            onClose: isVoiding
+                                ? null
+                                : () => Navigator.pop(dialogCtx),
+                            headerTrailing: isVoiding
+                                ? const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.dangerLight,
                                       ),
-                                    const SizedBox(width: 16),
-                                    IconButton(
-                                      icon: const Icon(Icons.close),
-                                      onPressed:
-                                          isVoiding ? null : () => Navigator.pop(dialogCtx),
                                     ),
-                                  ],
-                                ),
-                                body: PdfPreview(
-                                  build: (format) async => pdfBytes,
-                                  canChangePageFormat: false,
-                                  canChangeOrientation: false,
-                                  pdfFileName: 'Comprobante_$saleId.pdf',
-                                  canDebug: false,
-                                ),
-                              ),
-                            ),
+                                  )
+                                : OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final confirm =
+                                          await AppConfirmDialog.show(
+                                        dialogCtx,
+                                        title: '¿Anular Venta?',
+                                        message:
+                                            'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.',
+                                        confirmLabel: 'SÍ, ANULAR',
+                                        cancelLabel: 'NO, VOLVER',
+                                        icon: Icons.cancel_outlined,
+                                        isDestructive: true,
+                                      );
+                                      if (confirm == true) {
+                                        final hasPermission =
+                                            await AdminPinDialog.protectAction(
+                                          dialogCtx,
+                                          action: 'Anulación de Venta',
+                                          permissionKey:
+                                              AppPermissions.voidSales,
+                                          onAuthorized: () async {
+                                            setState(() => isVoiding = true);
+                                            try {
+                                              final success =
+                                                  await voidPendingOrder(
+                                                saleId,
+                                                shiftId: shiftId,
+                                              );
+                                              if (!success) {
+                                                if (dialogCtx.mounted) {
+                                                  SnackBarService.error(
+                                                    dialogCtx,
+                                                    'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}',
+                                                  );
+                                                }
+                                                setState(
+                                                    () => isVoiding = false);
+                                                return;
+                                              }
+                                              // Restaurar carrito al estado previo
+                                              _cart.clear();
+                                              _cart.addAll(_lastSaleCart);
+                                              _shippingCost = shippingCost;
+                                              notifyListeners();
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.warning(
+                                                  dialogCtx,
+                                                  'Venta anulada. Los productos han vuelto al carrito.',
+                                                );
+                                                Navigator.pop(
+                                                  dialogCtx,
+                                                  'annulled',
+                                                );
+                                              }
+                                            } catch (e) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(
+                                                  dialogCtx,
+                                                  'Error al anular: $e',
+                                                );
+                                                setState(
+                                                    () => isVoiding = false);
+                                              }
+                                            }
+                                          },
+                                        );
+                                        if (hasPermission != true) {
+                                          setState(() => isVoiding = false);
+                                        }
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_forever_rounded,
+                                      size: 17,
+                                    ),
+                                    label:
+                                        const Text('ANULAR COBRO Y VOLVER'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor:
+                                          const Color(0xFFFCA5A5),
+                                      backgroundColor: AppColors.danger
+                                          .withValues(alpha: 0.22),
+                                      side: BorderSide(
+                                        color: AppColors.dangerLight
+                                            .withValues(alpha: 0.55),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      textStyle: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
                           );
                         },
                       );

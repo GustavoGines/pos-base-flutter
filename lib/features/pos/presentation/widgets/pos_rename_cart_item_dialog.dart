@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -920,90 +922,42 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         (refSub > 0 && savings > 0) ? ((savings / refSub) * 100.0) : 0.0;
     final currentDiscInput = _parseDouble(_discountPctController.text);
 
+    final settingsProv = context.watch<SettingsProvider?>();
+    final isHardwareStore = settingsProv?.safeIsHardwareStore == true;
+    final canRecalcHardware = widget.onOpenHardwareCalculator != null &&
+        !_isTempOrUnregistered &&
+        (settingsProv?.canUseHardwareCalculator == true);
+    final isHardwareFractional = _isSoldByWeight &&
+        (isHardwareStore || widget.item.product.isMetricOrLiquidUnit);
+    final unitShortLabel = widget.item.product.unitShortLabel;
+    final unitSuffixUpper = isHardwareFractional
+        ? unitShortLabel.toUpperCase()
+        : (_isSoldByWeight ? 'KG' : 'UN');
+
     return RemoteScannerListener(
       debugLabel: 'PosRenameCartItemDialog',
       onBarcodeScanned: _handleRemoteBarcodeScan,
       child: Focus(
         autofocus: false,
-        child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 660,
-            maxHeight: MediaQuery.of(context).size.height * 0.92,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Top Fijo (Sticky): Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.indigo.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.edit_note_rounded,
-                        color: Colors.indigo.shade700,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _isTempOrUnregistered
-                                ? 'Editar Ítem Rápido en Carrito'
-                                : 'Editar Línea en Carrito (Ctrl+E)',
-                            style: const TextStyle(
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _isTempOrUnregistered
-                                ? 'Ítem Rápido de Mostrador'
-                                : 'Catálogo original: $originalName',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 20),
-                      tooltip: 'Cerrar (Esc)',
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-              // Centro Scrolleable
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+        child: AppModalShell(
+          title: _isTempOrUnregistered
+              ? 'Editar Ítem Rápido en Carrito'
+              : 'Editar Línea en Carrito (Ctrl+E)',
+          subtitle: _isTempOrUnregistered
+              ? 'Ítem Rápido de Mostrador'
+              : 'Catálogo original: $originalName',
+          icon: Icons.edit_note_rounded,
+          accent:
+              _hasAnyDbChange ? AppModalAccent.blue : AppModalAccent.indigo,
+          maxWidth: 700,
+          expandBody: false,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          body: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
 
                   // Campo de descripción personalizada
                   TextFormField(
@@ -1092,10 +1046,12 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                 onChanged: _onQuantityChanged,
                                 onFieldSubmitted: (_) => _submit(),
                                 decoration: InputDecoration(
-                                  labelText: _isSoldByWeight
-                                      ? 'Peso (KG)'
-                                      : 'Cantidad',
-                                  suffixText: _isSoldByWeight ? 'KG' : 'UN',
+                                  labelText: isHardwareFractional
+                                      ? 'Cantidad ($unitShortLabel)'
+                                      : (_isSoldByWeight
+                                          ? 'Peso (KG)'
+                                          : 'Cantidad'),
+                                  suffixText: unitSuffixUpper,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
@@ -1107,12 +1063,15 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                   final minQ = widget.item.product.isService
                                       ? 1.0
                                       : 0.001;
-                                  final maxQ =
-                                      _isSoldByWeight ? 1000.0 : 100000.0;
+                                  final maxQ = (_isSoldByWeight &&
+                                          !isHardwareFractional)
+                                      ? 1000.0
+                                      : 100000.0;
                                   if (parsed == null ||
                                       parsed < minQ ||
                                       parsed >= maxQ) {
-                                    return _isSoldByWeight
+                                    return (_isSoldByWeight &&
+                                            !isHardwareFractional)
                                         ? '0.001 a 999 Kg'
                                         : 'Cantidad inválida';
                                   }
@@ -1137,7 +1096,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                 ),
                               ),
                             ],
-                            if (_isSoldByWeight) ...[
+                            if (_isSoldByWeight && !isHardwareStore) ...[
                               const SizedBox(width: 6),
                               Consumer<LocalTerminalProvider>(
                                 builder: (ctx, localTerminal, _) {
@@ -1906,10 +1865,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                                                 .minStock ??
                                                             0) >
                                                         0
-                                                    ? 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')} · Mín. alerta: ${widget.item.product.minStock!.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')}'
-                                                    : 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: 'u')}',
-                                                suffixText:
-                                                    _isSoldByWeight ? 'KG' : 'UN',
+                                                    ? 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: isHardwareFractional ? unitShortLabel : 'u', weightUnit: isHardwareFractional ? unitShortLabel : 'kg')} · Mín. alerta: ${widget.item.product.minStock!.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: isHardwareFractional ? unitShortLabel : 'u', weightUnit: isHardwareFractional ? unitShortLabel : 'kg')}'
+                                                    : 'Stock en BD: ${widget.item.product.stock.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: isHardwareFractional ? unitShortLabel : 'u', weightUnit: isHardwareFractional ? unitShortLabel : 'kg')}',
+                                                suffixText: unitSuffixUpper,
                                                 prefixIcon: const Icon(
                                                     Icons.inventory_2_outlined,
                                                     size: 18),
@@ -2076,8 +2034,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                           final afterSale =
                                               target - _currentQty;
                                           final sign = delta > 0 ? '+' : '';
-                                          final suffix =
-                                              _isSoldByWeight ? 'kg' : 'u';
+                                          final suffix = isHardwareFractional
+                                              ? unitShortLabel
+                                              : (_isSoldByWeight ? 'kg' : 'u');
                                           return Container(
                                             width: double.infinity,
                                             padding: const EdgeInsets.symmetric(
@@ -2100,7 +2059,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                                 const SizedBox(width: 6),
                                                 Expanded(
                                                   child: Text(
-                                                    '${delta > 0 ? 'Ajuste de inventario' : 'Descuento de inventario'}: $sign${delta.toQty()} $suffix · Al cobrar esta línea quedarán: ${afterSale.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: suffix)}',
+                                                    '${delta > 0 ? 'Ajuste de inventario' : 'Descuento de inventario'}: $sign${delta.toQty()} $suffix · Al cobrar esta línea quedarán: ${afterSale.toUnitStockDisplay(isSoldByWeight: _isSoldByWeight, unitSuffix: suffix, weightUnit: suffix)}',
                                                     style: const TextStyle(
                                                       fontSize: 11.5,
                                                       fontWeight:
@@ -2518,44 +2477,28 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                 ],
               ),
             ),
-          ),
-        ),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-        // Footer Fijo (Sticky)
-        Container(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-          ),
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (widget.onOpenHardwareCalculator != null &&
-                  !_isTempOrUnregistered &&
-                  context
-                      .read<SettingsProvider>()
-                      .canUseHardwareCalculator)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    widget.onOpenHardwareCalculator!();
-                  },
-                  icon: const Icon(Icons.straighten_rounded, size: 17),
-                  label: const Text('Recalcular por m² / Medidas'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0F766E),
-                    side: const BorderSide(color: Color(0xFF0F766E)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+            footerLeading: canRecalcHardware
+                ? OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      widget.onOpenHardwareCalculator!();
+                    },
+                    icon: const Icon(Icons.straighten_rounded, size: 17),
+                    label: const Text('Recalcular por m² / Medidas'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.tealDark,
+                      side: const BorderSide(color: AppColors.tealDark),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
-                  ),
-                ),
+                  )
+                : null,
+            footerActions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancelar (Esc)'),
@@ -2574,12 +2517,12 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                       : 'Aplicar en Comprobante (Enter)',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _hasAnyDbChange
-                      ? const Color(0xFF2563EB)
-                      : const Color(0xFF4F46E5),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 12),
+                    horizontal: 16,
+                    vertical: 11,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2588,11 +2531,6 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
             ],
           ),
         ),
-      ],
-    ),
-    ),
-    ),
-    ),
     );
   }
 }

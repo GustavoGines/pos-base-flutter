@@ -55,7 +55,12 @@ abstract class CatalogRemoteDataSource {
   // Product CRUD
   Future<ProductModel> createProduct(Map<String, dynamic> productData);
   Future<ProductModel> updateProduct(int id, Map<String, dynamic> productData);
-  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename);
+  Future<Map<String, dynamic>> importProducts(
+    List<int> fileBytes,
+    String filename, {
+    int? defaultSupplierId,
+    double? defaultMarginPercent,
+  });
   Future<void> deleteProduct(int id);
   Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
   Future<Map<String, dynamic>> bulkUpdateProducts(
@@ -178,6 +183,10 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
             if (firstError is List && firstError.isNotEmpty) {
               final msg = firstError.first.toString();
               if (msg.contains('validation.unique')) return 'El nombre ya existe.';
+              final lower = msg.toLowerCase();
+              if (lower.contains('unit type') || lower.contains('unit_type')) {
+                return 'La unidad seleccionada requiere actualizar el servidor (v2.1.2+). Usá un, kg, lt o g temporalmente.';
+              }
               return msg;
             }
           }
@@ -185,6 +194,10 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         if (decoded.containsKey('message')) {
           final msg = decoded['message'].toString();
           if (msg.contains('validation.unique')) return 'El nombre ya existe.';
+          final lower = msg.toLowerCase();
+          if (lower.contains('unit type') || lower.contains('unit_type')) {
+            return 'La unidad seleccionada requiere actualizar el servidor (v2.1.2+). Usá un, kg, lt o g temporalmente.';
+          }
           return msg;
         }
       }
@@ -1180,7 +1193,12 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename) async {
+  Future<Map<String, dynamic>> importProducts(
+    List<int> fileBytes,
+    String filename, {
+    int? defaultSupplierId,
+    double? defaultMarginPercent,
+  }) async {
     try {
       final request = http.MultipartRequest(
         'POST',
@@ -1198,6 +1216,13 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
           filename: filename,
         ),
       );
+      if (defaultSupplierId != null) {
+        request.fields['default_supplier_id'] = defaultSupplierId.toString();
+      }
+      if (defaultMarginPercent != null) {
+        request.fields['default_margin_percent'] =
+            defaultMarginPercent.toString();
+      }
 
       request.headers['Accept'] = 'application/json';
       // If we are using ApiClient, it intercepts normal requests, but MultipartRequest is a separate object.

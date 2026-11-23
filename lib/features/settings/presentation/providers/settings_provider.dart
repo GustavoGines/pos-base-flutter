@@ -732,4 +732,15 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
   bool get canUseHardwareCalculator =>
       (settings?.canUseHardwareCalculator == true) &&
       !LicenseHeartbeatService().isBlocked;
+
+  /// Verifica rubro Ferretería sin exigir implementación extra en mocks
+  /// heredados (`implements SettingsProvider`).
+  bool get safeIsHardwareStore {
+    try {
+      if (settings != null) return settings!.isHardwareStore;
+      return isHardwareStore;
+    } catch (_) {
+      return false;
+    }
+  }
 }

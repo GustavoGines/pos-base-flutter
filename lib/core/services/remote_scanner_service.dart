@@ -91,11 +91,13 @@ class RemoteScannerService extends ChangeNotifier {
     String rawQuery, {
     bool activeOnly = true,
     bool includeInternalCode = true,
+    bool includeSupplierSku = true,
   }) {
     final q = rawQuery.trim().toLowerCase();
     if (q.isEmpty) return null;
 
     Product? internalMatch;
+    Product? supplierSkuMatch;
     for (final p in products) {
       if (activeOnly && !p.active) continue;
       if ((p.barcode?.trim().toLowerCase() ?? '') == q) {
@@ -106,8 +108,13 @@ class RemoteScannerService extends ChangeNotifier {
           p.internalCode.trim().toLowerCase() == q) {
         internalMatch = p;
       }
+      if (includeSupplierSku &&
+          supplierSkuMatch == null &&
+          (p.supplierSku?.trim().toLowerCase() ?? '') == q) {
+        supplierSkuMatch = p;
+      }
     }
-    return internalMatch;
+    return internalMatch ?? supplierSkuMatch;
   }
 
   /// Actualiza el ID de terminal y reconecta si corresponde.

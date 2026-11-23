@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -136,214 +138,205 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: const Row(
+        builder: (ctx, setModalState) => AppModalShell(
+          title: 'Ingresar Nuevo Lote',
+          subtitle: widget.product.name,
+          icon: Icons.add_box_outlined,
+          accent: AppModalAccent.teal,
+          compact: true,
+          maxWidth: 480,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.all(18),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.add_box_outlined, color: Colors.teal),
-              SizedBox(width: 8),
-              Flexible(child: Text('Ingresar Nuevo Lote')),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              if (!widget.product.trackBatches) ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: const Text(
+                    'Al registrar el primer lote, este producto activará automáticamente el control de vencimientos por lotes.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+                  ),
+                ),
+              ],
+              TextField(
+                controller: qtyCtrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Cantidad (${widget.product.unitShortLabel}) *',
+                  prefixIcon: const Icon(Icons.inventory_2_outlined),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: codeCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Código de Lote (opcional)',
+                  hintText: 'Si se deja vacío se genera automático',
+                  prefixIcon: Icon(Icons.qr_code_outlined),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
                 children: [
-                  Text(
-                    widget.product.name,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                  ),
-                  if (!widget.product.trackBatches) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.amber.shade300),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                      label: Text(
+                        'Elab: ${DateFormat('dd/MM/yy').format(manufacturedAt)}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
                       ),
-                      child: const Text(
-                        'Al registrar el primer lote, este producto activará automáticamente el control de vencimientos por lotes.',
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: qtyCtrl,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: 'Cantidad (${widget.product.unitType}) *',
-                      prefixIcon: const Icon(Icons.inventory_2_outlined),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: codeCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Código de Lote (opcional)',
-                      hintText: 'Si se deja vacío se genera automático',
-                      prefixIcon: Icon(Icons.qr_code_outlined),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                          label: Text(
-                            'Elab: ${DateFormat('dd/MM/yy').format(manufacturedAt)}',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () async {
-                            final picked = await showCompactDatePicker(
-                              context: ctx,
-                              initialDate: manufacturedAt,
-                              helpText: 'Fecha de Elaboración / Ingreso',
-                            );
-                            if (picked != null) {
-                              setModalState(() {
-                                manufacturedAt = picked;
-                                final n = int.tryParse(validityCtrl.text.trim());
-                                if (n != null && n >= 1 && n <= 3650) {
-                                  expirationDate = DateTime(
-                                    picked.year,
-                                    picked.month,
-                                    picked.day + n,
-                                  );
-                                } else if (expirationDate != null) {
-                                  final elabDay = DateTime(picked.year, picked.month, picked.day);
-                                  final expDay = DateTime(
-                                    expirationDate!.year,
-                                    expirationDate!.month,
-                                    expirationDate!.day,
-                                  );
-                                  final diff = expDay.difference(elabDay).inDays;
-                                  validityCtrl.text =
-                                      (diff >= 1 && diff <= 3650) ? diff.toString() : '';
-                                }
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: Icon(
-                            Icons.event_available_outlined,
-                            size: 16,
-                            color: expirationDate != null ? Colors.deepOrange : null,
-                          ),
-                          label: Text(
-                            expirationDate != null
-                                ? 'Vto: ${DateFormat('dd/MM/yy').format(expirationDate!)}'
-                                : 'Vencimiento (opc)',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () async {
-                            final picked = await showCompactDatePicker(
-                              context: ctx,
-                              initialDate: expirationDate ??
-                                  DateTime.now().add(const Duration(days: 7)),
-                              helpText: 'Fecha de Vencimiento del Lote',
-                            );
-                            if (picked != null) {
-                              final elabDay = DateTime(
-                                manufacturedAt.year,
-                                manufacturedAt.month,
-                                manufacturedAt.day,
+                      onPressed: () async {
+                        final picked = await showCompactDatePicker(
+                          context: ctx,
+                          initialDate: manufacturedAt,
+                          helpText: 'Fecha de Elaboración / Ingreso',
+                        );
+                        if (picked != null) {
+                          setModalState(() {
+                            manufacturedAt = picked;
+                            final n = int.tryParse(validityCtrl.text.trim());
+                            if (n != null && n >= 1 && n <= 3650) {
+                              expirationDate = DateTime(
+                                picked.year,
+                                picked.month,
+                                picked.day + n,
                               );
-                              final expDay = DateTime(picked.year, picked.month, picked.day);
+                            } else if (expirationDate != null) {
+                              final elabDay = DateTime(picked.year, picked.month, picked.day);
+                              final expDay = DateTime(
+                                expirationDate!.year,
+                                expirationDate!.month,
+                                expirationDate!.day,
+                              );
                               final diff = expDay.difference(elabDay).inDays;
-                              setModalState(() {
-                                expirationDate = picked;
-                                validityCtrl.text =
-                                    (diff >= 1 && diff <= 3650) ? diff.toString() : '';
-                              });
+                              validityCtrl.text =
+                                  (diff >= 1 && diff <= 3650) ? diff.toString() : '';
                             }
-                          },
-                        ),
-                      ),
-                      if (expirationDate != null || validityCtrl.text.isNotEmpty)
-                        IconButton(
-                          tooltip: 'Quitar vencimiento',
-                          icon: const Icon(Icons.clear, size: 18),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => setModalState(() {
-                            expirationDate = null;
-                            validityCtrl.clear();
-                          }),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: validityCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Validez del lote (días desde elaboración)',
-                      hintText: 'Ej. 5, 30, 180',
-                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
-                      suffixText: 'días',
-                      isDense: true,
+                          });
+                        }
+                      },
                     ),
-                    onChanged: (val) {
-                      final trimmed = val.trim();
-                      if (trimmed.isEmpty) {
-                        setModalState(() => expirationDate = null);
-                        return;
-                      }
-                      final n = int.tryParse(trimmed);
-                      if (n != null && n >= 1 && n <= 3650) {
-                        setModalState(() {
-                          expirationDate = DateTime(
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: Icon(
+                        Icons.event_available_outlined,
+                        size: 16,
+                        color: expirationDate != null ? Colors.deepOrange : null,
+                      ),
+                      label: Text(
+                        expirationDate != null
+                            ? 'Vto: ${DateFormat('dd/MM/yy').format(expirationDate!)}'
+                            : 'Vencimiento (opc)',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onPressed: () async {
+                        final picked = await showCompactDatePicker(
+                          context: ctx,
+                          initialDate: expirationDate ??
+                              DateTime.now().add(const Duration(days: 7)),
+                          helpText: 'Fecha de Vencimiento del Lote',
+                        );
+                        if (picked != null) {
+                          final elabDay = DateTime(
                             manufacturedAt.year,
                             manufacturedAt.month,
-                            manufacturedAt.day + n,
+                            manufacturedAt.day,
                           );
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: costCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      ArsThousandsInputFormatter(),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'Costo unitario del lote (\$)',
-                      prefixIcon: Icon(Icons.attach_money),
-                      isDense: true,
+                          final expDay = DateTime(picked.year, picked.month, picked.day);
+                          final diff = expDay.difference(elabDay).inDays;
+                          setModalState(() {
+                            expirationDate = picked;
+                            validityCtrl.text =
+                                (diff >= 1 && diff <= 3650) ? diff.toString() : '';
+                          });
+                        }
+                      },
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: notesCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Notas (ej. Remito, Proveedor, Observación)',
-                      prefixIcon: Icon(Icons.notes_outlined),
-                      isDense: true,
+                  if (expirationDate != null || validityCtrl.text.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Quitar vencimiento',
+                      icon: const Icon(Icons.clear, size: 18),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setModalState(() {
+                        expirationDate = null;
+                        validityCtrl.clear();
+                      }),
                     ),
-                  ),
                 ],
               ),
-            ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: validityCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Validez del lote (días desde elaboración)',
+                  hintText: 'Ej. 5, 30, 180',
+                  prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                  suffixText: 'días',
+                  isDense: true,
+                ),
+                onChanged: (val) {
+                  final trimmed = val.trim();
+                  if (trimmed.isEmpty) {
+                    setModalState(() => expirationDate = null);
+                    return;
+                  }
+                  final n = int.tryParse(trimmed);
+                  if (n != null && n >= 1 && n <= 3650) {
+                    setModalState(() {
+                      expirationDate = DateTime(
+                        manufacturedAt.year,
+                        manufacturedAt.month,
+                        manufacturedAt.day + n,
+                      );
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: costCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  ArsThousandsInputFormatter(),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Costo unitario del lote (\$)',
+                  prefixIcon: Icon(Icons.attach_money),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Notas (ej. Remito, Proveedor, Observación)',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                  isDense: true,
+                ),
+              ),
+            ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -444,108 +437,110 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: Text('Editar Lote ${batch.batchCode}'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        builder: (ctx, setModalState) => AppModalShell(
+          title: 'Editar Lote ${batch.batchCode}',
+          subtitle: widget.product.name,
+          icon: Icons.edit_calendar_outlined,
+          accent: AppModalAccent.teal,
+          compact: true,
+          maxWidth: 440,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.all(18),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: codeCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Código de Lote',
+                  prefixIcon: Icon(Icons.qr_code_outlined),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  TextField(
-                    controller: codeCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Código de Lote',
-                      prefixIcon: Icon(Icons.qr_code_outlined),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.event_outlined, size: 16),
-                          label: Text(
-                            expirationDate != null
-                                ? 'Vence: ${DateFormat('dd/MM/yyyy').format(expirationDate!)}'
-                                : 'Sin fecha de vencimiento',
-                          ),
-                          onPressed: () async {
-                            final picked = await showCompactDatePicker(
-                              context: ctx,
-                              initialDate: expirationDate ?? DateTime.now(),
-                              helpText: 'Fecha de Vencimiento',
-                            );
-                            if (picked != null) {
-                              final expDay = DateTime(picked.year, picked.month, picked.day);
-                              final diff = expDay.difference(baseDay).inDays;
-                              setModalState(() {
-                                expirationDate = picked;
-                                validityCtrl.text =
-                                    (diff >= 1 && diff <= 3650) ? diff.toString() : '';
-                              });
-                            }
-                          },
-                        ),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.event_outlined, size: 16),
+                      label: Text(
+                        expirationDate != null
+                            ? 'Vence: ${DateFormat('dd/MM/yyyy').format(expirationDate!)}'
+                            : 'Sin fecha de vencimiento',
                       ),
-                      if (expirationDate != null || validityCtrl.text.isNotEmpty) ...[
-                        const SizedBox(width: 4),
-                        IconButton(
-                          tooltip: 'Quitar vencimiento',
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setModalState(() {
-                            expirationDate = null;
-                            validityCtrl.clear();
-                          }),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: validityCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Validez (días)',
-                      hintText: 'Ej. 5, 30, 180',
-                      prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
-                      suffixText: 'días',
-                      isDense: true,
-                    ),
-                    onChanged: (val) {
-                      final trimmed = val.trim();
-                      if (trimmed.isEmpty) {
-                        setModalState(() => expirationDate = null);
-                        return;
-                      }
-                      final n = int.tryParse(trimmed);
-                      if (n != null && n >= 1 && n <= 3650) {
-                        setModalState(() {
-                          expirationDate = DateTime(
-                            baseDay.year,
-                            baseDay.month,
-                            baseDay.day + n,
-                          );
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: notesCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Notas del lote',
-                      isDense: true,
+                      onPressed: () async {
+                        final picked = await showCompactDatePicker(
+                          context: ctx,
+                          initialDate: expirationDate ?? DateTime.now(),
+                          helpText: 'Fecha de Vencimiento',
+                        );
+                        if (picked != null) {
+                          final expDay = DateTime(picked.year, picked.month, picked.day);
+                          final diff = expDay.difference(baseDay).inDays;
+                          setModalState(() {
+                            expirationDate = picked;
+                            validityCtrl.text =
+                                (diff >= 1 && diff <= 3650) ? diff.toString() : '';
+                          });
+                        }
+                      },
                     ),
                   ),
+                  if (expirationDate != null || validityCtrl.text.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Quitar vencimiento',
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () => setModalState(() {
+                        expirationDate = null;
+                        validityCtrl.clear();
+                      }),
+                    ),
+                  ],
                 ],
               ),
-            ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: validityCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Validez (días)',
+                  hintText: 'Ej. 5, 30, 180',
+                  prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                  suffixText: 'días',
+                  isDense: true,
+                ),
+                onChanged: (val) {
+                  final trimmed = val.trim();
+                  if (trimmed.isEmpty) {
+                    setModalState(() => expirationDate = null);
+                    return;
+                  }
+                  final n = int.tryParse(trimmed);
+                  if (n != null && n >= 1 && n <= 3650) {
+                    setModalState(() {
+                      expirationDate = DateTime(
+                        baseDay.year,
+                        baseDay.month,
+                        baseDay.day + n,
+                      );
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Notas del lote',
+                  isDense: true,
+                ),
+              ),
+            ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -611,49 +606,45 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
+      builder: (ctx) => AppModalShell(
+        title: 'Registrar Merma / Descarte',
+        subtitle: widget.product.name,
+        icon: Icons.delete_sweep_outlined,
+        accent: AppModalAccent.orange,
+        compact: true,
+        maxWidth: 440,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.all(18),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.delete_sweep_outlined, color: Colors.deepOrange),
-            SizedBox(width: 8),
-            Flexible(child: Text('Registrar Merma / Descarte')),
+            Text(
+              'Lote ${batch.batchCode} • Disponible: ${batch.remainingQuantity.toQty()} ${widget.product.unitType}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: qtyCtrl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Cantidad a descartar (máx ${batch.remainingQuantity.toQty()})',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: notesCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Motivo de la merma',
+                isDense: true,
+              ),
+            ),
           ],
         ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Lote ${batch.batchCode} • Disponible: ${batch.remainingQuantity.toQty()} ${widget.product.unitType}',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: qtyCtrl,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Cantidad a descartar (máx ${batch.remainingQuantity.toQty()})',
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: notesCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo de la merma',
-                    isDense: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
@@ -737,118 +728,114 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: const Row(
+        builder: (ctx, setModalState) => AppModalShell(
+          title: 'Pasar a Vitrina (Dividir Lote)',
+          subtitle: widget.product.name,
+          icon: Icons.call_split,
+          accent: AppModalAccent.blue,
+          compact: true,
+          maxWidth: 460,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.all(18),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.call_split, color: Colors.blue),
-              SizedBox(width: 8),
-              Flexible(child: Text('Pasar a Vitrina (Dividir Lote)')),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              Text(
+                'Origen: ${batch.batchCode} • Libre: ${maxAvail.toQty()} ${widget.product.unitType}',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
                 children: [
-                  Text(
-                    'Origen: ${batch.batchCode} • Libre: ${maxAvail.toQty()} ${widget.product.unitType}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      if (maxAvail >= 1.0)
-                        ActionChip(
-                          label: const Text('1', style: TextStyle(fontSize: 11.5)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => qtyCtrl.text = '1',
-                        ),
-                      if (maxAvail >= 2.0)
-                        ActionChip(
-                          label: const Text('2', style: TextStyle(fontSize: 11.5)),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => qtyCtrl.text = '2',
-                        ),
-                      ActionChip(
-                        label: Text(
-                          'Mitad (${(maxAvail / 2).toQty()})',
-                          style: const TextStyle(fontSize: 11.5),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () =>
-                            qtyCtrl.text = (maxAvail / 2).toQty(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: qtyCtrl,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText:
-                          'Cantidad a pasar a vitrina (${widget.product.unitType}) *',
-                      isDense: true,
+                  if (maxAvail >= 1.0)
+                    ActionChip(
+                      label: const Text('1', style: TextStyle(fontSize: 11.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => qtyCtrl.text = '1',
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.event_available, size: 17),
+                  if (maxAvail >= 2.0)
+                    ActionChip(
+                      label: const Text('2', style: TextStyle(fontSize: 11.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => qtyCtrl.text = '2',
+                    ),
+                  ActionChip(
                     label: Text(
-                      'Nuevo Vto. en Vitrina: ${DateFormat('dd/MM/yyyy').format(displayExp)}',
+                      'Mitad (${(maxAvail / 2).toQty()})',
+                      style: const TextStyle(fontSize: 11.5),
                     ),
-                    onPressed: () async {
-                      final picked = await showCompactDatePicker(
-                        context: ctx,
-                        initialDate: displayExp,
-                        helpText: 'Fecha de vencimiento en exhibidor',
-                      );
-                      if (picked != null) {
-                        setModalState(() => displayExp = picked);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: codeCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Código de sub-lote (opcional)',
-                      hintText: 'Ej: auto-generado (-V1)',
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: notesCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Notas (opcional)',
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Material(
-                    type: MaterialType.transparency,
-                    child: CheckboxListTile(
-                      value: printLabelNow,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Imprimir etiqueta térmica L# del lote de vitrina al guardar',
-                        style: TextStyle(fontSize: 12.5),
-                      ),
-                      onChanged: (v) =>
-                          setModalState(() => printLabelNow = v == true),
-                    ),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () =>
+                        qtyCtrl.text = (maxAvail / 2).toQty(),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: qtyCtrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText:
+                      'Cantidad a pasar a vitrina (${widget.product.unitType}) *',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.event_available, size: 17),
+                label: Text(
+                  'Nuevo Vto. en Vitrina: ${DateFormat('dd/MM/yyyy').format(displayExp)}',
+                ),
+                onPressed: () async {
+                  final picked = await showCompactDatePicker(
+                    context: ctx,
+                    initialDate: displayExp,
+                    helpText: 'Fecha de vencimiento en exhibidor',
+                  );
+                  if (picked != null) {
+                    setModalState(() => displayExp = picked);
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: codeCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Código de sub-lote (opcional)',
+                  hintText: 'Ej: auto-generado (-V1)',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Notas (opcional)',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Material(
+                type: MaterialType.transparency,
+                child: CheckboxListTile(
+                  value: printLabelNow,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Imprimir etiqueta térmica L# del lote de vitrina al guardar',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  onChanged: (v) =>
+                      setModalState(() => printLabelNow = v == true),
+                ),
+              ),
+            ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -989,7 +976,6 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final screenH = MediaQuery.of(context).size.height;
     final allBatches = _response?.batches ?? const <ProductBatchModel>[];
     final visibleBatches = _showClosed
         ? allBatches
@@ -998,70 +984,48 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
             .toList();
     final hasDeficit = allBatches.any((b) => b.isDeficit);
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 820,
-          maxHeight: math.min(680, screenH * 0.88),
+    return AppModalShell(
+      title: 'Lotes y Vencimientos: ${widget.product.name}',
+      subtitle:
+          'Stock total: ${(_response?.stock ?? widget.product.stock).toUnitStockDisplay(isSoldByWeight: widget.product.isSoldByWeight, unitSuffix: widget.product.unitType)} • Salida: ${(_response?.lotDeductionPolicy ?? widget.product.lotDeductionPolicy) == 'fifo' ? 'Más antiguo primero' : 'Vence antes primero'}',
+      icon: Icons.layers_outlined,
+      accent: AppModalAccent.teal,
+      maxWidth: 840,
+      maxHeight: 680,
+      expandBody: true,
+      topBar: Container(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.layers_outlined, color: Colors.teal, size: 26),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Lotes y Vencimientos: ${widget.product.name}',
-                              style: const TextStyle(
-                                fontSize: 16.5,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              'Stock total: ${(_response?.stock ?? widget.product.stock).toUnitStockDisplay(isSoldByWeight: widget.product.isSoldByWeight, unitSuffix: widget.product.unitType)} • Salida: ${(_response?.lotDeductionPolicy ?? widget.product.lotDeductionPolicy) == 'fifo' ? 'Más antiguo primero' : 'Vence antes primero'}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      FilterChip(
-                        label: const Text('Ver historial completo', style: TextStyle(fontSize: 12)),
-                        selected: _showClosed,
-                        onSelected: (v) => setState(() => _showClosed = v),
-                      ),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Nuevo Lote'),
-                        onPressed: _submitting ? null : _openCreateBatchDialog,
-                      ),
-                    ],
-                  ),
-                ],
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              label: const Text(
+                'Ver historial completo',
+                style: TextStyle(fontSize: 12),
               ),
-              const SizedBox(height: 12),
-              if (hasDeficit) ...[
+              selected: _showClosed,
+              onSelected: (v) => setState(() => _showClosed = v),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Nuevo Lote'),
+              onPressed: _submitting ? null : _openCreateBatchDialog,
+            ),
+          ],
+        ),
+      ),
+      bodyPadding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (hasDeficit) ...[
                 Container(
                   padding: const EdgeInsets.all(10),
                   margin: const EdgeInsets.only(bottom: 10),
@@ -1299,7 +1263,7 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                                               IconButton(
                                                 tooltip: 'Imprimir Etiqueta Térmica del Lote',
                                                 icon: const Icon(Icons.qr_code_2, size: 20),
-                                                color: Colors.deepPurple,
+                                                color: AppColors.indigo,
                                                 onPressed: () {
                                                   showDialog(
                                                     context: context,
@@ -1336,26 +1300,19 @@ class _ProductBatchesDialogState extends State<ProductBatchesDialog> {
                                 },
                               ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: 'Refrescar lista',
-                    icon: const Icon(Icons.refresh),
-                    onPressed: _loading ? null : _loadBatches,
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cerrar'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
+      footerLeading: IconButton(
+        tooltip: 'Refrescar lista',
+        icon: const Icon(Icons.refresh),
+        onPressed: _loading ? null : _loadBatches,
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }

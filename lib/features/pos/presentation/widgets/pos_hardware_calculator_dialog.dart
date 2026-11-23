@@ -2,7 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/pos_search_history_popover.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -87,6 +92,9 @@ class _PosHardwareCalculatorDialogState
   // Buscador de producto integrado en el modal
   final _productSearchCtrl = TextEditingController();
   final _productSearchFocus = FocusNode();
+  final _skuHistoryPortalController = OverlayPortalController();
+  static const Object _skuHistoryTapGroupId = 'f7_sku_search_history_popover';
+  int _skuHistoryHighlightIndex = -1;
   Timer? _searchDebounce;
   bool _isSearchingProducts = false;
   List<Product> _searchResults = [];
@@ -145,6 +153,7 @@ class _PosHardwareCalculatorDialogState
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleF7SkuHistoryKey);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (mounted) setState(() {});
@@ -184,6 +193,7 @@ class _PosHardwareCalculatorDialogState
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleF7SkuHistoryKey);
     _searchDebounce?.cancel();
     _tabController.dispose();
     _productSearchCtrl.dispose();
@@ -215,10 +225,16 @@ class _PosHardwareCalculatorDialogState
   }
 
   Future<void> _selectProduct(Product product) async {
+    final prevQuery = _productSearchCtrl.text.trim();
+    _hideSkuHistoryPopover();
     final reqId = ++_selectRequestSeq;
     final config =
         await HardwareCalculatorEngine.resolveConfigForProduct(product);
     if (!mounted || reqId != _selectRequestSeq) return;
+    _recordSkuHistory(
+      term: prevQuery,
+      product: product,
+    );
 
     setState(() {
       _selectedProduct = product;
@@ -455,9 +471,253 @@ class _PosHardwareCalculatorDialogState
     } catch (_) {}
   }
 
+  List<Product> _resolveRecentSkuProducts(
+    CatalogProvider catalog,
+    LocalTerminalProvider? localTerminal,
+  ) {
+    final ids = localTerminal?.recentProductIdsForScope(
+          LocalTerminalProvider.scopeHardwareCalc,
+        ) ??
+        const <int>[];
+    if (ids.isEmpty) return const [];
+    final resolved = catalog.resolveRecentProducts(ids, activeOnly: true);
+    final missing = catalog.unhydratedRecentProductIds(ids);
+    if (missing.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(catalog.syncPinnedProducts(missing));
+      });
+    }
+    return resolved;
+  }
+
+  bool _hasSkuHistoryEntries(
+    CatalogProvider catalog,
+    LocalTerminalProvider? localTerminal,
+  ) {
+    if (localTerminal == null) return false;
+    final terms = localTerminal.recentTermsForScope(
+      LocalTerminalProvider.scopeHardwareCalc,
+    );
+    if (terms.isNotEmpty) return true;
+    return _resolveRecentSkuProducts(catalog, localTerminal).isNotEmpty;
+  }
+
+  bool _handleF7SkuHistoryKey(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event is! KeyDownEvent) return false;
+    if (_selectedProduct != null) return false;
+
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
+        _skuHistoryPortalController.isShowing) {
+      _hideSkuHistoryPopover();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        _skuHistoryPortalController.isShowing) {
+      _hideSkuHistoryPopover();
+      return false;
+    }
+    if (_productSearchCtrl.text.trim().isEmpty &&
+        (_productSearchFocus.hasFocus ||
+            _skuHistoryPortalController.isShowing)) {
+      final localTerminal =
+          tryGetLocalTerminalProvider(context, listen: false);
+      final catalog = context.read<CatalogProvider>();
+      final terms = localTerminal?.recentTermsForScope(
+            LocalTerminalProvider.scopeHardwareCalc,
+          ) ??
+          const <String>[];
+      final products = _resolveRecentSkuProducts(catalog, localTerminal);
+      final total = terms.length + products.length;
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown && total > 0) {
+        if (!_skuHistoryPortalController.isShowing) {
+          _showSkuHistoryPopoverIfAvailable(initialHighlightIndex: 0);
+        } else {
+          setState(() {
+            _skuHistoryHighlightIndex =
+                (_skuHistoryHighlightIndex + 1).clamp(0, total - 1);
+          });
+        }
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+          _skuHistoryPortalController.isShowing) {
+        setState(() {
+          _skuHistoryHighlightIndex = _skuHistoryHighlightIndex <= 0
+              ? -1
+              : _skuHistoryHighlightIndex - 1;
+        });
+        return true;
+      }
+      if ((event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+          _skuHistoryPortalController.isShowing &&
+          _skuHistoryHighlightIndex >= 0) {
+        if (_skuHistoryHighlightIndex < terms.length) {
+          final term = terms[_skuHistoryHighlightIndex];
+          _hideSkuHistoryPopover();
+          _productSearchCtrl.text = term;
+          _productSearchCtrl.selection =
+              TextSelection.collapsed(offset: term.length);
+          _onProductSearchChanged(term);
+          _productSearchFocus.requestFocus();
+          return true;
+        }
+        final pIdx = _skuHistoryHighlightIndex - terms.length;
+        if (pIdx >= 0 && pIdx < products.length) {
+          _hideSkuHistoryPopover();
+          _selectProduct(products[pIdx]);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void _showSkuHistoryPopoverIfAvailable({int initialHighlightIndex = -1}) {
+    if (!mounted ||
+        _selectedProduct != null ||
+        _productSearchCtrl.text.trim().isNotEmpty) {
+      return;
+    }
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    final catalog = context.read<CatalogProvider>();
+    if (!_hasSkuHistoryEntries(catalog, localTerminal)) return;
+    if (_skuHistoryHighlightIndex != initialHighlightIndex) {
+      setState(() => _skuHistoryHighlightIndex = initialHighlightIndex);
+    }
+    if (!_skuHistoryPortalController.isShowing) {
+      _skuHistoryPortalController.show();
+    }
+  }
+
+  void _hideSkuHistoryPopover() {
+    if (_skuHistoryHighlightIndex != -1 && mounted) {
+      setState(() => _skuHistoryHighlightIndex = -1);
+    } else {
+      _skuHistoryHighlightIndex = -1;
+    }
+    if (_skuHistoryPortalController.isShowing) {
+      _skuHistoryPortalController.hide();
+    }
+  }
+
+  void _recordSkuHistory({String? term, Product? product}) {
+    if (product != null) {
+      try {
+        context.read<CatalogProvider>().registerRecentlySeenProducts([product]);
+      } catch (_) {}
+    }
+    final validTerm =
+        (term != null && LocalTerminalProvider.isValidRecentSearchTerm(term))
+            ? term
+            : null;
+    final prodId = (product != null && product.active) ? product.id : null;
+    if (validTerm == null && prodId == null) return;
+    final localTerminal = tryGetLocalTerminalProvider(context, listen: false);
+    if (localTerminal == null) return;
+    unawaited(localTerminal.recordRecentSearchForScope(
+      LocalTerminalProvider.scopeHardwareCalc,
+      term: validTerm,
+      selectedProductId: prodId,
+    ));
+  }
+
+  Widget _buildSkuHistoryOverlay(
+    BuildContext overlayContext,
+    OverlayChildLayoutInfo info,
+  ) {
+    return PosSearchHistoryPopover.buildAnchoredOverlay(
+      info: info,
+      maxWidth: 560.0,
+      maxOverlayHeight: 320.0,
+      child: Consumer<CatalogProvider>(
+        builder: (ctx, catalog, _) {
+          final localTerminal = tryGetLocalTerminalProvider(ctx, listen: true);
+          final terms = localTerminal?.recentTermsForScope(
+                LocalTerminalProvider.scopeHardwareCalc,
+              ) ??
+              const <String>[];
+          final products = _resolveRecentSkuProducts(catalog, localTerminal);
+
+          if (localTerminal == null || (terms.isEmpty && products.isEmpty)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _hideSkuHistoryPopover();
+            });
+            return const SizedBox.shrink();
+          }
+
+          return PosSearchHistoryPopover(
+            containerKey: const ValueKey('f7_sku_search_history_overlay'),
+            terms: terms,
+            products: products,
+            highlightedIndex: _skuHistoryHighlightIndex,
+            tapGroupId: _skuHistoryTapGroupId,
+            maxWidth: 560.0,
+            maxHeight: 320.0,
+            productActionIcon: Icons.straighten_rounded,
+            onDismiss: _hideSkuHistoryPopover,
+            onClearAll: () {
+              unawaited(localTerminal.clearRecentSearchesForScope(
+                LocalTerminalProvider.scopeHardwareCalc,
+              ));
+              _hideSkuHistoryPopover();
+              _productSearchFocus.requestFocus();
+            },
+            onSelectTerm: (term) {
+              _hideSkuHistoryPopover();
+              _productSearchCtrl.text = term;
+              _productSearchCtrl.selection =
+                  TextSelection.collapsed(offset: term.length);
+              _onProductSearchChanged(term);
+              _productSearchFocus.requestFocus();
+            },
+            onRemoveTerm: (term) {
+              final willBeEmpty = terms.length <= 1 && products.isEmpty;
+              unawaited(localTerminal.removeRecentTermForScope(
+                LocalTerminalProvider.scopeHardwareCalc,
+                term,
+              ));
+              if (willBeEmpty) {
+                _hideSkuHistoryPopover();
+              } else if (_skuHistoryHighlightIndex != -1) {
+                setState(() => _skuHistoryHighlightIndex = -1);
+              }
+            },
+            onSelectProduct: (p) {
+              _hideSkuHistoryPopover();
+              _selectProduct(p);
+            },
+            onRemoveProduct: (productId) {
+              final willBeEmpty = products.length <= 1 && terms.isEmpty;
+              unawaited(localTerminal.removeRecentProductIdForScope(
+                LocalTerminalProvider.scopeHardwareCalc,
+                productId,
+              ));
+              if (willBeEmpty) {
+                _hideSkuHistoryPopover();
+              } else if (_skuHistoryHighlightIndex != -1) {
+                setState(() => _skuHistoryHighlightIndex = -1);
+              }
+            },
+            priceResolver: (p) => (
+              price: _resolveUnitPriceForProduct(p, 1.0) ?? p.sellingPrice,
+              crossedOutPrice: null,
+              hasActiveOffer: false,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _onProductSearchChanged(String raw) {
     _searchDebounce?.cancel();
     final q = raw.trim();
+    if (q.isNotEmpty) {
+      _hideSkuHistoryPopover();
+    }
     if (q.isEmpty) {
       setState(() {
         _searchResults = [];
@@ -469,10 +729,13 @@ class _PosHardwareCalculatorDialogState
     // Búsqueda inmediata en memoria + remota con debounce
     final catalog = context.read<CatalogProvider>();
     final localMatches = catalog.activeProducts
-        .where((p) =>
-            (p.name.toLowerCase().contains(q.toLowerCase()) ||
-                (p.barcode?.toLowerCase().contains(q.toLowerCase()) ?? false) ||
-                p.internalCode.toLowerCase().contains(q.toLowerCase())))
+        .where((p) => matchesSpanishSearchQuery(q, [
+              p.name,
+              p.barcode,
+              p.internalCode,
+              p.supplierSku,
+              p.technicalSpec,
+            ]))
         .take(12)
         .toList();
 
@@ -485,12 +748,17 @@ class _PosHardwareCalculatorDialogState
       try {
         final remote = await catalog.searchProductsRemote(q, perPage: 20);
         if (!mounted || _productSearchCtrl.text.trim() != q) return;
+        catalog.registerRecentlySeenProducts(remote);
         final byId = <int, Product>{for (final p in localMatches) p.id: p};
         for (final p in remote) {
           if (p.active) byId[p.id] = p;
         }
+        final mergedResults = byId.values.take(15).toList();
+        if (mergedResults.isNotEmpty) {
+          _recordSkuHistory(term: q);
+        }
         setState(() {
-          _searchResults = byId.values.take(15).toList();
+          _searchResults = mergedResults;
           _isSearchingProducts = false;
         });
       } catch (_) {
@@ -745,12 +1013,20 @@ class _PosHardwareCalculatorDialogState
             _tierDisplayName(_previewTier, _previewCustomTierLabel);
         final decision = await showDialog<String>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Lista de precios diferente'),
-            content: Text(
+          builder: (ctx) => AppModalShell(
+            title: 'Lista de precios diferente',
+            icon: Icons.price_change_rounded,
+            accent: AppModalAccent.amber,
+            compact: true,
+            maxWidth: 440,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx, 'cancel'),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+            body: Text(
               'El presupuesto actual usa "${qProv.activePriceListLabel}" y calculaste con "$previewLabel". ¿Cómo querés continuar?',
+              style: const TextStyle(fontSize: 13.5, height: 1.4),
             ),
-            actions: [
+            footerActions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'cancel'),
                 child: const Text('Cancelar'),
@@ -807,12 +1083,20 @@ class _PosHardwareCalculatorDialogState
             _tierDisplayName(_previewTier, _previewCustomTierLabel);
         final decision = await showDialog<String>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Lista de precios diferente'),
-            content: Text(
+          builder: (ctx) => AppModalShell(
+            title: 'Lista de precios diferente',
+            icon: Icons.price_change_rounded,
+            accent: AppModalAccent.amber,
+            compact: true,
+            maxWidth: 440,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx, 'cancel'),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+            body: Text(
               'El carrito actual usa "$cartLabel" y este cálculo usa "$previewLabel". ¿Cómo querés aplicarlo?',
+              style: const TextStyle(fontSize: 13.5, height: 1.4),
             ),
-            actions: [
+            footerActions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'cancel'),
                 child: const Text('Cancelar'),
@@ -936,140 +1220,132 @@ class _PosHardwareCalculatorDialogState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Row(
+      builder: (ctx) => AppModalShell(
+        title: 'Emitir Presupuesto Rápido de este Cálculo',
+        icon: Icons.request_quote_rounded,
+        accent: AppModalAccent.indigo,
+        compact: true,
+        maxWidth: 460,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.request_quote_rounded, color: Colors.indigo.shade700),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Emitir Presupuesto Rápido de este Cálculo',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.teal.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.shield_outlined,
+                      size: 18, color: Colors.teal.shade800),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tu carrito actual de caja NO se borrará ni modificará.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.teal.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    prod.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    summary.customDetailsNote,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.indigo.shade900,
+                    ),
+                  ),
+                  const Divider(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${summary.billingQty.toQty()} ${summary.billingUnit} × \$${unitPrice.toCurrency()}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        '\$${subtotal.toCurrency()}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.indigo.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Cliente (Opcional)',
+                prefixIcon: Icon(Icons.person_outline, size: 19),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'WhatsApp / Teléfono (Opcional)',
+                prefixIcon: Icon(Icons.phone_outlined, size: 19),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Observaciones adicionales (Opcional)',
+                prefixIcon: Icon(Icons.notes_outlined, size: 19),
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
             ),
           ],
         ),
-        content: SizedBox(
-          width: 430,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.teal.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.teal.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.shield_outlined,
-                        size: 18, color: Colors.teal.shade800),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Tu carrito actual de caja NO se borrará ni modificará.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.teal.shade900,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      prod.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      summary.customDetailsNote,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.indigo.shade900,
-                      ),
-                    ),
-                    const Divider(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${summary.billingQty.toQty()} ${summary.billingUnit} × \$${unitPrice.toCurrency()}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          '\$${subtotal.toCurrency()}',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.indigo.shade800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del Cliente (Opcional)',
-                  prefixIcon: Icon(Icons.person_outline, size: 19),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'WhatsApp / Teléfono (Opcional)',
-                  prefixIcon: Icon(Icons.phone_outlined, size: 19),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: notesCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Observaciones adicionales (Opcional)',
-                  prefixIcon: Icon(Icons.notes_outlined, size: 19),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.indigo.shade700,
+              backgroundColor: AppColors.indigo,
             ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.description_rounded, size: 18),
@@ -1184,27 +1460,20 @@ class _PosHardwareCalculatorDialogState
     if (_selectedProduct != null && !_currentItemAdded && summary.isValid) {
       final choice = await showDialog<String>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: Row(
-            children: [
-              Icon(Icons.handyman_rounded, color: Colors.amber.shade800),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Buscar complemento: "${comp.searchKeyword}"',
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: Text(
+        builder: (ctx) => AppModalShell(
+          title: 'Buscar complemento: "${comp.searchKeyword}"',
+          icon: Icons.handyman_rounded,
+          accent: AppModalAccent.amber,
+          compact: true,
+          maxWidth: 460,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx, 'cancel'),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+          body: Text(
             'Tenés calculado "${_selectedProduct!.name}" (${summary.primaryHeadline}) pero todavía no lo agregaste.\n\n¿Querés agregarlo ahora antes de buscar "${comp.searchKeyword}"?',
-            style: const TextStyle(fontSize: 13.5),
+            style: const TextStyle(fontSize: 13.5, height: 1.4),
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'cancel'),
               child: const Text('Volver al Cálculo'),
@@ -1253,6 +1522,9 @@ class _PosHardwareCalculatorDialogState
         : null;
 
     return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: ConstrainedBox(
@@ -1311,63 +1583,44 @@ class _PosHardwareCalculatorDialogState
   }
 
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 14, 12),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    return const AppModalHeader(
+      title: 'Calculadora Rápida de Mostrador Ferretero (F7)',
+      subtitle:
+          'Calculá al instante tablas, paquetes, chapas o litros para consulta rápida, carrito o presupuesto',
+      icon: Icons.straighten_rounded,
+      accent: AppModalAccent.teal,
+    );
+  }
+
+  ButtonStyle get _tealSegmentedStyle => SegmentedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textSecondary,
+        selectedBackgroundColor: AppColors.tealSoft,
+        selectedForegroundColor: AppColors.tealDark,
+        side: const BorderSide(color: AppColors.borderStrong),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      );
+
+  ChoiceChip _tealChoiceChip({
+    required Widget label,
+    required bool selected,
+    required ValueChanged<bool> onSelected,
+  }) {
+    return ChoiceChip(
+      label: label,
+      selected: selected,
+      selectedColor: AppColors.tealSoft,
+      checkmarkColor: AppColors.tealDark,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? const Color(0xFF14B8A6) : AppColors.borderStrong,
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0D9488).withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: const Color(0xFF2DD4BF).withValues(alpha: 0.5),
-              ),
-            ),
-            child: const Icon(
-              Icons.straighten_rounded,
-              color: Color(0xFF2DD4BF),
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Calculadora Rápida de Mostrador Ferretero (F7)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Text(
-                  'Calculá al instante tablas, paquetes, chapas o litros para consulta rápida, carrito o presupuesto',
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 11.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded, color: Colors.white70),
-            tooltip: 'Cerrar (Esc)',
-          ),
-        ],
+      labelStyle: TextStyle(
+        color: selected ? AppColors.tealDark : AppColors.textPrimary,
+        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
       ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      onSelected: onSelected,
     );
   }
 
@@ -1475,42 +1728,97 @@ class _PosHardwareCalculatorDialogState
                           ],
                         ),
                       )
-                    : TextField(
-                        controller: _productSearchCtrl,
-                        focusNode: _productSearchFocus,
-                        onChanged: _onProductSearchChanged,
-                        decoration: InputDecoration(
-                          hintText:
-                              'Opcional: Buscá un producto del catálogo (ej. "Machimbre 4", "Chapa", "Látex") para ver precio total...',
-                          hintStyle: const TextStyle(fontSize: 12.5),
-                          prefixIcon: _isSearchingProducts
-                              ? const Padding(
-                                  padding: EdgeInsets.all(10),
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
-                                )
-                              : const Icon(Icons.search_rounded, size: 20),
-                          suffixIcon: _productSearchCtrl.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _productSearchCtrl.clear();
-                                    _onProductSearchChanged('');
-                                  },
-                                )
-                              : null,
-                          isDense: true,
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
+                    : TapRegion(
+                        groupId: _skuHistoryTapGroupId,
+                        child: OverlayPortal.overlayChildLayoutBuilder(
+                          controller: _skuHistoryPortalController,
+                          overlayChildBuilder: _buildSkuHistoryOverlay,
+                          child: TextField(
+                            controller: _productSearchCtrl,
+                            focusNode: _productSearchFocus,
+                            onTap: () {
+                              if (_productSearchCtrl.text.trim().isEmpty) {
+                                _showSkuHistoryPopoverIfAvailable();
+                              }
+                            },
+                            onChanged: _onProductSearchChanged,
+                            decoration: InputDecoration(
+                              hintText:
+                                  'Opcional: Buscá un producto del catálogo (ej. "Machimbre 4", "Chapa", "Látex") para ver precio total...',
+                              hintStyle: const TextStyle(fontSize: 12.5),
+                              prefixIcon: _isSearchingProducts
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(10),
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
+                                    )
+                                  : const Icon(Icons.search_rounded, size: 20),
+                              suffixIcon: _productSearchCtrl.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 18),
+                                      onPressed: () {
+                                        _productSearchCtrl.clear();
+                                        _onProductSearchChanged('');
+                                      },
+                                    )
+                                  : Builder(
+                                      builder: (ctx) {
+                                        final localTerminal =
+                                            tryGetLocalTerminalProvider(ctx,
+                                                listen: true);
+                                        final catalog =
+                                            ctx.watch<CatalogProvider>();
+                                        if (!_hasSkuHistoryEntries(
+                                            catalog, localTerminal)) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Focus(
+                                          canRequestFocus: false,
+                                          descendantsAreFocusable: false,
+                                          child: Tooltip(
+                                            message: 'Búsquedas recientes (F7)',
+                                            child: IconButton(
+                                              key: const ValueKey(
+                                                  'f7_sku_history_toggle_btn'),
+                                              icon: Icon(
+                                                Icons.history_rounded,
+                                                size: 19,
+                                                color:
+                                                    _skuHistoryPortalController
+                                                            .isShowing
+                                                        ? const Color(0xFF0F766E)
+                                                        : Colors.blueGrey.shade600,
+                                              ),
+                                              onPressed: () {
+                                                if (_skuHistoryPortalController
+                                                    .isShowing) {
+                                                  _hideSkuHistoryPopover();
+                                                } else {
+                                                  _showSkuHistoryPopoverIfAvailable();
+                                                }
+                                                _productSearchFocus
+                                                    .requestFocus();
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                              isDense: true,
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade300),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -1678,6 +1986,7 @@ class _PosHardwareCalculatorDialogState
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: SegmentedButton<bool>(
+                          style: _tealSegmentedStyle,
                           segments: const [
                             ButtonSegment(
                               value: false,
@@ -1744,7 +2053,7 @@ class _PosHardwareCalculatorDialogState
                         spacing: 6,
                         children: [0.0, 5.0, 10.0, 15.0].map((pct) {
                           final selected = (_woodWastePct - pct).abs() < 0.1;
-                          return ChoiceChip(
+                          return _tealChoiceChip(
                             label: Text(
                               pct == 0 ? '0% (Exacto)' : '+${pct.toInt()}%',
                               style: const TextStyle(fontSize: 12),
@@ -1784,7 +2093,7 @@ class _PosHardwareCalculatorDialogState
                         children: [
                           ...HardwareCalculatorEngine.woodInchPresets.map((p) {
                             final selected = _woodInchPreset == p.key;
-                            return ChoiceChip(
+                            return _tealChoiceChip(
                               label: Text('${p.key}"',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
@@ -1799,7 +2108,7 @@ class _PosHardwareCalculatorDialogState
                               }),
                             );
                           }),
-                          ChoiceChip(
+                          _tealChoiceChip(
                             label: const Text('Manual'),
                             selected: _woodInchPreset == 'custom',
                             onSelected: (_) =>
@@ -1919,6 +2228,7 @@ class _PosHardwareCalculatorDialogState
                                 fit: BoxFit.scaleDown,
                                 alignment: Alignment.centerLeft,
                                 child: SegmentedButton<M2BillingBasis>(
+                                  style: _tealSegmentedStyle,
                                   segments: const [
                                     ButtonSegment(
                                       value: M2BillingBasis.nominal,
@@ -2184,6 +2494,7 @@ class _PosHardwareCalculatorDialogState
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: SegmentedButton<bool>(
+                          style: _tealSegmentedStyle,
                           segments: const [
                             ButtonSegment(
                               value: false,
@@ -2247,7 +2558,7 @@ class _PosHardwareCalculatorDialogState
                       Wrap(
                         spacing: 6,
                         children: [1, 2, 3, 4].map((c) {
-                          return ChoiceChip(
+                          return _tealChoiceChip(
                             label: Text('$c ${c == 1 ? "mano" : "manos"}'),
                             selected: _paintCoats == c,
                             onSelected: (_) => setState(() => _paintCoats = c),
@@ -2365,6 +2676,7 @@ class _PosHardwareCalculatorDialogState
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: SegmentedButton<PaintYieldMode>(
+                          style: _tealSegmentedStyle,
                           segments: const [
                             ButtonSegment(
                               value: PaintYieldMode.perCoat,
@@ -2659,6 +2971,12 @@ class _PosHardwareCalculatorDialogState
                     }
                     if (mounted) Navigator.of(context).pop();
                   },
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                   icon: const Icon(Icons.visibility_outlined, size: 18),
                   label: const Text('Solo Consulta · Cerrar (Esc)'),
                 ),
@@ -2679,8 +2997,11 @@ class _PosHardwareCalculatorDialogState
                             const Icon(Icons.request_quote_outlined, size: 18),
                         label: const Text('📄 Enviar a Presupuesto'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF3F51B5),
-                          side: const BorderSide(color: Color(0xFF3F51B5)),
+                          foregroundColor: AppColors.indigo,
+                          side: const BorderSide(color: AppColors.indigo),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 12),
                         ),
@@ -2701,7 +3022,10 @@ class _PosHardwareCalculatorDialogState
                             fontWeight: FontWeight.w800, fontSize: 14),
                       ),
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F766E),
+                        backgroundColor: AppColors.tealDark,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 18, vertical: 13),
                       ),
@@ -2722,43 +3046,11 @@ class _PosHardwareCalculatorDialogState
     required Color accent,
     required Widget child,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: accent),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 16),
-          child,
-        ],
-      ),
+    return AppSectionCard(
+      title: title,
+      icon: icon,
+      accent: accent,
+      child: child,
     );
   }
 
@@ -2799,7 +3091,7 @@ class _PosHardwareCalculatorDialogState
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return ChoiceChip(
+    return _tealChoiceChip(
       label: Text(
         label,
         style: TextStyle(

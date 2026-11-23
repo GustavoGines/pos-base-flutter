@@ -415,6 +415,20 @@ class CatalogRepositoryImpl implements CatalogRepository {
     return await remoteDataSource.importProducts(fileBytes, filename);
   }
 
+  Future<Map<String, dynamic>> importProductsWithOptions(
+    List<int> fileBytes,
+    String filename, {
+    int? defaultSupplierId,
+    double? defaultMarginPercent,
+  }) async {
+    return await remoteDataSource.importProducts(
+      fileBytes,
+      filename,
+      defaultSupplierId: defaultSupplierId,
+      defaultMarginPercent: defaultMarginPercent,
+    );
+  }
+
   @override
   Future<Product> updateProductCalcConfig(
     int productId,

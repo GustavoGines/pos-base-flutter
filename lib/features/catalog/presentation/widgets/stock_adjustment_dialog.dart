@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/catalog/data/models/product_batch_model.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -41,10 +43,19 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     try {
       final s = Provider.of<SettingsProvider?>(context, listen: false);
       if (s != null) {
-        return s.features.batchExpiration || s.features.production;
+        return !s.safeIsHardwareStore &&
+            (s.features.batchExpiration || s.features.production);
       }
     } catch (_) {}
     return true;
+  }
+
+  String _resolveUnitLabel(Product product) {
+    final u = product.unitType.trim().toLowerCase();
+    if (u == 'un' || u.isEmpty) {
+      return product.isSoldByWeight ? 'Kg' : 'unidades';
+    }
+    return product.unitShortLabel;
   }
 
   @override
@@ -102,48 +113,18 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
 
     if (qty != null && qty > 0) {
       final typeLabel = _selectedType == 'in' ? 'INGRESO' : 'EGRESO';
-      final unitLabel = widget.product.isSoldByWeight ? 'Kg' : 'unidades';
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('Confirmar $typeLabel de Stock'),
-          content: Text.rich(
-            TextSpan(
-              style: Theme.of(ctx).textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text:
-                      '${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _selectedType == 'in'
-                        ? Colors.teal.shade700
-                        : Colors.orange.shade800,
-                  ),
-                ),
-                const TextSpan(text: ' de '),
-                TextSpan(
-                  text: '"${widget.product.name}"',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancelar')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: _selectedType == 'in'
-                    ? Colors.teal
-                    : Colors.orange.shade700,
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Confirmar $typeLabel'),
-            ),
-          ],
-        ),
+      final unitLabel = _resolveUnitLabel(widget.product);
+      final qtyStr = qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0);
+      final confirmed = await AppConfirmDialog.show(
+        context,
+        title: 'Confirmar $typeLabel de Stock',
+        message: '$qtyStr $unitLabel de "${widget.product.name}"',
+        confirmLabel: 'Confirmar $typeLabel',
+        cancelLabel: 'Cancelar',
+        icon: _selectedType == 'in'
+            ? Icons.add_box_outlined
+            : Icons.indeterminate_check_box_outlined,
+        isDestructive: _selectedType != 'in',
       );
 
       if (confirmed != true) return;
@@ -195,7 +176,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
         String snackMsg;
         if (qty != null && qty > 0) {
           final action = _selectedType == 'in' ? 'ingresaron' : 'egresaron';
-          final unitLabel = widget.product.isSoldByWeight ? 'Kg' : 'unidades';
+          final unitLabel = _resolveUnitLabel(widget.product);
           snackMsg =
               '✓ Se $action ${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel. Stock actual: ${newStock.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel.';
         } else {
@@ -218,23 +199,19 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final unitLabel = product.isSoldByWeight ? 'Kg' : 'unidades';
-    return AlertDialog(
-      title: Row(
+    final unitLabel = _resolveUnitLabel(product);
+    return AppModalShell(
+      title: 'Ajuste de Stock',
+      subtitle: product.name,
+      icon: Icons.warehouse_outlined,
+      accent: AppModalAccent.teal,
+      compact: true,
+      maxWidth: 480,
+      bodyPadding: const EdgeInsets.all(18),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warehouse_outlined, color: Colors.teal.shade700),
-          const SizedBox(width: 8),
-          const Text('Ajuste de Stock'),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
               // Info del producto
               Container(
                 padding: const EdgeInsets.all(12),
@@ -543,12 +520,9 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 16),
           ],
         ),
-        ),
-      ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
@@ -560,15 +534,21 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : Icon(_selectedType == 'in' ? Icons.add : Icons.remove,
-                    size: 18),
-            label: Text(_selectedType == 'in'
-                ? 'Registrar Ingreso'
-                : 'Registrar Egreso'),
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(
+                    _selectedType == 'in' ? Icons.add : Icons.remove,
+                    size: 18,
+                  ),
+            label: Text(
+              _selectedType == 'in' ? 'Registrar Ingreso' : 'Registrar Egreso',
+            ),
             style: FilledButton.styleFrom(
-              backgroundColor:
-                  _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
+              backgroundColor: _selectedType == 'in'
+                  ? AppColors.teal
+                  : Colors.orange.shade700,
             ),
             onPressed: p.isLoading ? null : _submit,
           ),
