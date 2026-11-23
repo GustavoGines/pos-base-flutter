@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/logistics_provider.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/presentation/widgets/thermal_receipt_widget.dart';
@@ -143,44 +144,44 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
     final provider = context.watch<LogisticsProvider>();
     final isDispatching = provider.isDispatching;
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
+    return AppModalShell(
+      title: 'Despachar Remito #${widget.note['id']}',
+      subtitle: 'Definí las cantidades a entregar en este despacho',
+      icon: Icons.local_shipping_outlined,
+      accent: AppModalAccent.teal,
+      maxWidth: 680,
+      maxHeight: 680,
+      expandBody: true,
+      onClose: () {
+        if (!isDispatching) Navigator.pop(context);
+      },
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.inventory, color: Colors.blue.shade700, size: 32),
-          const SizedBox(width: 12),
-          Text('Despachar Remito #${widget.note['id']}',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: SizedBox(
-        width: 650,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.blue),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Cantidades a entregar AHORA. El sistema carga automáticamente lo restante. Puede ajustarlo si es una entrega parcial.',
-                      style: TextStyle(color: Colors.blue, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
             ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: ListView.separated(
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Cantidades a entregar AHORA. El sistema carga automáticamente lo restante. Puede ajustarlo si es una entrega parcial.',
+                    style: TextStyle(color: Colors.blue, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: _items.length,
                 separatorBuilder: (_, __) => const Divider(),
@@ -287,32 +288,28 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                 },
               ),
             ),
-          ],
-        ),
+        ],
       ),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: isDispatching ? null : () => Navigator.pop(context),
-          child: const Text('Cancelar',
-              style: TextStyle(color: Colors.grey, fontSize: 16)),
+          child: const Text('Cancelar'),
         ),
-        const SizedBox(width: 12),
         FilledButton.icon(
           onPressed: isDispatching ? null : _onConfirm,
           icon: isDispatching
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2))
               : const Icon(Icons.check_circle_outline),
           label: Text(isDispatching ? 'PROCESANDO...' : 'CONFIRMAR DESPACHO',
               style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.green.shade700,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),

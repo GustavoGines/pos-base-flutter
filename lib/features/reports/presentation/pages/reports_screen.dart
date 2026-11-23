@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -1689,72 +1690,32 @@ class _PosQuickAccessRankingSectionState
     final catalogProv = context.read<CatalogProvider>();
 
     if (action == 'reset') {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.cleaning_services_rounded, color: Color(0xFFE65100)),
-              SizedBox(width: 10),
-              Expanded(child: Text('¿Reiniciar Ranking del POS a Cero?')),
-            ],
-          ),
-          content: const Text(
+      final confirmed = await AppConfirmDialog.show(
+        context,
+        title: '¿Reiniciar Ranking del POS a Cero?',
+        message:
             'Todos los contadores de "Más Vendidos" del Acceso Rápido volverán a 0 y el cambio quedará guardado de inmediato en el POS.\n\n'
             'A partir de este momento, el ranking solo sumará las ventas nuevas que se realicen hacia adelante. '
             'Los reportes contables e históricos de ventas NO se ven afectados.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE65100),
-              ),
-              icon: const Icon(Icons.check, size: 16),
-              label: const Text('Sí, reiniciar a cero'),
-            ),
-          ],
-        ),
+        confirmLabel: 'Sí, reiniciar a cero',
+        cancelLabel: 'Cancelar',
+        icon: Icons.cleaning_services_rounded,
       );
       if (confirmed != true || !mounted) return;
     } else if (action == 'restore_history') {
       final periodLabel = _selectedDays == 0
           ? 'todo el historial registrado'
           : 'los últimos $_selectedDays días';
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.history_rounded, color: Color(0xFFE65100)),
-              SizedBox(width: 10),
-              Expanded(child: Text('¿Restaurar y recalcular desde el historial?')),
-            ],
-          ),
-          content: Text(
+      final confirmed = await AppConfirmDialog.show(
+        context,
+        title: '¿Restaurar y recalcular desde el historial?',
+        message:
             'Se volverán a calcular los puntos de "Más Vendidos" leyendo todas las ventas de $periodLabel '
             '(dejando sin efecto cualquier reinicio a cero anterior).\n\n'
             'Usá esta opción si pusiste el ranking en cero por error o si querés recuperar las estadísticas históricas en el mostrador.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE65100),
-              ),
-              icon: const Icon(Icons.sync_rounded, size: 16),
-              label: const Text('Sí, restaurar historial'),
-            ),
-          ],
-        ),
+        confirmLabel: 'Sí, restaurar historial',
+        cancelLabel: 'Cancelar',
+        icon: Icons.history_rounded,
       );
       if (confirmed != true || !mounted) return;
     }

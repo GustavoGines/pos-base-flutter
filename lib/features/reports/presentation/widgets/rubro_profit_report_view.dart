@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -267,47 +268,53 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setState) {
-            return AlertDialog(
-              title: const Text('Filtrar por Rubros'),
-              content: SizedBox(
-                width: 300,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CheckboxListTile(
-                        title: const Text('Todos los Rubros', style: TextStyle(fontWeight: FontWeight.bold)),
-                        value: tempSelected.isEmpty,
-                        onChanged: (val) {
-                          if (val == true) {
-                            setState(() {
-                              tempSelected.clear();
-                            });
-                          }
-                        },
-                      ),
-                      const Divider(),
-                      ...rubrosList.map((r) {
-                        final id = r['id'] as int;
-                        return CheckboxListTile(
-                          title: Text(r['name'] as String),
-                          value: tempSelected.contains(id),
-                          onChanged: (val) {
-                            setState(() {
-                              if (val == true) {
-                                tempSelected.add(id);
-                              } else {
-                                tempSelected.remove(id);
-                              }
-                            });
-                          },
-                        );
-                      }),
-                    ],
+            return AppModalShell(
+              title: 'Filtrar por Rubros',
+              subtitle: 'Seleccioná los rubros que querés incluir en el análisis',
+              icon: Icons.filter_list_rounded,
+              accent: AppModalAccent.indigo,
+              compact: true,
+              maxWidth: 380,
+              useAlertDialogWrapper: true,
+              onClose: () => Navigator.pop(ctx, null),
+              bodyPadding: const EdgeInsets.symmetric(vertical: 8),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CheckboxListTile(
+                    title: const Text(
+                      'Todos los Rubros',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    value: tempSelected.isEmpty,
+                    onChanged: (val) {
+                      if (val == true) {
+                        setState(() {
+                          tempSelected.clear();
+                        });
+                      }
+                    },
                   ),
-                ),
+                  const Divider(height: 1),
+                  ...rubrosList.map((r) {
+                    final id = r['id'] as int;
+                    return CheckboxListTile(
+                      title: Text(r['name'] as String),
+                      value: tempSelected.contains(id),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            tempSelected.add(id);
+                          } else {
+                            tempSelected.remove(id);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                ],
               ),
-              actions: [
+              footerActions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, null),
                   child: const Text('Cancelar'),

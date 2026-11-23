@@ -5,7 +5,9 @@ import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/features/quotes/services/quote_pdf_service.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'quote_thermal_preview_dialog.dart';
 
@@ -118,98 +120,130 @@ class _QuoteSuccessDialogState extends State<QuoteSuccessDialog> {
   @override
   Widget build(BuildContext context) {
     // Etiqueta dinámica según el tamaño de papel configurado en esta terminal
-    final paperLabel = context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter' ? 'Carta' : 'A4';
+    final paperLabel =
+        context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter'
+            ? 'Carta'
+            : 'A4';
 
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      contentPadding: EdgeInsets.zero,
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header azul índigo con resumen
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.indigo.shade700,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 48),
-                  const SizedBox(height: 8),
-                  const Text('¡Presupuesto Generado!',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                  const SizedBox(height: 4),
-                  Text(widget.quote.quoteNumber,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                  Text(fmt.format(widget.quote.total),
-                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                ],
-              ),
+    return AppModalShell(
+      title: '¡Presupuesto Generado!',
+      subtitle: '${widget.quote.quoteNumber} · ${fmt.format(widget.quote.total)}',
+      icon: Icons.check_circle_rounded,
+      accent: AppModalAccent.emerald,
+      compact: true,
+      maxWidth: 440,
+      onClose: () => Navigator.pop(context),
+      bodyPadding: const EdgeInsets.all(20),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFECFDF5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFA7F3D0)),
             ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 🖨️ Botón Primario: Imprimir Ticket (Térmica)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF2E7D32),
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PRESUPUESTO',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF065F46),
+                        letterSpacing: 0.4,
+                      ),
                     ),
-                    onPressed: _printTicket,
-                    icon: const Icon(Icons.print_rounded, size: 28),
-                    label: const Text('Imprimir Ticket (Térmica)', style: TextStyle(fontSize: 16)),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  
-                  // Botones Secundarios: PDF y WhatsApp
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            foregroundColor: Colors.indigo.shade700,
-                          ),
-                          onPressed: _preview,
-                          icon: const Icon(Icons.picture_as_pdf_rounded),
-                          label: Text('Ver PDF ($paperLabel)'),
-                        ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.quote.quoteNumber,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _generatingPdf 
-                          ? const Center(child: CircularProgressIndicator()) 
-                          : OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                foregroundColor: const Color(0xFF25D366),
-                              ),
-                              onPressed: () async {
-                                if (_savedPath == null) await _generateAndSave();
-                                await _openWhatsApp();
-                              },
-                              icon: const Icon(Icons.rocket_launch_rounded),
-                              label: const Text('WhatsApp'),
-                            ),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+                Text(
+                  fmt.format(widget.quote.total),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF047857),
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 🖨️ Botón Primario: Imprimir Ticket (Térmica)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-          ],
-        ),
+            onPressed: _printTicket,
+            icon: const Icon(Icons.print_rounded, size: 24),
+            label: const Text(
+              'Imprimir Ticket (Térmica)',
+              style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 14),
+
+          // Botones Secundarios: PDF y WhatsApp
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: AppColors.indigo,
+                    side: BorderSide(color: Colors.indigo.shade200),
+                  ),
+                  onPressed: _preview,
+                  icon: const Icon(Icons.picture_as_pdf_rounded),
+                  label: Text('Ver PDF ($paperLabel)'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _generatingPdf
+                    ? const Center(child: CircularProgressIndicator())
+                    : OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          foregroundColor: const Color(0xFF16A34A),
+                          side: BorderSide(color: Colors.green.shade300),
+                        ),
+                        onPressed: () async {
+                          if (_savedPath == null) await _generateAndSave();
+                          await _openWhatsApp();
+                        },
+                        icon: const Icon(Icons.rocket_launch_rounded),
+                        label: const Text('WhatsApp'),
+                      ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cerrar'),

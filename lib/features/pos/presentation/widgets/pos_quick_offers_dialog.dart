@@ -8,7 +8,9 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
@@ -506,97 +508,106 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                         (it.subtitle != null && it.subtitle!.toLowerCase().contains(q));
                   }).toList();
 
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
-              contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(8),
+            return AppModalShell(
+              title: title,
+              subtitle: 'Elegí un grupo para sumar sus productos a la oferta',
+              icon: headerIcon,
+              accent: AppModalAccent.amber,
+              compact: true,
+              maxWidth: 460,
+              maxHeight: 460,
+              expandBody: true,
+              topBar: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                child: TextField(
+                  autofocus: true,
+                  onChanged: (v) => setDialogState(() => search = v),
+                  decoration: InputDecoration(
+                    hintText: 'Filtrar por nombre...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(headerIcon, color: const Color(0xFF7B1FA2), size: 20),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.of(dialogCtx).pop(),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 440,
-                height: 380,
-                child: Column(
-                  children: [
-                    TextField(
-                      autofocus: true,
-                      onChanged: (v) => setDialogState(() => search = v),
-                      decoration: InputDecoration(
-                        hintText: 'Filtrar por nombre...',
-                        prefixIcon: const Icon(Icons.search, size: 18),
-                        isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Text(
-                                'Sin coincidencias para "$search"',
-                                style: const TextStyle(color: Colors.grey, fontSize: 13),
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                              itemBuilder: (_, idx) {
-                                final item = filtered[idx];
-                                return ListTile(
-                                  dense: true,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  leading: Icon(headerIcon, size: 18, color: Colors.purple.shade700),
-                                  title: Text(
-                                    item.name,
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                  ),
-                                  subtitle: (item.subtitle != null && item.subtitle!.isNotEmpty)
-                                      ? Text(item.subtitle!, style: const TextStyle(fontSize: 11))
-                                      : null,
-                                  trailing: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.purple.shade50,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '+ Cargar',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.purple.shade800,
-                                      ),
-                                    ),
-                                  ),
-                                  onTap: () => Navigator.of(dialogCtx).pop((id: item.id, name: item.name)),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
                 ),
               ),
+              bodyPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              body: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Sin coincidencias para "$search"',
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Divider(
+                        height: 1,
+                        color: AppColors.border,
+                      ),
+                      itemBuilder: (_, idx) {
+                        final item = filtered[idx];
+                        return ListTile(
+                          dense: true,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          leading: Icon(
+                            headerIcon,
+                            size: 18,
+                            color: const Color(0xFFB45309),
+                          ),
+                          title: Text(
+                            item.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: (item.subtitle != null &&
+                                  item.subtitle!.isNotEmpty)
+                              ? Text(
+                                  item.subtitle!,
+                                  style: const TextStyle(fontSize: 11),
+                                )
+                              : null,
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              '+ Cargar',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
+                          onTap: () => Navigator.of(dialogCtx)
+                              .pop((id: item.id, name: item.name)),
+                        );
+                      },
+                    ),
+              footerActions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ],
             );
           },
         );
@@ -817,149 +828,174 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogCtx, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              title: Row(
+            return AppModalShell(
+              title: 'Relanzar Oferta',
+              subtitle: offer.name,
+              icon: Icons.rocket_launch_rounded,
+              accent: AppModalAccent.emerald,
+              compact: true,
+              maxWidth: 500,
+              onClose: () => Navigator.pop(ctx, false),
+              bodyPadding: const EdgeInsets.all(18),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
+                  Text(
+                    'Vas a volver a activar la oferta "${offer.name}" (${offer.type == 'percentage' ? "${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}% OFF" : "\$${offer.discountAmount?.toCurrency() ?? "0"} OFF"} en ${offer.products.length} productos).',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
                     ),
-                    child: Icon(Icons.rocket_launch_rounded, color: Colors.green.shade700, size: 22),
                   ),
-                  const SizedBox(width: 10),
-                  const Text('Relanzar Oferta', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: SizedBox(
-                width: 480,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Vas a volver a activar la oferta "${offer.name}" (${offer.type == 'percentage' ? "${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}% OFF" : "\$${offer.discountAmount?.toCurrency() ?? "0"} OFF"} en ${offer.products.length} productos).',
-                      style: const TextStyle(fontSize: 13, color: Colors.black87),
-                    ),
-                    const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                    // Selector de vigencia
-                    const Text('Elegí la nueva vigencia:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
+                  // Selector de vigencia
+                  const Text(
+                    'Elegí la nueva vigencia:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      ChoiceChip(
+                        label: const Text(
+                          '☀️ Diaria (Hoy)',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        selected: selectedPeriod == 'daily',
+                        selectedColor: AppColors.primarySoft,
+                        onSelected: (val) {
+                          if (val) setDialogState(() => selectedPeriod = 'daily');
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text(
+                          '📅 Semanal (7 días)',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        selected: selectedPeriod == 'weekly',
+                        selectedColor: AppColors.primarySoft,
+                        onSelected: (val) {
+                          if (val) setDialogState(() => selectedPeriod = 'weekly');
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text(
+                          '📆 Mensual (30 días)',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        selected: selectedPeriod == 'monthly',
+                        selectedColor: AppColors.primarySoft,
+                        onSelected: (val) {
+                          if (val) setDialogState(() => selectedPeriod = 'monthly');
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Checkbox de clonar/reactivar
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setDialogState(() => duplicate = !duplicate);
+                    },
+                    child: Row(
                       children: [
-                        ChoiceChip(
-                          label: const Text('☀️ Diaria (Hoy)', style: TextStyle(fontSize: 12)),
-                          selected: selectedPeriod == 'daily',
-                          selectedColor: Colors.purple.shade100,
-                          onSelected: (val) {
-                            if (val) setDialogState(() => selectedPeriod = 'daily');
+                        Checkbox(
+                          value: duplicate,
+                          onChanged: (v) {
+                            setDialogState(() => duplicate = v ?? true);
                           },
                         ),
-                        ChoiceChip(
-                          label: const Text('📅 Semanal (7 días)', style: TextStyle(fontSize: 12)),
-                          selected: selectedPeriod == 'weekly',
-                          selectedColor: Colors.purple.shade100,
-                          onSelected: (val) {
-                            if (val) setDialogState(() => selectedPeriod = 'weekly');
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('📆 Mensual (30 días)', style: TextStyle(fontSize: 12)),
-                          selected: selectedPeriod == 'monthly',
-                          selectedColor: Colors.purple.shade100,
-                          onSelected: (val) {
-                            if (val) setDialogState(() => selectedPeriod = 'monthly');
-                          },
+                        const Expanded(
+                          child: Text(
+                            'Crear como nuevo registro histórico (recomendado para conservar auditoría)',
+                            style: TextStyle(fontSize: 12),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
+                  ),
 
-                    // Checkbox de clonar/reactivar
-                    InkWell(
-                      onTap: () {
-                        setDialogState(() => duplicate = !duplicate);
-                      },
+                  if (invalidZeroProducts.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade300),
+                      ),
                       child: Row(
                         children: [
-                          Checkbox(
-                            value: duplicate,
-                            onChanged: (v) {
-                              setDialogState(() => duplicate = v ?? true);
-                            },
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: Colors.red.shade800,
+                            size: 20,
                           ),
-                          const Expanded(
+                          const SizedBox(width: 8),
+                          Expanded(
                             child: Text(
-                              'Crear como nuevo registro histórico (recomendado para conservar auditoría)',
-                              style: TextStyle(fontSize: 12),
+                              'Descuento incompatible: ${invalidZeroProducts.length} producto(s) tienen hoy un precio menor o igual a \$${offer.discountAmount?.toCurrency() ?? "0"}. Usá "Plantilla" para ajustarla antes de activar.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red.shade900,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    if (invalidZeroProducts.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.error_outline_rounded, color: Colors.red.shade800, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Descuento incompatible: ${invalidZeroProducts.length} producto(s) tienen hoy un precio menor o igual a \$${offer.discountAmount?.toCurrency() ?? "0"}. Usá "Plantilla" para ajustarla antes de activar.',
-                                style: TextStyle(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    if (offer.hasMarginWarning) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.amber.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Atención: ${offer.marginWarnings.length} producto(s) tienen un precio con descuento menor al costo actual.',
-                                style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+
+                  if (offer.hasMarginWarning) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.amber.shade900,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Atención: ${offer.marginWarnings.length} producto(s) tienen un precio con descuento menor al costo actual.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.amber.shade900,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              actions: [
+              footerActions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
                   child: const Text('Cancelar'),
                 ),
                 if (invalidZeroProducts.isNotEmpty)
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange.shade800,
+                    ),
                     onPressed: () {
                       Navigator.pop(ctx, false);
                       _useOfferAsTemplate(offer);
@@ -969,7 +1005,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   )
                 else
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                    ),
                     onPressed: () => Navigator.pop(ctx, true),
                     icon: const Icon(Icons.bolt_rounded, size: 18),
                     label: const Text('Relanzar Ahora'),
@@ -1010,20 +1048,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   }
 
   Future<void> _handleDeleteOffer(OfferModel offer) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Eliminar Oferta'),
-        content: Text('¿Deseas dar de baja definitivamente la oferta "${offer.name}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Eliminar Oferta',
+      message:
+          '¿Deseas dar de baja definitivamente la oferta "${offer.name}"?',
+      confirmLabel: 'Eliminar',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
     if (confirm != true || !mounted) return;
 
@@ -1052,105 +1084,98 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     return RemoteScannerListener(
       debugLabel: 'PosQuickOffersDialog',
       onBarcodeScanned: _handleRemoteBarcodeScan,
-      child: Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Container(
-        width: 780,
-        height: 600,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Cabecera
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7B1FA2).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+      child: AppModalShell(
+        title: 'Ofertas y Promociones',
+        subtitle:
+            'Gestión integral, historial, plantillas y relanzamiento ágil de ofertas',
+        icon: Icons.local_offer_rounded,
+        accent: AppModalAccent.amber,
+        maxWidth: 800,
+        maxHeight: 640,
+        expandBody: true,
+        topBar: Container(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+          decoration: const BoxDecoration(
+            color: AppColors.surfaceMuted,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              indicator: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
-                  child: const Icon(Icons.local_offer_rounded, color: Color(0xFF7B1FA2), size: 24),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Ofertas y Promociones',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'Gestión integral, historial, plantillas y relanzamiento ágil de ofertas',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
+                ],
+              ),
+              labelColor: const Color(0xFFB45309),
+              unselectedLabelColor: AppColors.textSecondary,
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+              labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+              tabs: [
+                const Tab(
+                  child: Text(
+                    'Ofertas Activas Hoy',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
+                const Tab(
+                  child: Text(
+                    'Historial y Catálogo',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Tab(
+                  child: Text(
+                    _editingOffer != null
+                        ? 'Editar Oferta'
+                        : 'Armar Nueva Oferta',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-
-            // TabBar con 3 pestañas
-            Container(
-              height: 42,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                indicator: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4),
-                  ],
-                ),
-                labelColor: const Color(0xFF7B1FA2),
-                unselectedLabelColor: Colors.grey.shade600,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-                labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                tabs: [
-                  const Tab(
-                    child: Text('Ofertas Activas Hoy', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                  const Tab(
-                    child: Text('Historial y Catálogo', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                  Tab(
-                    child: Text(
-                      _editingOffer != null ? 'Editar Oferta' : 'Armar Nueva Oferta',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // TabBarView
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildActiveOffersTab(),
-                  _buildHistoryOffersTab(),
-                  _buildCreateOfferTab(),
-                ],
-              ),
-            ),
+          ),
+        ),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildActiveOffersTab(),
+            _buildHistoryOffersTab(),
+            _buildCreateOfferTab(),
           ],
         ),
-      ),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar (Esc)'),
+          ),
+        ],
       ),
     );
   }
@@ -1184,14 +1209,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    FilledButton.tonalIcon(
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textPrimary,
+                        side: const BorderSide(color: AppColors.border),
+                      ),
                       onPressed: () => _tabController.animateTo(1),
                       icon: const Icon(Icons.history_rounded, size: 18),
                       label: const Text('Ver Historial'),
                     ),
                     const SizedBox(width: 10),
                     FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFD97706),
+                        foregroundColor: Colors.white,
+                      ),
                       onPressed: () => _tabController.animateTo(2),
                       icon: const Icon(Icons.add_rounded, size: 18),
                       label: const Text('Crear Oferta'),
@@ -1211,9 +1243,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             return Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purple.shade50.withValues(alpha: 0.5),
+                color: Colors.amber.shade50.withValues(alpha: 0.55),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.purple.shade100),
+                border: Border.all(color: Colors.amber.shade200),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1236,12 +1268,12 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.purple.shade100,
+                                color: Colors.amber.shade100,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 offer.periodLabel,
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
                               ),
                             ),
                           ],
@@ -1270,7 +1302,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             onPressed: () => _handleToggleStatus(offer),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF1976D2)),
+                            icon: const Icon(Icons.edit_outlined, size: 20, color: AppColors.primary),
                             tooltip: 'Editar oferta',
                             onPressed: () => _startEditOffer(offer),
                           ),
@@ -1286,7 +1318,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   const SizedBox(height: 4),
                   Text(
                     'Vigencia: ${_formatDate(offer.startDate)} al ${_formatDate(offer.endDate)}',
-                    style: TextStyle(fontSize: 11, color: Colors.purple.shade800),
+                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                   ),
                   if (offer.hasMarginWarning) ...[
                     const SizedBox(height: 6),
@@ -1316,21 +1348,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     children: [
                       Text(
                         'Productos incluidos (${offer.products.length}):',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple.shade900),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
                       ),
                       if (offer.products.length > 3) ...[
                         const SizedBox(width: 8),
                         InkWell(
                           borderRadius: BorderRadius.circular(4),
                           onTap: () => _showOfferProductsModal(offer),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             child: Text(
-                              '🔍 Ver listado completo',
+                              'Ver listado completo',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade700,
+                                color: AppColors.primaryDark,
                                 decoration: TextDecoration.underline,
                               ),
                             ),
@@ -1433,9 +1465,15 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   Widget _buildHistoryFilterChip(String value, String label) {
     final isSelected = _historyFilter == value;
     return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
       selected: isSelected,
-      selectedColor: Colors.purple.shade100,
+      selectedColor: AppColors.primarySoft,
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: (selected) {
@@ -1516,12 +1554,16 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.purple.shade50,
+                            color: const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             offer.periodLabel,
-                            style: TextStyle(fontSize: 11, color: Colors.purple.shade900),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
                           ),
                         ),
                       ],
@@ -1688,7 +1730,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF7B1FA2) : Colors.transparent,
+          color: isSelected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(7),
         ),
         child: Row(
@@ -1808,20 +1850,20 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.purple.shade50.withValues(alpha: 0.45),
+                color: AppColors.primarySoft.withValues(alpha: 0.65),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.purple.shade100),
+                border: Border.all(color: AppColors.primaryBorder.withValues(alpha: 0.5)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.event_repeat_rounded, size: 15, color: Colors.purple.shade700),
+                      const Icon(Icons.event_repeat_rounded, size: 15, color: AppColors.primaryDark),
                       const SizedBox(width: 6),
-                      Text(
+                      const Text(
                         'Días aplicables:',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.purple.shade900),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textPrimary),
                       ),
                       const SizedBox(width: 6),
                       Expanded(
@@ -1829,20 +1871,20 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                           _selectedDaysOfWeek.isEmpty
                               ? 'Todos los días (sin restricción)'
                               : 'Solo ${_selectedDaysOfWeek.length} día(s) seleccionado(s)',
-                          style: TextStyle(fontSize: 11, color: Colors.purple.shade700),
+                          style: const TextStyle(fontSize: 11, color: AppColors.primaryDark),
                         ),
                       ),
                       if (_selectedDaysOfWeek.isNotEmpty)
                         InkWell(
                           onTap: () => setState(() => _selectedDaysOfWeek.clear()),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             child: Text(
                               'Marcar todos',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade800,
+                                color: AppColors.primaryDark,
                                 decoration: TextDecoration.underline,
                               ),
                             ),
@@ -1862,12 +1904,12 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Colors.purple.shade900 : Colors.grey.shade800,
+                            color: isSelected ? const Color(0xFF1E3A8A) : AppColors.textPrimary,
                           ),
                         ),
                         selected: isSelected,
-                        selectedColor: Colors.purple.shade100,
-                        checkmarkColor: Colors.purple.shade800,
+                        selectedColor: AppColors.primarySoft,
+                        checkmarkColor: AppColors.primaryDark,
                         backgroundColor: Colors.white,
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1938,8 +1980,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               const SizedBox(width: 10),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple.shade50,
-                  foregroundColor: const Color(0xFF7B1FA2),
+                  backgroundColor: AppColors.primarySoft,
+                  foregroundColor: AppColors.primaryDark,
+                  elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -2080,7 +2123,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.purple.shade200),
+                border: Border.all(color: AppColors.primaryBorder),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.05),
@@ -2124,10 +2167,10 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             color: Colors.grey.shade600,
                           ),
                         ),
-                        trailing: Icon(
+                        trailing: const Icon(
                           Icons.add_circle_outline_rounded,
                           size: 18,
-                          color: Colors.purple.shade700,
+                          color: AppColors.primary,
                         ),
                         onTap: () => _addProductToOffer(p, keepFocus: true),
                       );
@@ -2327,9 +2370,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           height: 44,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF7B1FA2),
+              backgroundColor: const Color(0xFFD97706),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: _isSaving ? null : _handleSaveOffer,
             icon: _isSaving
@@ -2358,21 +2401,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
+          color: AppColors.primarySoft,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.purple.shade200),
+          border: Border.all(color: AppColors.primaryBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: const Color(0xFF7B1FA2)),
+            Icon(icon, size: 14, color: AppColors.primaryDark),
             const SizedBox(width: 4),
             Text(
               label,
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF7B1FA2),
+                color: AppColors.primaryDark,
               ),
             ),
           ],
@@ -2430,21 +2473,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.purple.shade100,
+                color: AppColors.primarySoft,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.purple.shade300),
+                border: Border.all(color: AppColors.primaryBorder),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.search_rounded, size: 13, color: Colors.purple.shade900),
+                  const Icon(Icons.search_rounded, size: 13, color: AppColors.primaryDark),
                   const SizedBox(width: 4),
                   Text(
                     '+$remaining más (Ver los $total)',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Colors.purple.shade900,
+                      color: AppColors.primaryDark,
                     ),
                   ),
                 ],
@@ -2482,177 +2525,192 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 searchCtrl.selection = TextSelection.collapsed(offset: clean.length);
                 setDialogState(() => search = clean);
               },
-              child: AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
-              contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.local_offer_rounded, color: Color(0xFF7B1FA2), size: 20),
+              child: AppModalShell(
+                title: offer.name,
+                subtitle:
+                    '${offer.products.length} producto(s) incluidos • ${offer.periodLabel}',
+                icon: Icons.local_offer_rounded,
+                accent: AppModalAccent.amber,
+                maxWidth: 580,
+                maxHeight: 500,
+                expandBody: true,
+                onClose: () => Navigator.of(dialogCtx).pop(),
+                headerTrailing: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          offer.name,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade600,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    offer.type == 'percentage'
+                        ? '-${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}%'
+                        : '-\$${offer.discountAmount?.toCurrency() ?? "0"}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                topBar: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                  child: TextField(
+                    controller: searchCtrl,
+                    autofocus: true,
+                    onChanged: (v) => setDialogState(() => search = v),
+                    onEditingComplete: () {},
+                    decoration: InputDecoration(
+                      hintText:
+                          'Buscar producto por nombre o código dentro de la oferta...',
+                      prefixIcon:
+                          const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                      suffixIcon: searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () {
+                                searchCtrl.clear();
+                                setDialogState(() => search = '');
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                bodyPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                body: filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No se encontraron productos para "$search"',
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                          ),
                         ),
-                        Text(
-                          '${offer.products.length} producto(s) incluidos • ${offer.periodLabel}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      )
+                    : ListView.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const Divider(
+                          height: 1,
+                          color: AppColors.border,
                         ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade600,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      offer.type == 'percentage'
-                          ? '-${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}%'
-                          : '-\$${offer.discountAmount?.toCurrency() ?? "0"}',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
+                        itemBuilder: (_, idx) {
+                          final p = filtered[idx];
+                          final name = p['name']?.toString() ?? 'Producto';
+                          final code =
+                              (p['internal_code'] ?? p['barcode'] ?? '')
+                                  .toString();
+                          final basePrice = double.tryParse(
+                                  p['selling_price']?.toString() ?? '0') ??
+                              0.0;
+                          final costPrice = double.tryParse(
+                                  p['cost_price']?.toString() ?? '0') ??
+                              0.0;
+                          final pId = (p['id'] as num?)?.toInt();
+                          final discounted = basePrice > 0
+                              ? offer.calculateDiscountedPrice(
+                                  basePrice,
+                                  productId: pId,
+                                )
+                              : 0.0;
+                          final isBelowCost = costPrice > 0 &&
+                              discounted > 0 &&
+                              discounted < costPrice;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 4,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      if (code.isNotEmpty || isBelowCost)
+                                        Row(
+                                          children: [
+                                            if (code.isNotEmpty)
+                                              Text(
+                                                'Cód: $code',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            if (isBelowCost) ...[
+                                              if (code.isNotEmpty)
+                                                const SizedBox(width: 8),
+                                              Text(
+                                                '⚠️ Bajo costo (\$${costPrice.toCurrency()})',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.amber.shade900,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (basePrice > 0) ...[
+                                  const SizedBox(width: 10),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '\$${basePrice.toCurrency()}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade500,
+                                          decoration:
+                                              TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                      Text(
+                                        '\$${discounted.toCurrency()}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                footerActions: [
+                  TextButton(
                     onPressed: () => Navigator.of(dialogCtx).pop(),
+                    child: const Text('Cerrar'),
                   ),
                 ],
               ),
-              content: SizedBox(
-                width: 560,
-                height: 420,
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: searchCtrl,
-                      autofocus: true,
-                      onChanged: (v) => setDialogState(() => search = v),
-                      onEditingComplete: () {},
-                      decoration: InputDecoration(
-                        hintText: 'Buscar producto por nombre o código dentro de la oferta...',
-                        prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
-                        suffixIcon: searchCtrl.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear_rounded, size: 18),
-                                onPressed: () {
-                                  searchCtrl.clear();
-                                  setDialogState(() => search = '');
-                                },
-                              )
-                            : null,
-                        isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Text(
-                                'No se encontraron productos para "$search"',
-                                style: const TextStyle(color: Colors.grey, fontSize: 13),
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                              itemBuilder: (_, idx) {
-                                final p = filtered[idx];
-                                final name = p['name']?.toString() ?? 'Producto';
-                                final code = (p['internal_code'] ?? p['barcode'] ?? '').toString();
-                                final basePrice = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
-                                final costPrice = double.tryParse(p['cost_price']?.toString() ?? '0') ?? 0.0;
-                                final pId = (p['id'] as num?)?.toInt();
-                                final discounted = basePrice > 0
-                                    ? offer.calculateDiscountedPrice(basePrice, productId: pId)
-                                    : 0.0;
-                                final isBelowCost = costPrice > 0 && discounted > 0 && discounted < costPrice;
-
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              name,
-                                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                            ),
-                                            if (code.isNotEmpty || isBelowCost)
-                                              Row(
-                                                children: [
-                                                  if (code.isNotEmpty)
-                                                    Text(
-                                                      'Cód: $code',
-                                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                                    ),
-                                                  if (isBelowCost) ...[
-                                                    if (code.isNotEmpty) const SizedBox(width: 8),
-                                                    Text(
-                                                      '⚠️ Bajo costo (\$${costPrice.toCurrency()})',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.bold,
-                                                        color: Colors.amber.shade900,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (basePrice > 0) ...[
-                                        const SizedBox(width: 10),
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              '\$${basePrice.toCurrency()}',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.grey.shade500,
-                                                decoration: TextDecoration.lineThrough,
-                                              ),
-                                            ),
-                                            Text(
-                                              '\$${discounted.toCurrency()}',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.green.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             );
           },
         );
@@ -2663,9 +2721,15 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   Widget _buildPeriodChip(String value, String label) {
     final isSelected = _periodType == value;
     return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
       selected: isSelected,
-      selectedColor: Colors.purple.shade100,
+      selectedColor: AppColors.primarySoft,
       onSelected: (selected) {
         if (selected) {
           setState(() => _periodType = value);

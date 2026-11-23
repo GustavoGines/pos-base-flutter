@@ -11,6 +11,7 @@ import '../widgets/sale_detail_dialog.dart';
 import '../widgets/payment_detail_dialog.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -48,44 +49,42 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
-  void _confirmDelete(BuildContext context, int id, String name) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Cliente'),
-        content: Text('¿Estás seguro de que deseas eliminar permanentemente a "$name"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              
-              final isAuthorized = await AdminPinDialog.verify(
-                context, 
-                action: 'Eliminar cliente de la base de datos'
-              );
-              if (!isAuthorized) return;
-
-              try {
-                if (!context.mounted) return;
-                await context.read<CustomerProvider>().deleteCustomer(id);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cliente eliminado'), backgroundColor: Colors.green));
-                  if (_selectedCustomer?.id == id) {
-                    setState(() => _selectedCustomer = null);
-                  }
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
-                }
-              }
-            },
-            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      )
+  Future<void> _confirmDelete(BuildContext context, int id, String name) async {
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Eliminar Cliente',
+      message: '¿Estás seguro de que deseas eliminar permanentemente a "$name"?',
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
+    if (confirmed != true || !context.mounted) return;
+
+    final isAuthorized = await AdminPinDialog.verify(
+      context,
+      action: 'Eliminar cliente de la base de datos',
+    );
+    if (!isAuthorized) return;
+
+    try {
+      if (!context.mounted) return;
+      await context.read<CustomerProvider>().deleteCustomer(id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cliente eliminado'), backgroundColor: Colors.green),
+        );
+        if (_selectedCustomer?.id == id) {
+          setState(() => _selectedCustomer = null);
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override

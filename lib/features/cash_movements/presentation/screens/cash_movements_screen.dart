@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
@@ -282,24 +283,15 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   }
 
   Future<void> _voidMovement(dynamic movement) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Anulación'),
-        content: Text('¿Está seguro de anular este movimiento de \$${(movement.amount as num).toCurrency()}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.delete_forever, size: 18),
-            label: const Text('Anular'),
-          ),
-        ],
-      ),
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Confirmar Anulación',
+      message:
+          '¿Está seguro de anular este movimiento de \$${(movement.amount as num).toCurrency()}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.',
+      confirmLabel: 'Anular',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_forever,
+      isDestructive: true,
     );
 
     if (confirm != true || !mounted) return;

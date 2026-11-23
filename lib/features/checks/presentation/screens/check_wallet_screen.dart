@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/check_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:intl/intl.dart';
@@ -67,31 +68,23 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
 
   void _confirmAction(
       BuildContext context, int checkId, String actionLabel, String status,
-      {Color confirmColor = Colors.blue}) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title:
-            Text(status == 'rejected' ? 'Rechazar Cheque' : 'Depositar Cheque'),
-        content: Text(status == 'rejected'
-            ? '¿Marcar este cheque como RECHAZADO? Esta acción lo moverá a la pestaña de Conflictos.'
-            : '¿Confirmar $actionLabel de este cheque?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: confirmColor, foregroundColor: Colors.white),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _updateStatus(checkId, status);
-            },
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
+      {Color confirmColor = Colors.blue}) async {
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: status == 'rejected' ? 'Rechazar Cheque' : 'Depositar Cheque',
+      message: status == 'rejected'
+          ? '¿Marcar este cheque como RECHAZADO? Esta acción lo moverá a la pestaña de Conflictos.'
+          : '¿Confirmar $actionLabel de este cheque?',
+      confirmLabel: 'Confirmar',
+      cancelLabel: 'Cancelar',
+      icon: status == 'rejected'
+          ? Icons.warning_amber_rounded
+          : Icons.account_balance_rounded,
+      isDestructive: status == 'rejected',
     );
+    if (confirmed == true && mounted) {
+      _updateStatus(checkId, status);
+    }
   }
 
   Future<void> _showEndorseDialog(int checkId) async {
@@ -101,24 +94,30 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
         context: context,
         builder: (ctx) => StatefulBuilder(builder: (context, setState) {
           final isButtonEnabled = noteController.text.trim().length >= 3;
-          return AlertDialog(
-            title: const Text('Endosar Cheque'),
-            content: TextField(
+          return AppModalShell(
+            title: 'Endosar Cheque',
+            subtitle: 'Indicá el destinatario o motivo de entrega del cheque',
+            icon: Icons.assignment_ind_rounded,
+            accent: AppModalAccent.blue,
+            compact: true,
+            maxWidth: 420,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: TextField(
               controller: noteController,
+              autofocus: true,
               onChanged: (val) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: 'Entregado a (Nombre/Nota)',
                 border: OutlineInputBorder(),
               ),
             ),
-            actions: [
+            footerActions: [
               TextButton(
                   onPressed: () => Navigator.pop(ctx),
                   child: const Text('Cancelar')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    foregroundColor: Colors.white),
+              FilledButton(
                 onPressed: isButtonEnabled
                     ? () => Navigator.pop(ctx, noteController.text.trim())
                     : null,
@@ -242,7 +241,6 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
     return Scaffold(
       appBar: const GlobalAppBar(
         currentRoute: '/checks',
-        title: 'Cartera de Cheques',
       ),
       body: Center(
         child: ConstrainedBox(

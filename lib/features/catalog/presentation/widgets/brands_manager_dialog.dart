@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/brand.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -68,22 +70,15 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
   }
 
   Future<void> _deleteBrand(CatalogProvider provider, Brand brand) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: Text(
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Confirmar eliminación',
+      message:
           '¿Eliminar la marca "${brand.name}"?\n\nSi tiene productos asociados, la operación será rechazada.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
     if (confirm != true || !mounted) return;
     final ok = await provider.deleteBrand(brand.id);
@@ -109,73 +104,70 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
+    return AppModalShell(
+      title: 'Gestión de Marcas',
+      subtitle: 'Administrá las marcas disponibles para tus productos',
+      icon: Icons.branding_watermark_outlined,
+      accent: AppModalAccent.blue,
+      maxWidth: 540,
+      maxHeight: 540,
+      expandBody: true,
+      onClose: () => Navigator.of(context).pop(_lastCreatedId),
+      bodyPadding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+      body: Column(
         children: [
-          Icon(Icons.branding_watermark_outlined, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Gestión de Marcas')),
+          // ── Fila agregar ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _newNameCtrl,
+                  focusNode: _newFocusNode,
+                  decoration: InputDecoration(
+                    hintText: 'Nombre de nueva marca...',
+                    prefixIcon: const Icon(Icons.add, color: AppColors.primary),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                  onSubmitted: (_) => _createBrand(context.read<CatalogProvider>()),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Consumer<CatalogProvider>(
+                builder: (ctx, provider, _) => FilledButton.icon(
+                  icon: _adding
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check, size: 18),
+                  label: Text(_adding ? 'Guardando...' : 'Agregar'),
+                  onPressed: _adding ? null : () => _createBrand(provider),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(color: Colors.grey.shade200, height: 1),
+
+          // ── Lista de marcas ───────────────────────────
+          Expanded(child: _buildBrandList()),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: SizedBox(
-        width: 480,
-        height: 420,
-        child: Column(
-          children: [
-            // ── Fila agregar ──────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _newNameCtrl,
-                    focusNode: _newFocusNode,
-                    decoration: InputDecoration(
-                      hintText: 'Nombre de nueva marca...',
-                      prefixIcon: Icon(Icons.add, color: Theme.of(context).colorScheme.primary),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    ),
-                    onSubmitted: (_) => _createBrand(context.read<CatalogProvider>()),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Consumer<CatalogProvider>(
-                  builder: (ctx, provider, _) => FilledButton.icon(
-                    icon: _adding
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.check, size: 18),
-                    label: Text(_adding ? 'Guardando...' : 'Agregar'),
-                    onPressed: _adding ? null : () => _createBrand(provider),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Divider(color: Colors.grey.shade200, height: 1),
-
-            // ── Lista de marcas ───────────────────────────
-            Expanded(child: _buildBrandList()),
-          ],
+      footerLeading: Consumer<CatalogProvider>(
+        builder: (_, p, __) => Text(
+          '${p.brands.length} marca${p.brands.length != 1 ? 's' : ''}',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
       ),
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      actions: [
-        Row(
-          children: [
-            Consumer<CatalogProvider>(
-              builder: (_, p, __) => Text(
-                '${p.brands.length} marca${p.brands.length != 1 ? 's' : ''}',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-              ),
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(_lastCreatedId),
-              child: const Text('Cerrar'),
-            ),
-          ],
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_lastCreatedId),
+          child: const Text('Cerrar'),
         ),
       ],
     );

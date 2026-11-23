@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../core/presentation/widgets/app_pdf_preview.dart';
 import '../../../core/utils/afip_fiscal_pdf_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 
@@ -23,7 +25,7 @@ class DeliveryNotePdfService {
     return raw.trim();
   }
 
-  /// Genera y muestra el visor PDF dentro de la app (preview real con botón imprimir).
+  /// Genera y muestra el visor PDF dentro de la app (preview real con zoom, descarga e impresión).
   static Future<void> preview({
     required BuildContext context,
     required Map<String, dynamic> note,
@@ -38,90 +40,37 @@ class DeliveryNotePdfService {
     dynamic businessSettings,
     Uint8List? logoBytes,
   }) async {
-    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
-    await showGeneralDialog(
+    final paperLabel = pdfPaperSizeLabel(paperSize);
+    final isDispatch =
+        deliveredNow.values.fold(0.0, (s, v) => s + v) > 0 ||
+            note['status'] == 'partial' ||
+            note['status'] == 'delivered';
+    final paddedId = note['id'].toString().padLeft(6, '0');
+    final docTitle = isDispatch
+        ? 'Remito de Despacho N° $paddedId'
+        : 'Orden de Retiro N° $paddedId';
+
+    await showAppPdfPreviewDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Cerrar',
-      pageBuilder: (ctx, _, __) {
-        return Material(
-          color: Colors.black54,
-          child: Center(
-            child: Container(
-              width: 880,
-              height: MediaQuery.of(ctx).size.height * 0.92,
-              margin: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  Container(
-                    color: Colors.grey.shade900,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.local_shipping,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            (deliveredNow.values.fold(0.0, (s, v) => s + v) > 0 ||
-                                    note['status'] == 'partial' ||
-                                    note['status'] == 'delivered')
-                                ? 'Remito de Despacho N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa $paperLabel'
-                                : 'Orden de Retiro N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa $paperLabel',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: PdfPreview(
-                      allowPrinting: true,
-                      allowSharing: true,
-                      canChangeOrientation: false,
-                      canChangePageFormat: false,
-                      pdfFileName:
-                          'Remito_${note['id'].toString().padLeft(6, '0')}.pdf',
-                      build: (_) async => generatePdf(
-                        note: note,
-                        businessName: businessName,
-                        businessAddress: businessAddress,
-                        businessPhone: businessPhone,
-                        businessTaxId: businessTaxId,
-                        deliveredNow: deliveredNow,
-                        vendorName: vendorName,
-                        dispatcherName: dispatcherName,
-                        paperSize: paperSize,
-                        businessSettings: businessSettings,
-                        logoBytes: logoBytes,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      title: docTitle,
+      subtitle: 'Vista previa • Hoja $paperLabel',
+      icon: Icons.local_shipping_rounded,
+      accent: AppModalAccent.teal,
+      initialPageFormat: pdfPageFormatFromPaperSize(paperSize),
+      pdfFileName: 'Remito_$paddedId.pdf',
+      build: (_) async => generatePdf(
+        note: note,
+        businessName: businessName,
+        businessAddress: businessAddress,
+        businessPhone: businessPhone,
+        businessTaxId: businessTaxId,
+        deliveredNow: deliveredNow,
+        vendorName: vendorName,
+        dispatcherName: dispatcherName,
+        paperSize: paperSize,
+        businessSettings: businessSettings,
+        logoBytes: logoBytes,
+      ),
     );
   }
 

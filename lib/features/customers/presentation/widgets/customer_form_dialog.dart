@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -234,14 +235,23 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   Widget build(BuildContext context) {
     final isEditing = widget.customer != null;
 
-    return AlertDialog(
-      title: Text(isEditing ? 'Editar Cliente' : 'Nuevo Cliente'),
-      content: Form(
+    return AppModalShell(
+      title: isEditing ? 'Editar Cliente' : 'Nuevo Cliente',
+      subtitle: isEditing
+          ? 'Actualizá los datos fiscales, de contacto y cuenta corriente'
+          : 'Registrá un nuevo cliente para facturación ARCA y cuenta corriente',
+      icon: Icons.person_outline,
+      accent: AppModalAccent.blue,
+      maxWidth: 560,
+      bodyPadding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      onClose: () {
+        if (!_isSubmitting) Navigator.pop(context);
+      },
+      body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -250,7 +260,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 validator: (val) =>
                     val == null || val.isEmpty ? 'Requerido' : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               DropdownButtonFormField<int>(
                 key: ValueKey('customer_form_doc_type_$_documentType'),
                 initialValue: _documentType,
@@ -276,7 +286,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   }
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _documentController,
                 decoration: InputDecoration(
@@ -395,7 +405,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   return const SizedBox.shrink();
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 key: ValueKey('customer_form_tax_cond_$_taxCondition'),
                 initialValue: _taxCondition,
@@ -448,14 +458,14 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   }
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _fiscalAddressController,
                 decoration: const InputDecoration(
                     labelText: 'Dirección Fiscal (ARCA) (Opcional)',
                     border: OutlineInputBorder()),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
@@ -463,14 +473,14 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                     labelText: 'Teléfono (Opcional)',
                     border: OutlineInputBorder()),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _deliveryAddressController,
                 decoration: const InputDecoration(
                     labelText: 'Dirección de Entrega (Opcional)',
                     border: OutlineInputBorder()),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _creditLimitController,
                 keyboardType: TextInputType.number,
@@ -480,7 +490,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                     prefixText: '\$ ',
                     border: OutlineInputBorder()),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               SwitchListTile(
                 title: const Text(
                     'Cuenta de Consumo Interno (Ej: Repostería / Uso Propio)',
@@ -492,9 +502,9 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 activeThumbColor: Colors.indigo,
                 onChanged: (val) => setState(() => _isInternalAccount = val),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               const Divider(height: 1),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               SwitchListTile(
                 key: const ValueKey('switch_applies_iibb_perception'),
                 title: const Text('Aplica Percepción IIBB',
@@ -584,23 +594,20 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
             ],
           ),
         ),
-      ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          child: const Text('Cancelar'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: _isSubmitting ? null : _submit,
-          style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary),
           child: _isSubmitting
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2))
-              : const Text('Guardar', style: TextStyle(color: Colors.white)),
+              : const Text('Guardar'),
         ),
       ],
     );

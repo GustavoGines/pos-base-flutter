@@ -728,7 +728,7 @@ void main() {
 
       // Confirm in initial AlertDialog
       expect(find.text('Eliminar Proveedor'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Eliminar'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Eliminar'));
       await tester.pumpAndSettle();
 
       // Must prompt for AdminPinDialog because deleting requires manageCatalog
@@ -769,7 +769,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Eliminar Proveedor'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Eliminar'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Eliminar'));
       await tester.pumpAndSettle();
 
       // Should NOT prompt for AdminPinDialog because user has manageCatalog

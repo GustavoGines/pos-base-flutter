@@ -15,6 +15,7 @@ import '../../../updater/data/models/update_info.dart';
 import '../../../updater/data/services/mobile_update_service.dart';
 import '../../../updater/presentation/widgets/mobile_update_dialog.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/caja4u_startup_splash.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -435,15 +436,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.dns_outlined, color: Colors.blueAccent),
-              SizedBox(width: 8),
-              Text('Red y Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
+        builder: (ctx) => AppModalShell(
+          title: 'Red y Servidor',
+          subtitle: 'Conexión a la API del Sistema POS',
+          icon: Icons.dns_outlined,
+          accent: AppModalAccent.blue,
+          compact: true,
+          maxWidth: 440,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -458,12 +461,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 decoration: InputDecoration(
                   labelText: 'URL del Servidor',
                   prefixIcon: const Icon(Icons.wifi),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancelar'),
@@ -475,7 +480,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   // --- AUTO-FORMATO UX ---
                   if (!newUrl.startsWith('http')) {
                     if (!newUrl.contains('/')) {
-                      final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
+                      final isIp =
+                          RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) ||
+                              newUrl == 'localhost';
                       if (isIp) {
                         newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
                       } else {
@@ -485,20 +492,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       newUrl = 'http://$newUrl';
                     }
                   }
-                  
+
                   await prefs.setString('pos_api', newUrl);
                   // Asegurar que actualizamos ambas para no romper el Auto-Fallback
                   await prefs.setString('pos_api_local', newUrl);
-                  
+
                   if (!ctx.mounted) return;
                   Navigator.pop(ctx);
-                  SnackBarService.success(context,
-                      'Configuración guardada.\nReiniciá la app para aplicar.');
+                  SnackBarService.success(
+                    context,
+                    'Configuración guardada.\nReiniciá la app para aplicar.',
+                  );
                 }
               },
               icon: const Icon(Icons.save),
               label: const Text('Guardar'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
             ),
           ],
         ),

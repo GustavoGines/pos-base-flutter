@@ -41,7 +41,6 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
       child: Scaffold(
         appBar: const GlobalAppBar(
           currentRoute: '/delivery-notes',
-          title: 'Dashboard Logístico',
         ),
         body: Column(
           children: [

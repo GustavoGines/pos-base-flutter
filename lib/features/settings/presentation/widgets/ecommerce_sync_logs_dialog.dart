@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../providers/settings_provider.dart';
 
 class EcommerceSyncLogsDialog extends StatefulWidget {
@@ -141,165 +143,112 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 850, maxHeight: 680),
-        child: Column(
+    return AppModalShell(
+      title: 'Bitácora de Sincronización E-Commerce',
+      subtitle:
+          'Trazabilidad auditada de stock y ventas omnicanal ($_totalLogs registros)',
+      icon: Icons.history_outlined,
+      accent: AppModalAccent.indigo,
+      maxWidth: 880,
+      maxHeight: 680,
+      expandBody: true,
+      headerTrailing: IconButton(
+        tooltip: 'Actualizar',
+        icon: const Icon(Icons.refresh, color: Colors.white),
+        onPressed: _isLoading ? null : () => _fetchLogs(page: _currentPage),
+      ),
+      topBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF673AB7).withValues(alpha: 0.08),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF673AB7).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.history_outlined, color: Color(0xFF673AB7), size: 24),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Bitácora de Sincronización E-Commerce',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          'Trazabilidad auditada de stock y ventas omnicanal ($_totalLogs registros)',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Actualizar',
-                    icon: const Icon(Icons.refresh),
-                    onPressed: _isLoading ? null : () => _fetchLogs(page: _currentPage),
-                  ),
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
+            const Text('Filtros:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ChoiceChip(
+              label: const Text('Todos'),
+              selected: _statusFilter == null && _directionFilter == null,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    _statusFilter = null;
+                    _directionFilter = null;
+                  });
+                  _fetchLogs(page: 1);
+                }
+              },
             ),
-
-            // Filtros rápidos
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              color: Colors.grey.shade50,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('Filtros:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  ChoiceChip(
-                    label: const Text('Todos'),
-                    selected: _statusFilter == null && _directionFilter == null,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _statusFilter = null;
-                          _directionFilter = null;
-                        });
-                        _fetchLogs(page: 1);
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Solo Exitosos'),
-                    selected: _statusFilter == 'success',
-                    selectedColor: Colors.green.shade100,
-                    onSelected: (selected) {
-                      setState(() => _statusFilter = selected ? 'success' : null);
-                      _fetchLogs(page: 1);
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Solo Fallidos'),
-                    selected: _statusFilter == 'failed',
-                    selectedColor: Colors.red.shade100,
-                    onSelected: (selected) {
-                      setState(() => _statusFilter = selected ? 'failed' : null);
-                      _fetchLogs(page: 1);
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Entrantes (Webhooks)'),
-                    selected: _directionFilter == 'inbound',
-                    selectedColor: Colors.blue.shade100,
-                    onSelected: (selected) {
-                      setState(() => _directionFilter = selected ? 'inbound' : null);
-                      _fetchLogs(page: 1);
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Salientes (Hacia Tiendas)'),
-                    selected: _directionFilter == 'outbound',
-                    selectedColor: Colors.purple.shade100,
-                    onSelected: (selected) {
-                      setState(() => _directionFilter = selected ? 'outbound' : null);
-                      _fetchLogs(page: 1);
-                    },
-                  ),
-                ],
-              ),
+            ChoiceChip(
+              label: const Text('Solo Exitosos'),
+              selected: _statusFilter == 'success',
+              selectedColor: Colors.green.shade100,
+              onSelected: (selected) {
+                setState(() => _statusFilter = selected ? 'success' : null);
+                _fetchLogs(page: 1);
+              },
             ),
-            const Divider(height: 1),
-
-            // Content
-            Expanded(
-              child: _buildBody(),
+            ChoiceChip(
+              label: const Text('Solo Fallidos'),
+              selected: _statusFilter == 'failed',
+              selectedColor: Colors.red.shade100,
+              onSelected: (selected) {
+                setState(() => _statusFilter = selected ? 'failed' : null);
+                _fetchLogs(page: 1);
+              },
             ),
-
-            // Footer / Pagination
-            if (_lastPage > 1)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Página $_currentPage de $_lastPage',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                    Row(
-                      children: [
-                        OutlinedButton(
-                          onPressed: _currentPage > 1 && !_isLoading
-                              ? () => _fetchLogs(page: _currentPage - 1)
-                              : null,
-                          child: const Text('Anterior'),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton(
-                          onPressed: _currentPage < _lastPage && !_isLoading
-                              ? () => _fetchLogs(page: _currentPage + 1)
-                              : null,
-                          child: const Text('Siguiente'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            ChoiceChip(
+              label: const Text('Entrantes (Webhooks)'),
+              selected: _directionFilter == 'inbound',
+              selectedColor: Colors.blue.shade100,
+              onSelected: (selected) {
+                setState(() => _directionFilter = selected ? 'inbound' : null);
+                _fetchLogs(page: 1);
+              },
+            ),
+            ChoiceChip(
+              label: const Text('Salientes (Hacia Tiendas)'),
+              selected: _directionFilter == 'outbound',
+              selectedColor: Colors.indigo.shade100,
+              onSelected: (selected) {
+                setState(() => _directionFilter = selected ? 'outbound' : null);
+                _fetchLogs(page: 1);
+              },
+            ),
           ],
         ),
       ),
+      bodyPadding: EdgeInsets.zero,
+      body: _buildBody(),
+      footerLeading: _lastPage > 1
+          ? Text(
+              'Página $_currentPage de $_lastPage',
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            )
+          : null,
+      footerActions: [
+        if (_lastPage > 1) ...[
+          OutlinedButton(
+            onPressed: _currentPage > 1 && !_isLoading
+                ? () => _fetchLogs(page: _currentPage - 1)
+                : null,
+            child: const Text('Anterior'),
+          ),
+          OutlinedButton(
+            onPressed: _currentPage < _lastPage && !_isLoading
+                ? () => _fetchLogs(page: _currentPage + 1)
+                : null,
+            child: const Text('Siguiente'),
+          ),
+        ],
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 
@@ -418,7 +367,7 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: isInbound ? Colors.blue.shade50 : Colors.purple.shade50,
+                    color: isInbound ? Colors.blue.shade50 : Colors.indigo.shade50,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Row(
@@ -427,7 +376,7 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
                       Icon(
                         isInbound ? Icons.arrow_downward : Icons.arrow_upward,
                         size: 11,
-                        color: isInbound ? Colors.blue.shade700 : Colors.purple.shade700,
+                        color: isInbound ? Colors.blue.shade700 : Colors.indigo.shade700,
                       ),
                       const SizedBox(width: 2),
                       Text(
@@ -435,7 +384,7 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isInbound ? Colors.blue.shade700 : Colors.purple.shade700,
+                          color: isInbound ? Colors.blue.shade700 : Colors.indigo.shade700,
                         ),
                       ),
                     ],

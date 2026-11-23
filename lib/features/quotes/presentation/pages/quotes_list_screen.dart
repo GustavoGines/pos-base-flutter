@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
@@ -162,20 +163,15 @@ class _QuotesListScreenState extends State<QuotesListScreen>
       SnackBarService.error(context, 'No se pueden eliminar presupuestos ya cobrados.');
       return;
     }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Eliminar seleccionados?'),
-        content: Text('Se eliminarán ${toDelete.length} presupuesto(s). Esta acción no se puede deshacer.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: '¿Eliminar seleccionados?',
+      message:
+          'Se eliminarán ${toDelete.length} presupuesto(s). Esta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
     if (confirmed != true || !mounted) return;
 
@@ -212,7 +208,6 @@ class _QuotesListScreenState extends State<QuotesListScreen>
       backgroundColor: Colors.grey.shade50,
       appBar: const GlobalAppBar(
         currentRoute: '/quotes',
-        title: 'Historial de Presupuestos',
       ),
       body: Column(
         children: [
@@ -891,78 +886,85 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Editar Presupuesto'),
-          content: SizedBox(
-            width: 400,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        builder: (ctx, setDialogState) => AppModalShell(
+          title: 'Editar Presupuesto',
+          subtitle: 'Presupuesto ${widget.quote.quoteNumber}',
+          icon: Icons.edit_note_rounded,
+          accent: AppModalAccent.indigo,
+          compact: true,
+          maxWidth: 440,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx, false),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del cliente',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Teléfono',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Notas / Condiciones',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
                 children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre del cliente',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
+                  const Icon(Icons.calendar_today_outlined,
+                      size: 18, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      validUntil != null
+                          ? 'Válido hasta: ${DateFormat('dd/MM/yyyy').format(validUntil!)}'
+                          : 'Sin fecha de vencimiento',
+                      style: const TextStyle(fontSize: 13),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Teléfono',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: notesCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Notas / Condiciones',
-                      prefixIcon: Icon(Icons.notes_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today_outlined, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          validUntil != null
-                              ? 'Válido hasta: ${DateFormat('dd/MM/yyyy').format(validUntil!)}'
-                              : 'Sin fecha de vencimiento',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          final picked = await showCompactDatePicker(
-                            context: ctx,
-                            initialDate: validUntil ?? DateTime.now().add(const Duration(days: 7)),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                            helpText: 'Fecha de Validez del Presupuesto',
-                          );
-                          if (picked != null) {
-                            setDialogState(() => validUntil = picked);
-                          }
-                        },
-                        child: const Text('Cambiar'),
-                      ),
-                    ],
+                  TextButton(
+                    onPressed: () async {
+                      final picked = await showCompactDatePicker(
+                        context: ctx,
+                        initialDate: validUntil ??
+                            DateTime.now().add(const Duration(days: 7)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        helpText: 'Fecha de Validez del Presupuesto',
+                      );
+                      if (picked != null) {
+                        setDialogState(() => validUntil = picked);
+                      }
+                    },
+                    child: const Text('Cambiar'),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          footerActions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Guardar'),
@@ -997,22 +999,15 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
 
   // ── Eliminar ──────────────────────────────────────────────────────────────
   Future<void> _handleDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Eliminar presupuesto?'),
-        content: Text(
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: '¿Eliminar presupuesto?',
+      message:
           'Se eliminará permanentemente el presupuesto ${widget.quote.quoteNumber}. Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
 
     if (confirmed != true || !mounted) return;

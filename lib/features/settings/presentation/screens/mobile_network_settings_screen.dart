@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:package_info_plus/package_info_plus.dart';
@@ -105,10 +106,19 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Reiniciar Aplicación'),
-          content: const Text('Las configuraciones de red han sido guardadas. Para que el Auto-Fallback detecte la nueva red, cierra completamente la app y vuelve a abrirla.'),
-          actions: [
+        builder: (ctx) => AppModalShell(
+          title: 'Reiniciar Aplicación',
+          icon: Icons.restart_alt_rounded,
+          accent: AppModalAccent.blue,
+          compact: true,
+          maxWidth: 400,
+          showCloseButton: false,
+          useAlertDialogWrapper: true,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: const Text(
+            'Las configuraciones de red han sido guardadas. Para que el Auto-Fallback detecte la nueva red, cierra completamente la app y vuelve a abrirla.',
+          ),
+          footerActions: [
             FilledButton(
               onPressed: () {
                 Navigator.pop(ctx);

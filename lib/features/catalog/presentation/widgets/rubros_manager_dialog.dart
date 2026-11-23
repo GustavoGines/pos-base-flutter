@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/rubro.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -86,63 +88,55 @@ class _QuickCreateRubroDialogState extends State<_QuickCreateRubroDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      title: Row(
+    return AppModalShell(
+      title: 'Nuevo Rubro Comercial',
+      subtitle: 'Creá un rubro para agrupar categorías del catálogo',
+      icon: Icons.create_new_folder_outlined,
+      accent: AppModalAccent.blue,
+      compact: true,
+      maxWidth: 460,
+      onClose: () {
+        if (!_saving) Navigator.pop(context);
+      },
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Nuevo Rubro Comercial',
-              overflow: TextOverflow.ellipsis,
+          TextField(
+            controller: _nameCtrl,
+            autofocus: true,
+            enabled: !_saving,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Nombre *',
+              hintText: 'Ej: Panadería, Bebidas, Tecnología...',
+              prefixIcon: Icon(Icons.folder_outlined),
+              border: OutlineInputBorder(),
             ),
+            onSubmitted: (_) => _saving ? null : _submit(),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _descCtrl,
+            enabled: !_saving,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Descripción (opcional)',
+              prefixIcon: Icon(Icons.description_outlined),
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _saving ? null : _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: TextStyle(color: colorScheme.error, fontSize: 12.5),
+            ),
+          ],
         ],
       ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _nameCtrl,
-                autofocus: true,
-                enabled: !_saving,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre *',
-                  hintText: 'Ej: Panadería, Bebidas, Tecnología...',
-                  prefixIcon: Icon(Icons.folder_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _saving ? null : _submit(),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _descCtrl,
-                enabled: !_saving,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Descripción (opcional)',
-                  prefixIcon: Icon(Icons.description_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _saving ? null : _submit(),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: TextStyle(color: colorScheme.error, fontSize: 12.5),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
@@ -237,22 +231,15 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
       return;
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: Text(
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Confirmar eliminación',
+      message:
           '¿Eliminar el rubro "${rubro.name}"?\n\nSi tiene categorías asociadas, la operación será rechazada.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
 
     if (confirm != true || !mounted) return;
@@ -277,26 +264,17 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-      title: Row(
+    return AppModalShell(
+      title: 'Gestión de Rubros',
+      subtitle: 'Agrupá las categorías y el ordenamiento de tu catálogo',
+      icon: Icons.category_rounded,
+      accent: AppModalAccent.blue,
+      maxWidth: 560,
+      maxHeight: 560,
+      expandBody: true,
+      bodyPadding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      body: Column(
         children: [
-          Icon(Icons.category_rounded, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Gestión de Rubros',
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      content: SizedBox(
-        width: 500,
-        height: 440,
-        child: Column(
-          children: [
             // ── Formulario nuevo rubro (Anti-overflow con LayoutBuilder) ────
             LayoutBuilder(
               builder: (context, constraints) {
@@ -406,16 +384,13 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
             Expanded(child: _buildRubroList()),
           ],
         ),
-      ),
-      actionsAlignment: MainAxisAlignment.spaceBetween,
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      actions: [
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) => Text(
-            '${p.rubros.length} rubro${p.rubros.length != 1 ? 's' : ''}',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
+      footerLeading: Consumer<CatalogProvider>(
+        builder: (_, p, __) => Text(
+          '${p.rubros.length} rubro${p.rubros.length != 1 ? 's' : ''}',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
+      ),
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cerrar'),

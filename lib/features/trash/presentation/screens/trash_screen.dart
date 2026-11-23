@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/trash_provider.dart';
 
@@ -22,23 +23,29 @@ class _TrashScreenState extends State<TrashScreen> {
   void _confirmAction(bool isRestore, TrashItem item) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(isRestore ? Icons.restore : Icons.delete_forever, 
-                 color: isRestore ? Colors.green : Colors.red),
-            const SizedBox(width: 8),
-            Text(isRestore ? 'Restaurar Elemento' : 'Eliminar Permanentemente'),
-          ],
+      builder: (ctx) => AppModalShell(
+        title: isRestore ? 'Restaurar Elemento' : 'Eliminar Permanentemente',
+        icon: isRestore ? Icons.restore_rounded : Icons.delete_forever_rounded,
+        accent: isRestore ? AppModalAccent.emerald : AppModalAccent.red,
+        compact: true,
+        maxWidth: 420,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Text(
+          isRestore
+              ? '¿Deseas restaurar "${item.title}"? Volverá a estar disponible en el sistema.'
+              : '¿Estás seguro de ELIMINAR PERMANENTEMENTE "${item.title}"? Esta acción no se puede deshacer.',
         ),
-        content: Text(isRestore 
-          ? '¿Deseas restaurar "${item.title}"? Volverá a estar disponible en el sistema.' 
-          : '¿Estás seguro de ELIMINAR PERMANENTEMENTE "${item.title}"? Esta acción no se puede deshacer.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: isRestore ? Colors.green.shade600 : Colors.red.shade700
+              backgroundColor:
+                  isRestore ? Colors.green.shade600 : Colors.red.shade700,
             ),
             onPressed: () async {
               Navigator.pop(ctx);
@@ -94,7 +101,7 @@ class _TrashScreenState extends State<TrashScreen> {
     return Scaffold(
       appBar: const GlobalAppBar(
         currentRoute: '/trash',
-        title: 'Papelera de Reciclaje',
+        title: 'Papelera',
         showBackButton: true,
       ),
       body: Consumer<TrashProvider>(

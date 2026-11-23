@@ -22,6 +22,8 @@ import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_permissions.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class MobileAuditScreen extends StatefulWidget {
@@ -352,9 +354,16 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       return await showDialog<String>(
         context: context,
         builder: (ctx) {
-          return AlertDialog(
-            title: const Text('Escanear Código'),
-            content: SizedBox(
+          return AppModalShell(
+            title: 'Escanear Código',
+            icon: Icons.qr_code_scanner_rounded,
+            accent: AppModalAccent.blue,
+            compact: true,
+            maxWidth: 360,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.all(16),
+            body: SizedBox(
               width: 300,
               height: 300,
               child: MobileScanner(
@@ -368,8 +377,11 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                 },
               ),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            footerActions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
             ],
           );
         },
@@ -557,8 +569,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           ListTile(
                             key: const Key('mobile_pick_image_camera_option'),
                             leading: CircleAvatar(
-                              backgroundColor: Colors.deepPurple.shade50,
-                              child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF673AB7)),
+                              backgroundColor: AppColors.primarySoft,
+                              child: const Icon(Icons.camera_alt_outlined, color: AppColors.primary),
                             ),
                             title: const Text(
                               'Usar la Cámara',
@@ -614,29 +626,43 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               }
             }
 
-            return AlertDialog(
-              title: Row(
+            return AppModalShell(
+              title: productToEdit == null ? 'Nuevo Producto' : 'Editar Producto',
+              icon: productToEdit == null
+                  ? Icons.add_box_rounded
+                  : Icons.edit_note_rounded,
+              accent: AppModalAccent.blue,
+              compact: true,
+              maxWidth: 480,
+              useAlertDialogWrapper: true,
+              onClose: (isSaving || isUploadingImage)
+                  ? null
+                  : () => Navigator.pop(ctx),
+              headerTrailing: productToEdit != null
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.print, color: Colors.white),
+                          tooltip: 'Imprimir en Tiquetera Térmica',
+                          onPressed: () => _printLabelRemotely(productToEdit.id),
+                        ),
+                        IconButton(
+                          key: const Key('product_share_button'),
+                          icon: const Icon(Icons.share_outlined, color: Colors.white),
+                          tooltip: 'Compartir producto',
+                          onPressed: () => ProductShareHelper.shareProduct(
+                            productToEdit,
+                            context: context,
+                          ),
+                        ),
+                      ],
+                    )
+                  : null,
+              bodyPadding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(child: Text(productToEdit == null ? 'Nuevo Producto' : 'Editar Producto', style: const TextStyle(fontSize: 18))),
-                  if (productToEdit != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.print, color: Colors.blueAccent),
-                      tooltip: 'Imprimir en Tiquetera Térmica',
-                      onPressed: () => _printLabelRemotely(productToEdit.id),
-                    ),
-                    IconButton(
-                      key: const Key('product_share_button'),
-                      icon: const Icon(Icons.share_outlined, color: Colors.blueAccent),
-                      tooltip: 'Compartir producto',
-                      onPressed: () => ProductShareHelper.shareProduct(productToEdit, context: context),
-                    ),
-                  ],
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
                     // Selector de Imagen de Producto
                     Builder(
                       builder: (context) {
@@ -723,7 +749,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: hasSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                color: hasSelected ? AppColors.primary : Colors.grey.shade300,
                                 width: hasSelected ? 2 : 1,
                               ),
                             ),
@@ -1038,8 +1064,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     ),
                   ],
                 ),
-              ),
-              actions: [
+              footerActions: [
                 TextButton(
                   onPressed: (isSaving || isUploadingImage) ? null : () => Navigator.pop(ctx),
                   child: const Text('Cancelar'),
@@ -1561,19 +1586,15 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         children: [
                           TextButton.icon(
                             onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Eliminar Producto'),
-                                  content: Text('¿Seguro que deseas eliminar "${_scannedProduct!.name}"? Esta acción no se puede deshacer.'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx, true), 
-                                      child: const Text('Eliminar', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
-                                    ),
-                                  ],
-                                ),
+                              final confirm = await AppConfirmDialog.show(
+                                context,
+                                title: 'Eliminar Producto',
+                                message:
+                                    '¿Seguro que deseas eliminar "${_scannedProduct!.name}"? Esta acción no se puede deshacer.',
+                                confirmLabel: 'Eliminar',
+                                cancelLabel: 'Cancelar',
+                                icon: Icons.delete_outline_rounded,
+                                isDestructive: true,
                               );
 
                               if (confirm == true && mounted) {

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/rubro.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -91,22 +93,15 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
   }
 
   Future<void> _deleteCategory(CatalogProvider provider, Category cat) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: Text(
+    final confirm = await AppConfirmDialog.show(
+      context,
+      title: 'Confirmar eliminación',
+      message:
           '¿Eliminar la categoría "${cat.name}"?\n\nSi tiene productos asociados, la operación será rechazada.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
     if (confirm != true || !mounted) return;
     final ok = await provider.deleteCategory(cat.id);
@@ -197,21 +192,20 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
   Widget build(BuildContext context) {
     final isPremium = context.watch<SettingsProvider>().features.multiRubro;
 
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-      title: Row(
+    return AppModalShell(
+      title: 'Gestión de Categorías',
+      subtitle: isPremium
+          ? 'Administrá categorías y vinculalas con tus rubros'
+          : 'Organizá los productos del catálogo en categorías',
+      icon: Icons.label_rounded,
+      accent: AppModalAccent.blue,
+      maxWidth: 560,
+      maxHeight: 580,
+      expandBody: true,
+      onClose: () => Navigator.of(context).pop(_lastCreatedId),
+      bodyPadding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      body: Column(
         children: [
-          Icon(Icons.label_rounded, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Gestión de Categorías', overflow: TextOverflow.ellipsis)),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      content: SizedBox(
-        width: 500,
-        height: 440,
-        child: Column(
-          children: [
             // ── Formulario nueva categoría (Responsive con LayoutBuilder) ──
             LayoutBuilder(
               builder: (context, constraints) {
@@ -387,16 +381,13 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
             Expanded(child: _buildCategoryList(isPremium)),
           ],
         ),
-      ),
-      actionsAlignment: MainAxisAlignment.spaceBetween,
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      actions: [
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) => Text(
-            '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
+      footerLeading: Consumer<CatalogProvider>(
+        builder: (_, p, __) => Text(
+          '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
+      ),
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(_lastCreatedId),
           child: const Text('Cerrar'),
@@ -490,10 +481,10 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 'Rubro: $rubroName',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: Colors.purple.shade700,
+                  color: AppColors.indigo,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),

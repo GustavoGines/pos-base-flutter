@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../../../core/utils/afip_fiscal_pdf_service.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/presentation/widgets/app_pdf_preview.dart';
 import '../../../../core/presentation/widgets/ticket_preview_dialog.dart';
 
 class CashMovementPdfService {
@@ -83,13 +85,14 @@ class CashMovementPdfService {
       issuedAt: issuedAt,
     );
 
-    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
+    final paperLabel = pdfPaperSizeLabel(paperSize);
     if (context.mounted) {
       await _showPdfPreviewDialog(
         context: context,
         title: 'Vista Previa de Comprobante ($paperLabel)',
         fileName: 'Comprobante_Caja_${movementIds.isNotEmpty ? movementIds.first : '00'}.pdf',
         pdfBytes: pdfBytes,
+        paperSize: paperSize,
       );
     }
   }
@@ -243,13 +246,14 @@ class CashMovementPdfService {
       issuedAt: issuedAt,
     );
 
-    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
+    final paperLabel = pdfPaperSizeLabel(paperSize);
     if (context.mounted) {
       await _showPdfPreviewDialog(
         context: context,
         title: 'Vista Previa de Pago a Proveedor ($paperLabel)',
         fileName: 'Comprobante_Proveedor_${movementIds.isNotEmpty ? movementIds.first : '00'}.pdf',
         pdfBytes: pdfBytes,
+        paperSize: paperSize,
       );
     }
   }
@@ -369,66 +373,17 @@ class CashMovementPdfService {
     required String title,
     required String fileName,
     required Uint8List pdfBytes,
+    String paperSize = 'a4',
   }) async {
-    await showGeneralDialog(
+    await showAppPdfPreviewDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Cerrar',
-      pageBuilder: (ctx, _, __) {
-        return Material(
-          color: Colors.black54,
-          child: Center(
-            child: Container(
-              width: 860,
-              height: MediaQuery.of(ctx).size.height * 0.90,
-              margin: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  Container(
-                    color: Colors.grey.shade900,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.picture_as_pdf, color: Colors.white, size: 22),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: PdfPreview(
-                      allowPrinting: true,
-                      allowSharing: true,
-                      canChangeOrientation: false,
-                      canChangePageFormat: false,
-                      pdfFileName: fileName,
-                      build: (format) async => pdfBytes,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      title: title,
+      subtitle: 'Comprobante de caja • Hoja ${pdfPaperSizeLabel(paperSize)}',
+      icon: Icons.receipt_long_rounded,
+      accent: AppModalAccent.blue,
+      initialPageFormat: pdfPageFormatFromPaperSize(paperSize),
+      pdfFileName: fileName,
+      build: (format) async => pdfBytes,
     );
   }
 

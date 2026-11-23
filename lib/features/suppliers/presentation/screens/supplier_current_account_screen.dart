@@ -232,7 +232,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
     return Scaffold(
       appBar: GlobalAppBar(
         currentRoute: '/suppliers/account',
-        title: 'Cuenta Corriente: ${widget.supplierName}',
+        title: 'Cta. Cte.: ${widget.supplierName}',
         showBackButton: true,
       ),
       body: _buildBody(),

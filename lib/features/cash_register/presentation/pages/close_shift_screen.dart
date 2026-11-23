@@ -1,3 +1,5 @@
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -45,9 +47,17 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Cierre de Caja'),
-        content: Column(
+      builder: (ctx) => AppModalShell(
+        title: 'Confirmar Cierre de Caja',
+        subtitle: 'Verificación de arqueo antes de generar el Cierre Z',
+        icon: Icons.lock_clock_rounded,
+        accent: AppModalAccent.red,
+        compact: true,
+        maxWidth: 420,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -59,15 +69,18 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
             ),
           ],
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cerrar Turno', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Cerrar Turno',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -119,15 +132,17 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       final supervisorPin = await showDialog<String>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: diffColor, size: 28),
-              const SizedBox(width: 8),
-              const Expanded(child: Text('Diferencia de Caja Detectada')),
-            ],
-          ),
-          content: Column(
+        builder: (ctx) => AppModalShell(
+          title: 'Diferencia de Caja Detectada',
+          subtitle: 'Requiere autorización de supervisor para cerrar',
+          icon: Icons.warning_amber_rounded,
+          accent: AppModalAccent.amber,
+          compact: true,
+          maxWidth: 440,
+          showCloseButton: false,
+          useAlertDialogWrapper: true,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -137,7 +152,8 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
               const SizedBox(height: 8),
               if (hasLegacyDetails)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: diffColor.withAlpha(30),
                     borderRadius: BorderRadius.circular(8),
@@ -146,14 +162,28 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('$diffLabel:', style: TextStyle(fontWeight: FontWeight.bold, color: diffColor)),
-                      Text('\$${e.difference!.abs().toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: diffColor)),
+                      Text(
+                        '$diffLabel:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: diffColor,
+                        ),
+                      ),
+                      Text(
+                        '\$${e.difference!.abs().toCurrency()}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: diffColor,
+                        ),
+                      ),
                     ],
                   ),
                 )
               else
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     color: Colors.orange.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -171,7 +201,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
               ),
             ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, null),
               child: const Text('Cancelar'),
@@ -179,7 +209,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
             FilledButton.icon(
               icon: const Icon(Icons.pin),
               label: const Text('Ingresar PIN de Supervisor'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
               onPressed: () async {
                 Navigator.pop(ctx, '__REQUEST_PIN__');
               },

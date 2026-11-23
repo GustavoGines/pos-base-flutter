@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -256,17 +257,25 @@ class _PaymentDialogState extends State<PaymentDialog> {
     final totalEntered = _totalEntered;
     final isSpecific = _paymentType == 'specific';
 
-    return AlertDialog(
-      title: Text(widget.isRefund ? 'Registrar Reintegro - ${widget.customer.name}' : 'Registrar Pago - ${widget.customer.name}'),
-      content: SizedBox(
-        width: 600,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+    return AppModalShell(
+      title: widget.isRefund
+          ? 'Registrar Reintegro - ${widget.customer.name}'
+          : 'Registrar Pago - ${widget.customer.name}',
+      subtitle: widget.isRefund
+          ? 'Devolución de saldo a favor de cuenta corriente'
+          : 'Imputación de abono o cancelación de saldo en cuenta corriente',
+      icon: widget.isRefund ? Icons.replay_rounded : Icons.payments_outlined,
+      accent: widget.isRefund ? AppModalAccent.amber : AppModalAccent.emerald,
+      maxWidth: 640,
+      onClose: () {
+        if (!_isSubmitting) Navigator.pop(context);
+      },
+      body: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -632,24 +641,21 @@ class _PaymentDialogState extends State<PaymentDialog> {
               ],
             ),
           ),
-        ),
-      ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          child: const Text('Cancelar'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: _isSubmitting ? null : _submit,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+          style: FilledButton.styleFrom(backgroundColor: Colors.teal),
           child: _isSubmitting
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2))
-              : Text(widget.isRefund ? 'Confirmar Reintegro' : 'Confirmar Pago',
-                  style: const TextStyle(color: Colors.white)),
+              : Text(widget.isRefund ? 'Confirmar Reintegro' : 'Confirmar Pago'),
         ),
       ],
     );

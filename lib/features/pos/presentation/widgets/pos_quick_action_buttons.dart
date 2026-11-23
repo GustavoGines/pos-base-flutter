@@ -140,9 +140,9 @@ class PosQuickActionButtons extends StatelessWidget {
               child: _QuickTile(
                 icon: Icons.local_offer_rounded,
                 label: 'Ofertas',
-                color: const Color(0xFF7B1FA2), // Púrpura / Fucsia
+                color: const Color(0xFFD97706), // Ámbar / Dorado promocional
                 badgeText: activeOffersCount > 0 ? '$activeOffersCount' : null,
-                badgeColor: Colors.purple.shade700,
+                badgeColor: const Color(0xFFB45309),
                 tooltip: activeOffersCount > 0
                     ? '$activeOffersCount oferta(s) activas hoy. Toca para ver o crear.'
                     : 'Armar ofertas diarias, semanales o mensuales',

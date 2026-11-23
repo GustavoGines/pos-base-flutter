@@ -10,8 +10,10 @@ import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
@@ -567,138 +569,133 @@ class _SettingsScreenState extends State<SettingsScreen> {
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
+          return AppModalShell(
+            title: 'Terminales Point Encontradas',
+            subtitle: 'Seleccione el Posnet que desea vincular a este sistema',
+            icon: Icons.point_of_sale_rounded,
+            accent: AppModalAccent.blue,
+            maxWidth: 540,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.point_of_sale_rounded, color: Color(0xFF009EE3)),
-                SizedBox(width: 8),
-                Text('Terminales Point Encontradas'),
-              ],
-            ),
-            content: SizedBox(
-              width: 520,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Seleccione el Posnet que desea vincular a este sistema. '
-                      'Para que el sistema envíe los cobros a la pantalla automáticamente, '
-                      'la terminal debe estar en Modo Integrado (PDV).',
-                      style: TextStyle(fontSize: 13, color: Colors.black87),
-                    ),
-                    const SizedBox(height: 16),
-                    ...devices.map((device) {
-                      final id = device['id']?.toString() ?? '';
-                      final mode = (device['operating_mode']?.toString() ?? 'PDV').toUpperCase();
-                      final isPdv = mode == 'PDV';
+                const Text(
+                  'Seleccione el Posnet que desea vincular a este sistema. '
+                  'Para que el sistema envíe los cobros a la pantalla automáticamente, '
+                  'la terminal debe estar en Modo Integrado (PDV).',
+                  style: TextStyle(fontSize: 13, color: Colors.black87),
+                ),
+                const SizedBox(height: 16),
+                ...devices.map((device) {
+                  final id = device['id']?.toString() ?? '';
+                  final mode = (device['operating_mode']?.toString() ?? 'PDV').toUpperCase();
+                  final isPdv = mode == 'PDV';
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isPdv ? Colors.green.shade50 : Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isPdv ? Colors.green.shade200 : Colors.amber.shade300,
-                          ),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isPdv ? Colors.green.shade50 : Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isPdv ? Colors.green.shade200 : Colors.amber.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.payment_rounded,
+                          color: isPdv ? Colors.green.shade700 : Colors.amber.shade800,
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.payment_rounded,
-                              color: isPdv ? Colors.green.shade700 : Colors.amber.shade800,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                id,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
                                 children: [
-                                  Text(
-                                    id,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 6,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isPdv ? Colors.green.shade100 : Colors.amber.shade100,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          isPdv ? 'Modo PDV (Integrado)' : 'Modo Autónomo (Standalone)',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: isPdv ? Colors.green.shade900 : Colors.amber.shade900,
-                                          ),
-                                        ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isPdv ? Colors.green.shade100 : Colors.amber.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isPdv ? 'Modo PDV (Integrado)' : 'Modo Autónomo (Standalone)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isPdv ? Colors.green.shade900 : Colors.amber.shade900,
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (!isPdv)
-                              TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await provider.updateMpPointDeviceOperatingMode(
-                                      deviceId: id,
-                                      operatingMode: 'PDV',
-                                      mpAccessToken: (!token.contains('****')) ? token : null,
-                                    );
-                                    setDialogState(() {
-                                      device['operating_mode'] = 'PDV';
-                                    });
-                                    if (mounted) {
-                                      SnackBarService.success(
-                                        context,
-                                        'Terminal $id pasada a Modo PDV.',
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      SnackBarService.error(
-                                        context,
-                                        'No se pudo cambiar el modo: $e',
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('Activar PDV'),
-                              ),
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF009EE3),
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _mpPointDeviceIdCtrl.text = id;
-                                });
-                                Navigator.pop(ctx);
-                                SnackBarService.success(
-                                  context,
-                                  'Posnet $id seleccionado.',
-                                );
-                              },
-                              child: const Text('Usar'),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
+                        const SizedBox(width: 8),
+                        if (!isPdv)
+                          TextButton(
+                            onPressed: () async {
+                              try {
+                                await provider.updateMpPointDeviceOperatingMode(
+                                  deviceId: id,
+                                  operatingMode: 'PDV',
+                                  mpAccessToken: (!token.contains('****')) ? token : null,
+                                );
+                                setDialogState(() {
+                                  device['operating_mode'] = 'PDV';
+                                });
+                                if (mounted) {
+                                  SnackBarService.success(
+                                    context,
+                                    'Terminal $id pasada a Modo PDV.',
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  SnackBarService.error(
+                                    context,
+                                    'No se pudo cambiar el modo: $e',
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text('Activar PDV'),
+                          ),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF009EE3),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _mpPointDeviceIdCtrl.text = id;
+                            });
+                            Navigator.pop(ctx);
+                            SnackBarService.success(
+                              context,
+                              'Posnet $id seleccionado.',
+                            );
+                          },
+                          child: const Text('Usar'),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
             ),
-            actions: [
+            footerActions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cerrar'),
@@ -1623,27 +1620,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.cloud_download_outlined, color: Color(0xFF6A1B9A)),
-            SizedBox(width: 8),
-            Text('Importar Catálogo Web al POS'),
-          ],
-        ),
-        content: const Text(
+      builder: (ctx) => AppModalShell(
+        title: 'Importar Catálogo Web al POS',
+        icon: Icons.cloud_download_outlined,
+        accent: AppModalAccent.indigo,
+        compact: true,
+        maxWidth: 460,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: const Text(
           'Esta acción descargará todos los productos desde la tienda web hacia el inventario local de este POS. '
           'Los productos existentes actualizarán precios y stock, y los nuevos se registrarán con mapeo omnicanal automático.\n\n'
           '¿Desea continuar?',
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6A1B9A)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.cloud_download_outlined, size: 18),
             label: const Text('Comenzar Importación'),
@@ -1668,23 +1665,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         await showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: Colors.green),
-                SizedBox(width: 8),
-                Text('Catálogo Importado con Éxito'),
-              ],
-            ),
-            content: Text(
+          builder: (ctx) => AppModalShell(
+            title: 'Catálogo Importado con Éxito',
+            icon: Icons.check_circle_outline_rounded,
+            accent: AppModalAccent.emerald,
+            compact: true,
+            maxWidth: 440,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: Text(
               'Sincronización finalizada:\n\n'
               '• Total en la web: $total productos\n'
               '• Nuevos creados en POS: $imported\n'
               '• Actualizados en POS: $updated\n'
               '• Mapeos omnicanal generados: $mapped',
             ),
-            actions: [
+            footerActions: [
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Aceptar'),
@@ -1694,7 +1691,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
 
         if (mounted) {
-          context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+          context.read<CatalogProvider>().loadProductsWithoutSupplierFilter(
+                page: 1,
+                search: '',
+              );
         }
       } else {
         SnackBarService.error(
@@ -1731,26 +1731,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.cloud_upload_outlined, color: Color(0xFF6A1B9A)),
-            SizedBox(width: 8),
-            Text('Sembrar Catálogo POS en la Web'),
-          ],
-        ),
-        content: const Text(
+      builder: (ctx) => AppModalShell(
+        title: 'Sembrar Catálogo POS en la Web',
+        icon: Icons.cloud_upload_outlined,
+        accent: AppModalAccent.indigo,
+        compact: true,
+        maxWidth: 460,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: const Text(
           'Esta acción enviará todos los productos activos de este POS hacia tu tienda online (ideal para inaugurar una tienda web nueva con tu catálogo físico en 1 clic).\n\n'
           '¿Desea continuar?',
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6A1B9A)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.cloud_upload_outlined, size: 18),
             label: const Text('Sembrar en la Web'),
@@ -1771,21 +1771,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final exported = result['exported_count'] ?? 0;
         await showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: Colors.green),
-                SizedBox(width: 8),
-                Text('Catálogo Sembrado con Éxito'),
-              ],
-            ),
-            content: Text(
+          builder: (ctx) => AppModalShell(
+            title: 'Catálogo Sembrado con Éxito',
+            icon: Icons.check_circle_outline_rounded,
+            accent: AppModalAccent.emerald,
+            compact: true,
+            maxWidth: 440,
+            useAlertDialogWrapper: true,
+            onClose: () => Navigator.pop(ctx),
+            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            body: Text(
               'Siembra finalizada:\n\n'
               '• Se cargaron $exported productos activos en tu tienda online.\n'
               '• Los mapeos de sincronización omnicanal quedaron listos para recibir pedidos.',
             ),
-            actions: [
+            footerActions: [
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Aceptar'),
@@ -2213,7 +2213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Scaffold(
         appBar: GlobalAppBar(
           currentRoute: '/settings',
-          title: 'Configuración del Sistema',
+          title: 'Configuración',
           showBackButton: true,
         ),
         backgroundColor: const Color(0xFFF8F9FA),
@@ -5144,66 +5144,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Confirmar restauración mostrando únicamente lo que realmente trae el .zip
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
+      builder: (ctx) => AppModalShell(
+        title: 'Confirmar Restauración',
+        subtitle: 'Reemplazo de datos desde copia de seguridad',
+        icon: Icons.warning_amber_rounded,
+        accent: AppModalAccent.amber,
+        compact: true,
+        maxWidth: 500,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx, false),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
-            SizedBox(width: 10),
-            Flexible(child: Text('Confirmar Restauración')),
-          ],
-        ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+            Text(
+              'Archivo seleccionado: "$fileName"',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+            ),
+            if (formattedDate != null ||
+                (backupCompanyName != null && backupCompanyName.isNotEmpty)) ...[
+              const SizedBox(height: 4),
               Text(
-                'Archivo seleccionado: "$fileName"',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-              ),
-              if (formattedDate != null || (backupCompanyName != null && backupCompanyName.isNotEmpty)) ...[
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    if (formattedDate != null) 'Fecha: $formattedDate',
-                    if (backupCompanyName != null && backupCompanyName.isNotEmpty) 'Comercio: $backupCompanyName',
-                  ].join('  •  '),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ],
-              const SizedBox(height: 14),
-              const Text(
-                'Este backup incluye y restaurará:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              ...includedItems,
-              if (untouchedItems.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Text(
-                    'ℹ️ No incluido en este archivo (se mantiene intacto lo actual):\n• ${untouchedItems.join('\n• ')}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              const Text(
-                '¿Deseas continuar con la restauración?',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                [
+                  if (formattedDate != null) 'Fecha: $formattedDate',
+                  if (backupCompanyName != null && backupCompanyName.isNotEmpty)
+                    'Comercio: $backupCompanyName',
+                ].join('  •  '),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
               ),
             ],
-          ),
+            const SizedBox(height: 14),
+            const Text(
+              'Este backup incluye y restaurará:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            ...includedItems,
+            if (untouchedItems.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Text(
+                  'ℹ️ No incluido en este archivo (se mantiene intacto lo actual):\n• ${untouchedItems.join('\n• ')}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            const Text(
+              '¿Deseas continuar con la restauración?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
@@ -5211,7 +5212,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Restaurar', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Restaurar',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -5254,7 +5258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // Recargar proveedores para actualizar datos en memoria
       await settingsProv.loadSettings();
-      await catalogProv.loadProducts();
+      await catalogProv.loadProductsWithoutSupplierFilter();
       await cashProv.loadRegisters();
       await posProv.loadPaymentMethods();
       await offerProv.loadActiveOffers();
@@ -5883,33 +5887,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       try {
                         await showDialog(
                           context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Editar Lista de Precios'),
-                            content: Column(
+                          builder: (ctx) => AppModalShell(
+                            title: 'Editar Lista de Precios',
+                            icon: Icons.sell_outlined,
+                            accent: AppModalAccent.indigo,
+                            compact: true,
+                            maxWidth: 420,
+                            useAlertDialogWrapper: true,
+                            onClose: () => Navigator.pop(ctx),
+                            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                            body: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 TextField(
                                   controller: editNameCtrl,
                                   decoration: const InputDecoration(
-                                      labelText: 'Nombre de la Lista',
-                                      border: OutlineInputBorder()),
+                                    labelText: 'Nombre de la Lista',
+                                    border: OutlineInputBorder(),
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 TextField(
                                   controller: editModCtrl,
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
-                                          signed: true, decimal: true),
+                                    signed: true,
+                                    decimal: true,
+                                  ),
                                   decoration: const InputDecoration(
-                                      labelText: 'Modificador (%)',
-                                      border: OutlineInputBorder()),
+                                    labelText: 'Modificador (%)',
+                                    border: OutlineInputBorder(),
+                                  ),
                                 ),
                               ],
                             ),
-                            actions: [
+                            footerActions: [
                               TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('Cancelar')),
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Cancelar'),
+                              ),
                               FilledButton(
                                 onPressed: () {
                                   final newName = editNameCtrl.text.trim();
@@ -5940,21 +5956,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
-                        border: Border.all(color: Colors.purple.shade200),
+                        color: Colors.indigo.shade50,
+                        border: Border.all(color: Colors.indigo.shade200),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.sell_outlined,
-                              size: 16, color: Colors.purple),
+                          Icon(Icons.sell_outlined,
+                              size: 16, color: Colors.indigo.shade700),
                           const SizedBox(width: 8),
                           Text(
                             '$name ($sign${mod.toStringAsFixed(0)}%)',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade900),
+                                color: Colors.indigo.shade900),
                           ),
                           const SizedBox(width: 8),
                           InkWell(
@@ -6347,9 +6363,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Asignar Terminal'),
-        content: DropdownButtonFormField<int>(
+      builder: (ctx) => AppModalShell(
+        title: 'Asignar Terminal',
+        subtitle: 'Seleccioná la caja física correspondiente a este puesto',
+        icon: Icons.desktop_windows_rounded,
+        accent: AppModalAccent.blue,
+        compact: true,
+        maxWidth: 420,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        body: DropdownButtonFormField<int>(
+          decoration: const InputDecoration(
+            labelText: 'Terminal / Caja Física',
+            border: OutlineInputBorder(),
+          ),
           initialValue:
               registers.any((r) => r.id == settingsProvider.assignedRegisterId)
                   ? settingsProvider.assignedRegisterId

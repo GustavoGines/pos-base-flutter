@@ -1,4 +1,6 @@
 ﻿import 'package:flutter/material.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../data/models/update_info.dart';
 import '../../data/services/mobile_update_service.dart';
 
@@ -52,165 +54,123 @@ class _MobileUpdateDialogState extends State<MobileUpdateDialog> {
     return PopScope(
       // Si es crítica, no se puede cerrar con el botón atrás
       canPop: !isCritical && !_isDownloading,
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: EdgeInsets.zero,
-        content: SizedBox(
-          width: 380,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Header ─────────────────────────────────────────────────
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E2D45), Color(0xFF2A4080)],
+      child: AppModalShell(
+        title: isCritical
+            ? 'Actualización Crítica'
+            : 'Nueva Versión Disponible',
+        subtitle: 'Versión v${widget.updateInfo.version}',
+        icon: Icons.system_update_outlined,
+        accent: isCritical ? AppModalAccent.red : AppModalAccent.blue,
+        showCloseButton: !isCritical && !_isDownloading,
+        compact: true,
+        maxWidth: 400,
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Novedades:',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              constraints: const BoxConstraints(maxHeight: 160),
+              child: SingleChildScrollView(
+                child: Text(
+                  widget.updateInfo.changelog,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                    height: 1.45,
                   ),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.system_update_outlined,
-                        color: Colors.white, size: 40),
-                    const SizedBox(height: 8),
-                    Text(
-                      isCritical
-                          ? '🚨 Actualización Crítica'
-                          : '🚀 Nueva Versión Disponible',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'v${widget.updateInfo.version}',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontSize: 14),
-                    ),
-                  ],
                 ),
               ),
+            ),
 
-              // ── Changelog ──────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Novedades:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 160),
-                      child: SingleChildScrollView(
-                        child: Text(
-                          widget.updateInfo.changelog,
-                          style: const TextStyle(
-                              fontSize: 13, color: Color(0xFF444444)),
-                        ),
-                      ),
-                    ),
-
-                    // ── Progreso de descarga ────────────────────────────
-                    if (_isDownloading) ...[
-                      const SizedBox(height: 20),
-                      LinearProgressIndicator(
-                        value: _downloadProgress < 1.0
-                            ? _downloadProgress
-                            : null,
-                        backgroundColor: Colors.grey.shade200,
-                        color: const Color(0xFF1E2D45),
-                        minHeight: 8,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _downloadComplete
-                            ? '✅ Descarga completa — abrí el instalador'
-                            : 'Descargando... ${(_downloadProgress * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-
-                    // ── Error ───────────────────────────────────────────
-                    if (_errorMessage != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.shade200),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.red.shade800),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+            // ── Progreso de descarga ────────────────────────────
+            if (_isDownloading) ...[
+              const SizedBox(height: 18),
+              LinearProgressIndicator(
+                value: _downloadProgress < 1.0 ? _downloadProgress : null,
+                backgroundColor: AppColors.surfaceAlt,
+                color: AppColors.primary,
+                minHeight: 8,
+                borderRadius: BorderRadius.circular(4),
               ),
-
-              // ── Acciones ───────────────────────────────────────────────
-              Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: Row(
-                  children: [
-                    if (!isCritical && !_isDownloading)
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('Más tarde'),
-                        ),
-                      ),
-                    if (!isCritical && !_isDownloading)
-                      const SizedBox(width: 12),
-                    Expanded(
-                      flex: isCritical ? 1 : 1,
-                      child: FilledButton.icon(
-                        onPressed: _isDownloading ? null : _startUpdate,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E2D45),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: _isDownloading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white))
-                            : const Icon(Icons.download_rounded),
-                        label: Text(
-                          _isDownloading ? 'Descargando...' : 'Actualizar ahora',
-                        ),
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  _downloadComplete
+                      ? 'Descarga completa — abrí el instalador'
+                      : 'Descargando... ${(_downloadProgress * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
-          ),
+
+            // ── Error ───────────────────────────────────────────
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(
+                  _errorMessage!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.red.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
+        footerActions: [
+          if (!isCritical && !_isDownloading)
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Más tarde'),
+            ),
+          FilledButton.icon(
+            onPressed: _isDownloading ? null : _startUpdate,
+            style: FilledButton.styleFrom(
+              backgroundColor: isCritical ? AppColors.danger : AppColors.primary,
+            ),
+            icon: _isDownloading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(
+              _isDownloading ? 'Descargando...' : 'Actualizar ahora',
+            ),
+          ),
+        ],
       ),
     );
   }

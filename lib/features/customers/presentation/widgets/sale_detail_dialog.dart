@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/sales_history/data/datasources/sales_history_remote_datasource.dart';
 import 'package:intl/intl.dart';
@@ -51,36 +53,47 @@ class _SaleDetailDialogState extends State<SaleDetailDialog> {
     }
   }
 
+  String? _saleDateLabel(Map<String, dynamic>? sale) {
+    if (sale == null) return null;
+    final createdAt = DateTime.tryParse(sale['created_at']?.toString() ?? '')?.toLocal();
+    return createdAt != null ? DateFormat('dd/MM/yyyy HH:mm').format(createdAt) : '—';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
-        child: _isLoading
-            ? const SizedBox(
-                height: 200,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : _error != null
-                ? SizedBox(
-                    height: 200,
-                    child: Center(
-                      child: Text(_error!, style: const TextStyle(color: Colors.red)),
-                    ),
-                  )
-                : _buildContent(_sale!),
-      ),
+    final saleIdLabel = _sale != null ? '${_sale!['id']}' : '${widget.saleId}';
+    return AppModalShell(
+      title: 'Detalle Ticket #$saleIdLabel',
+      subtitle: _saleDateLabel(_sale),
+      icon: Icons.receipt_long,
+      accent: AppModalAccent.blue,
+      maxWidth: 580,
+      maxHeight: 680,
+      body: _isLoading
+          ? const SizedBox(
+              height: 180,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : _error != null
+              ? SizedBox(
+                  height: 180,
+                  child: Center(
+                    child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                  ),
+                )
+              : _buildContent(_sale!),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 
   Widget _buildContent(Map<String, dynamic> sale) {
     final items = (sale['items'] as List? ?? []);
     final payments = (sale['payments'] as List? ?? []);
-    final createdAt = DateTime.tryParse(sale['created_at']?.toString() ?? '')?.toLocal();
-    final dateStr = createdAt != null
-        ? DateFormat('dd/MM/yyyy HH:mm').format(createdAt)
-        : '—';
 
     final total = double.tryParse(sale['total']?.toString() ?? '0') ?? 0.0;
     final surcharge = double.tryParse(sale['total_surcharge']?.toString() ?? '0') ?? 0.0;
@@ -90,43 +103,6 @@ class _SaleDetailDialogState extends State<SaleDetailDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Header ──
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
-          decoration: BoxDecoration(
-            color: Colors.indigo.shade700,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.receipt_long, color: Colors.white, size: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Detalle Ticket #${sale['id']}',
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    Text(dateStr, style: TextStyle(color: Colors.indigo.shade100, fontSize: 13)),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: Colors.white70),
-              ),
-            ],
-          ),
-        ),
-
-        Flexible(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
                 // ── Ítems ──
                 const Text('Productos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey)),
                 const SizedBox(height: 8),
@@ -228,7 +204,7 @@ class _SaleDetailDialogState extends State<SaleDetailDialog> {
                           Icon(
                             isCc ? Icons.account_balance_wallet_outlined : Icons.payments_outlined,
                             size: 18,
-                            color: isCc ? Colors.purple.shade600 : Colors.blueGrey,
+                            color: isCc ? AppColors.indigo : Colors.blueGrey,
                           ),
                           const SizedBox(width: 8),
                           Expanded(child: Text(method, style: const TextStyle(fontSize: 14))),
@@ -236,26 +212,13 @@ class _SaleDetailDialogState extends State<SaleDetailDialog> {
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                                color: isCc ? Colors.purple.shade700 : Colors.black87,
+                                color: isCc ? AppColors.indigo : Colors.black87,
                               )),
                         ],
                       ),
                     );
                   }),
                 ],
-              ],
-            ),
-          ),
-        ),
-
-        // ── Footer ──
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-          child: FilledButton.tonal(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ),
       ],
     );
   }

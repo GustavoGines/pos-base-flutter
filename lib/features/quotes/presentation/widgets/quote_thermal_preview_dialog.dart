@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
@@ -117,6 +119,8 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
     final is58 = _currentWidth == ThermalPaperWidth.mm58;
 
     return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
@@ -124,79 +128,49 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Header con Título y Selector 58mm / 80mm ─────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.receipt_long,
-                    color: Colors.white70,
-                    size: 22,
+            // ── Header Dark Navy unificado con Selector 58mm / 80mm ─────────
+            AppModalHeader(
+              title: 'Ticket ${widget.quote.quoteNumber}',
+              icon: Icons.receipt_long_rounded,
+              accent: AppModalAccent.indigo,
+              compact: true,
+              onClose: () => Navigator.pop(context, false),
+              trailing: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    width: 1,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Ticket ${widget.quote.quoteNumber}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+                ),
+                padding: const EdgeInsets.all(2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildFormatChip(
+                      label: '58mm',
+                      isSelected: is58,
+                      onTap: () {
+                        if (!is58) {
+                          setState(() =>
+                              _currentWidth = ThermalPaperWidth.mm58);
+                        }
+                      },
                     ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Conmutador interactivo 58mm / 80mm
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade800,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white24, width: 1),
+                    const SizedBox(width: 2),
+                    _buildFormatChip(
+                      label: '80mm',
+                      isSelected: !is58,
+                      onTap: () {
+                        if (is58) {
+                          setState(() =>
+                              _currentWidth = ThermalPaperWidth.mm80);
+                        }
+                      },
                     ),
-                    padding: const EdgeInsets.all(2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildFormatChip(
-                          label: '58mm',
-                          isSelected: is58,
-                          onTap: () {
-                            if (!is58) {
-                              setState(() =>
-                                  _currentWidth = ThermalPaperWidth.mm58);
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 2),
-                        _buildFormatChip(
-                          label: '80mm',
-                          isSelected: !is58,
-                          onTap: () {
-                            if (is58) {
-                              setState(() =>
-                                  _currentWidth = ThermalPaperWidth.mm80);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Cerrar',
-                    onPressed: () => Navigator.pop(context, false),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
@@ -230,10 +204,10 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
             // ── Barra Inferior de Acciones ──────────────────────────────────
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
+              decoration: const BoxDecoration(
+                color: AppColors.surfaceMuted,
                 border: Border(
-                  top: BorderSide(color: Colors.grey.shade300, width: 1),
+                  top: BorderSide(color: AppColors.border, width: 1),
                 ),
               ),
               child: Row(
@@ -272,7 +246,7 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
                         ),
                       ),
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2E7D32),
+                        backgroundColor: const Color(0xFF16A34A),
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -301,7 +275,7 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.indigo.shade600 : Colors.transparent,
+          color: isSelected ? AppColors.indigo : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(

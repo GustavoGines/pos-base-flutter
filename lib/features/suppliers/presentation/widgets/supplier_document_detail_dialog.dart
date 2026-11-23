@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../catalog/presentation/providers/catalog_provider.dart';
@@ -17,57 +19,48 @@ Future<String?> _promptDeletionReasonDialog(BuildContext context, Map<String, dy
 
   final result = await showDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      title: Row(
+    builder: (ctx) => AppModalShell(
+      title: 'Anular Comprobante $label',
+      subtitle: 'Confirmá el motivo para el registro de auditoría',
+      icon: Icons.warning_amber_rounded,
+      accent: AppModalAccent.red,
+      compact: true,
+      maxWidth: 480,
+      onClose: () => Navigator.of(ctx).pop(null),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 28),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Anular Comprobante $label',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          const Text(
+            'Al anular este comprobante:\n'
+            '• Se revertirá automáticamente el impacto en el saldo del proveedor.\n'
+            '• Se descontará (o repondrá en Notas de Crédito) el stock de los productos involucrados.\n'
+            '• El comprobante quedará registrado en Auditoría y en la Papelera.',
+            style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Motivo de anulación (Auditoría)',
+              hintText: 'Ej: Factura duplicada / Error de proveedor',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onSubmitted: (val) => Navigator.of(ctx).pop(
+              val.trim().isNotEmpty ? val.trim() : 'Anulación manual de comprobante',
             ),
           ),
         ],
       ),
-      content: SizedBox(
-        width: 440,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Al anular este comprobante:\n'
-              '• Se revertirá automáticamente el impacto en el saldo del proveedor.\n'
-              '• Se descontará (o repondrá en Notas de Crédito) el stock de los productos involucrados.\n'
-              '• El comprobante quedará registrado en Auditoría y en la Papelera.',
-              style: TextStyle(fontSize: 13, height: 1.4, color: Colors.black87),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Motivo de anulación (Auditoría)',
-                hintText: 'Ej: Factura duplicada / Error de proveedor',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onSubmitted: (val) => Navigator.of(ctx).pop(
-                val.trim().isNotEmpty ? val.trim() : 'Anulación manual de comprobante',
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(null),
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
           onPressed: () {
             final reason = ctrl.text.trim().isNotEmpty
                 ? ctrl.text.trim()
@@ -142,17 +135,6 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
     }
   }
 
-  Color _typeColor(String? type) {
-    switch (type) {
-      case 'delivery_note':
-        return Colors.indigo.shade700;
-      case 'credit_note':
-        return Colors.orange.shade800;
-      default:
-        return Colors.blue.shade800;
-    }
-  }
-
   Future<void> _handleEdit() async {
     final supplierId = int.tryParse(
           (_doc['supplier_id'] ?? (_doc['supplier'] is Map ? _doc['supplier']['id'] : null) ?? 0)
@@ -213,7 +195,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
           final ok = await prov.deleteInvoice(id, reason: reason);
           if (ok && mounted) {
             if (catalogProv != null) {
-              unawaited(catalogProv.loadProducts());
+              unawaited(catalogProv.loadProductsWithoutSupplierFilter());
             }
             _didModify = true;
             widget.onChanged?.call();
@@ -256,7 +238,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
           final ok = await prov.restoreInvoice(id);
           if (ok && mounted) {
             if (catalogProv != null) {
-              unawaited(catalogProv.loadProducts());
+              unawaited(catalogProv.loadProductsWithoutSupplierFilter());
             }
             _didModify = true;
             widget.onChanged?.call();
@@ -348,187 +330,194 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
         : (hasAnyFiscal ? 'A' : 'S/D');
     final showFiscalInfo = isRI && type != 'delivery_note';
 
-    final screenSize = MediaQuery.of(context).size;
+    final accent = isDeleted
+        ? AppModalAccent.red
+        : (isEdited ? AppModalAccent.amber : AppModalAccent.indigo);
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: (screenSize.width * 0.92).clamp(320.0, 960.0),
-        constraints: BoxConstraints(
-          maxHeight: (screenSize.height * 0.90).clamp(420.0, 720.0),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _typeColor(type).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _typeColor(type).withValues(alpha: 0.4)),
-                        ),
-                        child: Text(
-                          _typeLabel(type),
-                          style: TextStyle(
-                            color: _typeColor(type),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      if (showFiscalInfo)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: effectiveLetter == 'S/D'
-                                ? Colors.blueGrey.shade50
-                                : Colors.indigo.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: effectiveLetter == 'S/D'
-                                  ? Colors.blueGrey.shade300
-                                  : Colors.indigo.shade300,
-                            ),
-                          ),
-                          child: Text(
-                            effectiveLetter == 'S/D'
-                                ? 'COMP. S/D'
-                                : '${type == 'credit_note' ? 'NC' : 'FAC'} $effectiveLetter',
-                            style: TextStyle(
-                              color: effectiveLetter == 'S/D'
-                                  ? Colors.blueGrey.shade800
-                                  : Colors.indigo.shade800,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11.5,
-                            ),
-                          ),
-                        ),
-                      Text(
-                        invNumber != null && invNumber.isNotEmpty
-                            ? 'Comprobante #$invNumber'
-                            : 'Comprobante S/N (ID #${_doc['id']})',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          decoration: isDeleted ? TextDecoration.lineThrough : null,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (isEdited)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade100,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.amber.shade700),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.history_edu, size: 14, color: Colors.amber.shade900),
-                              const SizedBox(width: 4),
-                              Text(
-                                'EDITADO ($editCount)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber.shade900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      if (isDeleted)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade100,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.red.shade700),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.block, size: 14, color: Colors.red.shade900),
-                              const SizedBox(width: 4),
-                              Text(
-                                'ANULADO',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red.shade900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
+    return AppModalShell(
+      titleWidget: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+            ),
+            child: Text(
+              _typeLabel(type),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+              ),
+            ),
+          ),
+          if (showFiscalInfo)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+              ),
+              child: Text(
+                effectiveLetter == 'S/D'
+                    ? 'COMP. S/D'
+                    : '${type == 'credit_note' ? 'NC' : 'FAC'} $effectiveLetter',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          Text(
+            invNumber != null && invNumber.isNotEmpty
+                ? 'Comprobante #$invNumber'
+                : 'Comprobante S/N (ID #${_doc['id']})',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w800,
+              decoration: isDeleted ? TextDecoration.lineThrough : null,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (isEdited)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.amber.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.amber.withValues(alpha: 0.55)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.history_edu, size: 13, color: Colors.amberAccent),
+                  SizedBox(width: 4),
+                  Text(
+                    'EDITADO',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amberAccent,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                if (_isWorking)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                else ...[
-                  if (!isDeleted) ...[
-                    OutlinedButton.icon(
-                      onPressed: _handleEdit,
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Editar'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.amber.shade900,
-                        side: BorderSide(color: Colors.amber.shade700),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _handleDelete,
-                      icon: const Icon(Icons.delete_outline, size: 16),
-                      label: const Text('Anular'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red.shade700,
-                        side: BorderSide(color: Colors.red.shade300),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ] else
-                    FilledButton.icon(
-                      onPressed: _handleRestore,
-                      icon: const Icon(Icons.restore, size: 16),
-                      label: const Text('Restaurar'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
                 ],
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(_didModify),
+              ),
+            ),
+          if (isEdited && editCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '×$editCount',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amberAccent,
                 ),
+              ),
+            ),
+          if (isDeleted)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.65)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.block, size: 13, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    'ANULADO',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      subtitle: '$supName • $dateStr',
+      icon: isDeleted
+          ? Icons.block
+          : (type == 'credit_note'
+              ? Icons.receipt_long_outlined
+              : Icons.description_outlined),
+      accent: accent,
+      maxWidth: 960,
+      maxHeight: 720,
+      expandBody: true,
+      onClose: () => Navigator.of(context).pop(_didModify),
+      headerTrailing: _isWorking
+          ? const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isDeleted) ...[
+                  OutlinedButton.icon(
+                    onPressed: _handleEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    label: const Text('Editar'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.amberAccent,
+                      side: BorderSide(color: Colors.amberAccent.withValues(alpha: 0.6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _handleDelete,
+                    icon: const Icon(Icons.delete_outline, size: 15),
+                    label: const Text('Anular'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent.shade100,
+                      side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.6)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ] else
+                  FilledButton.icon(
+                    onPressed: _handleRestore,
+                    icon: const Icon(Icons.restore, size: 15),
+                    label: const Text('Restaurar'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 12),
+      bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             // Metadata banner
             Container(
               padding: const EdgeInsets.all(14),
@@ -594,10 +583,10 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                           if (totalPercFiscal > 0)
                             Text(
                               'Percep./Imp. Int.: ${currency.format(totalPercFiscal)}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple.shade700,
+                                color: AppColors.indigo,
                               ),
                             ),
                           if (totalNonTaxedExFiscal > 0)
@@ -677,66 +666,68 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                   ? _buildItemsTab(rawItems, currency)
                   : _buildAuditTab(rawAudits, currency),
             ),
-            const SizedBox(height: 16),
-            // Totals footer
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDeleted ? Colors.red.shade900 : Colors.blueGrey.shade900,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 20,
-                runSpacing: 8,
-                children: [
-                  Wrap(
-                    spacing: 20,
-                    runSpacing: 4,
-                    children: [
-                      if (freightAmount > 0)
-                        Text(
-                          'Flete: ${currency.format(freightAmount)}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                      if (taxAmount > 0)
-                        Text(
-                          'Impuestos: ${currency.format(taxAmount)}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                      if (discountAmount > 0)
-                        Text(
-                          'Descuento: -${currency.format(discountAmount)}',
-                          style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
-                        ),
-                    ],
+          ],
+        ),
+      customFooter: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: isDeleted
+                ? const [Color(0xFF7F1D1D), Color(0xFF991B1B)]
+                : const [AppColors.navyStart, AppColors.navyEnd],
+          ),
+        ),
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 20,
+          runSpacing: 8,
+          children: [
+            Wrap(
+              spacing: 20,
+              runSpacing: 4,
+              children: [
+                if (freightAmount > 0)
+                  Text(
+                    'Flete: ${currency.format(freightAmount)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        isDeleted ? 'TOTAL ANULADO: ' : 'TOTAL COMPROBANTE: ',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        currency.format(totalAmount),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                          decoration: isDeleted ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ],
+                if (taxAmount > 0)
+                  Text(
+                    'Impuestos: ${currency.format(taxAmount)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
-                ],
-              ),
+                if (discountAmount > 0)
+                  Text(
+                    'Descuento: -${currency.format(discountAmount)}',
+                    style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
+                  ),
+              ],
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isDeleted ? 'TOTAL ANULADO: ' : 'TOTAL COMPROBANTE: ',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  currency.format(totalAmount),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                    decoration: isDeleted ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1090,15 +1081,15 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.purple.shade50,
+                          color: Colors.indigo.shade50,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.purple.shade200),
+                          border: Border.all(color: Colors.indigo.shade200),
                         ),
                         child: Text(
                           'PIN Admin: $authAdminName',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.purple.shade800,
+                            color: Colors.indigo.shade800,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1332,32 +1323,34 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
       final picked = await showDialog<int>(
         context: context,
         builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setModalState) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            title: const Text('Seleccionar Proveedor'),
-            content: SizedBox(
-              width: 380,
-              child: DropdownButtonFormField<int>(
-                isExpanded: true,
-                initialValue: chosenId,
-                decoration: const InputDecoration(
-                  labelText: 'Proveedor del Comprobante',
-                  border: OutlineInputBorder(),
-                ),
-                items: suppliers
-                    .map(
-                      (s) => DropdownMenuItem<int>(
-                        value: s.id,
-                        child: Text(s.name, overflow: TextOverflow.ellipsis),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) setModalState(() => chosenId = val);
-                },
+          builder: (ctx, setModalState) => AppModalShell(
+            title: 'Seleccionar Proveedor',
+            subtitle: 'Elegí el proveedor al que corresponde el comprobante',
+            icon: Icons.local_shipping_outlined,
+            accent: AppModalAccent.indigo,
+            compact: true,
+            maxWidth: 440,
+            onClose: () => Navigator.of(ctx).pop(null),
+            body: DropdownButtonFormField<int>(
+              isExpanded: true,
+              initialValue: chosenId,
+              decoration: const InputDecoration(
+                labelText: 'Proveedor del Comprobante',
+                border: OutlineInputBorder(),
               ),
+              items: suppliers
+                  .map(
+                    (s) => DropdownMenuItem<int>(
+                      value: s.id,
+                      child: Text(s.name, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setModalState(() => chosenId = val);
+              },
             ),
-            actions: [
+            footerActions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(null),
                 child: const Text('Cancelar'),
@@ -1440,7 +1433,7 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
           final ok = await prov.deleteInvoice(id, reason: reason);
           if (ok && mounted) {
             if (catalogProv != null) {
-              unawaited(catalogProv.loadProducts());
+              unawaited(catalogProv.loadProductsWithoutSupplierFilter());
             }
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1478,7 +1471,7 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
           final ok = await prov.restoreInvoice(id);
           if (ok && mounted) {
             if (catalogProv != null) {
-              unawaited(catalogProv.loadProducts());
+              unawaited(catalogProv.loadProductsWithoutSupplierFilter());
             }
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1525,63 +1518,29 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
   Widget build(BuildContext context) {
     final suppliers = context.watch<SupplierProvider>().suppliers;
     final currency = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
-    final screenSize = MediaQuery.of(context).size;
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: (screenSize.width * 0.95).clamp(320.0, 1140.0),
-        height: (screenSize.height * 0.88).clamp(420.0, 740.0),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Expanded(
-                  child: Row(
-                    children: [
-                      Icon(Icons.receipt_long, color: Colors.indigo, size: 28),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Historial y Auditoría de Comprobantes de Proveedores',
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              'Consulte, cargue, edite o anule Facturas, Remitos y Notas de Crédito con auditoría completa',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: _handleCreateInvoice,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Cargar Comprobante'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.indigo.shade700,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+    return AppModalShell(
+      title: 'Historial y Auditoría de Comprobantes de Proveedores',
+      subtitle:
+          'Consulte, cargue, edite o anule Facturas, Remitos y Notas de Crédito con auditoría completa',
+      icon: Icons.receipt_long,
+      accent: AppModalAccent.indigo,
+      maxWidth: 1140,
+      maxHeight: 740,
+      expandBody: true,
+      headerTrailing: FilledButton.icon(
+        onPressed: _handleCreateInvoice,
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('Cargar Comprobante'),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+      ),
+      bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             // Filters bar
             Container(
               width: double.infinity,
@@ -2086,7 +2045,12 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
             ),
           ],
         ),
-      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar (Esc)'),
+        ),
+      ],
     );
   }
 }

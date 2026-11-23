@@ -6,6 +6,8 @@ import 'package:frontend_desktop/features/quotes/presentation/widgets/quote_succ
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -17,8 +19,10 @@ class PosQuickQuotesDialog extends StatefulWidget {
   State<PosQuickQuotesDialog> createState() => _PosQuickQuotesDialogState();
 }
 
-class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with SingleTickerProviderStateMixin {
+class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late int _lastTabIndex;
   final TextEditingController _customerNameCtrl = TextEditingController();
   final TextEditingController _customerPhoneCtrl = TextEditingController();
   final TextEditingController _notesCtrl = TextEditingController();
@@ -26,11 +30,25 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
 
   bool _isSaving = false;
 
+  void _onTabChanged() {
+    if (!mounted) return;
+    if (_lastTabIndex != _tabController.index) {
+      _lastTabIndex = _tabController.index;
+      setState(() {});
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final pos = Provider.of<PosProvider>(context, listen: false);
-    _tabController = TabController(length: 2, vsync: this, initialIndex: pos.cart.isNotEmpty ? 0 : 1);
+    _lastTabIndex = pos.cart.isNotEmpty ? 0 : 1;
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: _lastTabIndex,
+    );
+    _tabController.addListener(_onTabChanged);
 
     if (pos.selectedCustomer != null) {
       _customerNameCtrl.text = pos.selectedCustomer!.name;
@@ -39,12 +57,14 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
 
     // Cargar presupuestos recientes
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       Provider.of<QuoteProvider>(context, listen: false).loadQuotes();
     });
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _customerNameCtrl.dispose();
     _customerPhoneCtrl.dispose();
@@ -120,89 +140,145 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Container(
-        width: 620,
-        height: 520,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Cabecera
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3F51B5).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.request_quote_rounded, color: Color(0xFF3F51B5), size: 24),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Presupuestos Rápidos',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'Generar o cargar presupuestos sin alterar stock físico',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
+    final pos = context.watch<PosProvider>();
+    final showSaveFooter = _tabController.index == 0 && pos.cart.isNotEmpty;
+    final itemCount = pos.cart.length;
+    final itemWord = itemCount == 1 ? 'ítem' : 'ítems';
+
+    return AppModalShell(
+      title: 'Presupuestos Rápidos',
+      subtitle: 'Generar o cargar presupuestos sin alterar stock físico',
+      icon: Icons.request_quote_rounded,
+      accent: AppModalAccent.indigo,
+      maxWidth: 640,
+      maxHeight: 560,
+      expandBody: true,
+      topBar: Container(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            indicatorSize: TabBarIndicatorSize.tab,
+            dividerColor: Colors.transparent,
+            indicator: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-
-            // TabBar
-            Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
+            labelColor: AppColors.indigo,
+            unselectedLabelColor: AppColors.textSecondary,
+            labelStyle:
+                const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            unselectedLabelStyle:
+                const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            tabs: const [
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.save_outlined, size: 17),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Guardar Carrito',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
-                labelColor: const Color(0xFF3F51B5),
-                unselectedLabelColor: Colors.grey.shade600,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                tabs: const [
-                  Tab(text: '💾 Guardar Carrito'),
-                  Tab(text: '📥 Recuperar Presupuesto'),
-                ],
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // TabBarView
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildSaveTab(),
-                  _buildRecallTab(),
-                ],
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download_rounded, size: 17),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Recuperar Presupuesto',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+      bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildSaveTab(),
+          _buildRecallTab(),
+        ],
+      ),
+      footerLeading: showSaveFooter
+          ? Text(
+              '$itemCount $itemWord · Total \$${pos.cartSubtotal.toCurrency()}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            )
+          : null,
+      footerActions: showSaveFooter
+          ? [
+              TextButton(
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                child: const Text('Cancelar (Esc)'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.indigo,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                ),
+                onPressed: _isSaving ? null : _handleSaveQuote,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text(
+                  _isSaving ? 'Guardando...' : 'Generar y Guardar Presupuesto',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar (Esc)'),
+              ),
+            ],
     );
   }
 
@@ -214,16 +290,21 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.shopping_cart_outlined, size: 50, color: Colors.grey.shade400),
+                Icon(Icons.shopping_cart_outlined,
+                    size: 50, color: Colors.grey.shade400),
                 const SizedBox(height: 12),
                 const Text(
                   'El carrito está vacío',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 const Text(
                   'Agregá productos al ticket actual para guardarlos como presupuesto.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -231,27 +312,39 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
           );
         }
 
+        final productWord = pos.cart.length == 1 ? 'producto' : 'productos';
+
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.indigo.shade100),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${pos.cart.length} productos en el ticket',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
+                      '${pos.cart.length} $productWord en el ticket',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo.shade900,
+                      ),
                     ),
                     Text(
                       'Total: \$${pos.cartSubtotal.toCurrency()}',
-                      style: TextStyle(fontWeight: FontWeight.w900, color: Colors.indigo.shade900, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.indigo.shade900,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -262,8 +355,13 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
                 decoration: InputDecoration(
                   labelText: 'Nombre del Cliente (Opcional)',
                   prefixIcon: const Icon(Icons.person_outline, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -273,8 +371,13 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
                 decoration: InputDecoration(
                   labelText: 'Teléfono / WhatsApp (Opcional)',
                   prefixIcon: const Icon(Icons.phone_outlined, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -284,26 +387,13 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
                 decoration: InputDecoration(
                   labelText: 'Observaciones / Notas (Opcional)',
                   prefixIcon: const Icon(Icons.note_alt_outlined, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3F51B5),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  onPressed: _isSaving ? null : _handleSaveQuote,
-                  icon: _isSaving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.save_rounded, size: 20),
-                  label: Text(_isSaving ? 'Guardando...' : 'Generar y Guardar Presupuesto',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                 ),
               ),
             ],

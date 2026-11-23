@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -204,79 +206,47 @@ class _ExpiredBatchesSweepDialogState extends State<ExpiredBatchesSweepDialog> {
     final allSelected =
         _rows.isNotEmpty && _rows.every((element) => element.selected);
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 780,
-          maxHeight: math.min(680, MediaQuery.of(context).size.height * 0.88),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.deepOrange.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.cleaning_services_outlined,
-                        color: Colors.deepOrange.shade700),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Barrido de Lotes Vencidos (Cierre del Día)',
-                          style: TextStyle(
-                              fontSize: 16.5, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'Da de baja en 1 clic la mercadería vencida restante y valoriza la merma.',
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed:
-                        _submitting ? null : () => Navigator.of(context).pop(false),
-                  ),
-                ],
+    return AppModalShell(
+      title: 'Barrido de Lotes Vencidos (Cierre del Día)',
+      subtitle:
+          'Da de baja en 1 clic la mercadería vencida restante y valoriza la merma.',
+      icon: Icons.cleaning_services_outlined,
+      accent: AppModalAccent.red,
+      maxWidth: 780,
+      maxHeight: 680,
+      expandBody: true,
+      onClose: () {
+        if (!_submitting) Navigator.of(context).pop(false);
+      },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.orange.shade50.withValues(alpha: 0.65),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.orange.shade200),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: SwitchListTile.adaptive(
+              dense: true,
+              title: const Text(
+                'Incluir lotes que vencen HOY (cierre de vitrina)',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 10),
-              Material(
-                color: Colors.orange.shade50.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(10),
-                child: SwitchListTile.adaptive(
-                  dense: true,
-                  title: const Text(
-                    'Incluir lotes que vencen HOY (cierre de vitrina)',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text(
-                    'Ideal al cerrar el turno noche para retirar productos del día que no pasan a mañana.',
-                    style: TextStyle(fontSize: 11.5),
-                  ),
-                  value: _includeToday,
-                  onChanged: _loading || _submitting
-                      ? null
-                      : (v) {
-                          setState(() => _includeToday = v);
-                          _loadExpired();
-                        },
-                ),
+              subtitle: const Text(
+                'Ideal al cerrar el turno noche para retirar productos del día que no pasan a mañana.',
+                style: TextStyle(fontSize: 11.5),
               ),
+              value: _includeToday,
+              onChanged: _loading || _submitting
+                  ? null
+                  : (v) {
+                      setState(() => _includeToday = v);
+                      _loadExpired();
+                    },
+            ),
+          ),
               const SizedBox(height: 10),
               if (!_loading && _error == null && _rows.isNotEmpty)
                 Padding(
@@ -460,69 +430,51 @@ class _ExpiredBatchesSweepDialogState extends State<ExpiredBatchesSweepDialog> {
                   prefixIcon: Icon(Icons.notes_outlined),
                 ),
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${selectedRows.length} lote(s) • ${totalUnits.toQty()} unidades a descartar',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 12.5),
-                      ),
-                      Text(
-                        'Costo valorizado estimado de merma: \$${totalLoss.toCurrency()}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.red.shade800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: _submitting
-                            ? null
-                            : () => Navigator.of(context).pop(false),
-                        child: const Text('Cancelar'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                            backgroundColor: Colors.deepOrange),
-                        icon: _submitting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.delete_sweep_outlined),
-                        label: Text(
-                          _submitting
-                              ? 'Procesando...'
-                              : 'Confirmar Baja (${selectedRows.length})',
-                        ),
-                        onPressed: _submitting || selectedRows.isEmpty
-                            ? null
-                            : _confirmSweep,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
+      footerLeading: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${selectedRows.length} lote(s) • ${totalUnits.toQty()} unidades a descartar',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+          ),
+          Text(
+            'Costo valorizado estimado de merma: \$${totalLoss.toCurrency()}',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.danger,
+            ),
+          ),
+        ],
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          icon: _submitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.delete_sweep_outlined),
+          label: Text(
+            _submitting
+                ? 'Procesando...'
+                : 'Confirmar Baja (${selectedRows.length})',
+          ),
+          onPressed: _submitting || selectedRows.isEmpty ? null : _confirmSweep,
+        ),
+      ],
     );
   }
 }

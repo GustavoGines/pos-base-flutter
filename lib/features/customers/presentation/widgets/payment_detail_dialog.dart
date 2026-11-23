@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:intl/intl.dart';
@@ -61,103 +63,61 @@ class PaymentDetailDialog extends StatelessWidget {
         : (transaction.balanceAfter + transaction.amount);
     final (methodIcon, methodLabel) = _methodInfo(transaction.paymentMethod);
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Header ──
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isRefund
-                      ? [Colors.amber.shade800, Colors.amber.shade600]
-                      : [Colors.green.shade700, Colors.green.shade500],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      isRefund ? Icons.replay_rounded : Icons.check_circle_outline,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isRefund ? 'Reintegro Registrado' : 'Abono Registrado',
-                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          customerName,
-                          style: TextStyle(color: isRefund ? Colors.amber.shade100 : Colors.green.shade100, fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Monto central destacado ──
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 28),
+    return AppModalShell(
+      title: isRefund ? 'Reintegro Registrado' : 'Abono Registrado',
+      subtitle: customerName,
+      icon: isRefund ? Icons.replay_rounded : Icons.check_circle_outline,
+      accent: isRefund ? AppModalAccent.amber : AppModalAccent.emerald,
+      compact: true,
+      maxWidth: 460,
+      bodyPadding: EdgeInsets.zero,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Monto central destacado ──
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
               color: isRefund ? Colors.amber.shade50 : Colors.green.shade50,
-              child: Column(
-                children: [
-                  Text(
-                    '${isRefund ? '-' : '+'}\$${transaction.amount.toCurrency()}',
-                    style: TextStyle(
-                      fontSize: 42,
-                      fontWeight: FontWeight.bold,
-                      color: isRefund ? Colors.amber.shade800 : Colors.green.shade700,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isRefund ? 'Reintegro de saldo a favor' : 'Abono recibido',
-                    style: TextStyle(fontSize: 14, color: isRefund ? Colors.amber.shade800 : Colors.green.shade600),
-                  ),
-                ],
-              ),
+              border: const Border(bottom: BorderSide(color: AppColors.border)),
             ),
-
-            // ── Detalles ──
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  // Método de pago
-                  _detailRow(
-                    icon: methodIcon,
-                    label: 'Método de Pago',
-                    value: methodLabel,
-                    color: Colors.blueGrey.shade700,
+            child: Column(
+              children: [
+                Text(
+                  '${isRefund ? '-' : '+'}\$${transaction.amount.toCurrency()}',
+                  style: TextStyle(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    color: isRefund ? Colors.amber.shade800 : Colors.green.shade700,
+                    letterSpacing: -1,
                   ),
-                  const SizedBox(height: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isRefund ? 'Reintegro de saldo a favor' : 'Abono recibido',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isRefund ? Colors.amber.shade800 : Colors.green.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Detalles ──
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                // Método de pago
+                _detailRow(
+                  icon: methodIcon,
+                  label: 'Método de Pago',
+                  value: methodLabel,
+                  color: Colors.blueGrey.shade700,
+                ),
+                const SizedBox(height: 16),
 
                   // Fecha
                   _detailRow(
@@ -250,26 +210,21 @@ class PaymentDetailDialog extends StatelessWidget {
                       value: transaction.description!,
                     ),
                   ],
-                ],
-              ),
+              ],
             ),
-
-            // ── Footer ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Cerrar', style: TextStyle(fontSize: 15)),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
+      footerActions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.green.shade600,
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          ),
+          child: const Text('Cerrar', style: TextStyle(fontSize: 14.5)),
+        ),
+      ],
     );
   }
 

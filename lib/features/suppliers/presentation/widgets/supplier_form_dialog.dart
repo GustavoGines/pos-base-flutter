@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../providers/supplier_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 
@@ -116,135 +118,140 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
       isRI = context.watch<SettingsProvider>().isResponsableInscripto;
     } catch (_) {}
 
-    return AlertDialog(
-      title: Text(isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor', style: const TextStyle(fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return AppModalShell(
+      title: isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor',
+      subtitle: isEditing
+          ? 'Actualizá los datos comerciales y fiscales del proveedor'
+          : 'Registrá un nuevo proveedor para compras y cuenta corriente',
+      icon: Icons.local_shipping_outlined,
+      accent: AppModalAccent.indigo,
+      maxWidth: 560,
+      onClose: () {
+        if (!_isLoading) Navigator.pop(context);
+      },
+      body: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Razón Social / Nombre *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.business),
+                isDense: true,
+              ),
+              validator: (val) => val == null || val.isEmpty ? 'El nombre es obligatorio' : null,
+            ),
+            const SizedBox(height: 16),
+            Row(
               children: [
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Razón Social / Nombre *',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.business),
-                    isDense: true,
-                  ),
-                  validator: (val) => val == null || val.isEmpty ? 'El nombre es obligatorio' : null,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: _cuitController,
-                        decoration: const InputDecoration(
-                          labelText: 'CUIT',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.badge_outlined),
-                          isDense: true,
-                        ),
-                      ),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: _cuitController,
+                    decoration: const InputDecoration(
+                      labelText: 'CUIT',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge_outlined),
+                      isDense: true,
                     ),
-                    if (isRI) ...[
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 3,
-                        child: DropdownButtonFormField<String>(
-                          // ignore: deprecated_member_use
-                          value: _taxCategory,
-                          decoration: const InputDecoration(
-                            labelText: 'Condición IVA',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat, overflow: TextOverflow.ellipsis))).toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _taxCategory = val);
-                          },
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _contactNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del Contacto',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person_outline),
-                    isDense: true,
                   ),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _phoneController,
-                        decoration: const InputDecoration(
-                          labelText: 'Teléfono / WhatsApp',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.phone_outlined),
-                          isDense: true,
-                        ),
+                if (isRI) ...[
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _taxCategory,
+                      decoration: const InputDecoration(
+                        labelText: 'Condición IVA',
+                        border: OutlineInputBorder(),
+                        isDense: true,
                       ),
+                      items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat, overflow: TextOverflow.ellipsis))).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _taxCategory = val);
+                      },
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.email_outlined),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _addressController,
-                  decoration: const InputDecoration(
-                    labelText: 'Dirección',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.location_on_outlined),
-                    isDense: true,
                   ),
-                  minLines: 1,
-                  maxLines: 3,
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _contactNameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Contacto',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_outline),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Teléfono / WhatsApp',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      isDense: true,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text('Proveedor Activo', style: TextStyle(fontWeight: FontWeight.bold)),
-                  value: _isActive,
-                  onChanged: (val) => setState(() => _isActive = val),
-                  contentPadding: EdgeInsets.zero,
-                  activeTrackColor: Colors.blueAccent.withValues(alpha: 0.5), activeThumbColor: Colors.blueAccent,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email_outlined),
+                      isDense: true,
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _addressController,
+              decoration: const InputDecoration(
+                labelText: 'Dirección',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.location_on_outlined),
+                isDense: true,
+              ),
+              minLines: 1,
+              maxLines: 3,
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Proveedor Activo', style: TextStyle(fontWeight: FontWeight.bold)),
+              value: _isActive,
+              onChanged: (val) => setState(() => _isActive = val),
+              contentPadding: EdgeInsets.zero,
+              activeTrackColor: AppColors.primary.withValues(alpha: 0.45),
+              activeThumbColor: AppColors.primary,
+            ),
+          ],
         ),
       ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
           onPressed: _isLoading ? null : _save,
-          icon: _isLoading 
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Icon(Icons.save),
+          icon: _isLoading
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.save),
           label: const Text('Guardar'),
         ),
       ],

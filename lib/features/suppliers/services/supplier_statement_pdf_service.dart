@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -42,27 +44,17 @@ class SupplierStatementPdfService {
       paperSize: paperSize,
     );
 
-    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
+    final paperLabel = pdfPaperSizeLabel(paperSize);
     if (context.mounted) {
-      await showDialog(
+      await showAppPdfPreviewDialog(
         context: context,
-        builder: (ctx) => Dialog(
-          child: SizedBox(
-            width: 860,
-            height: MediaQuery.of(ctx).size.height * 0.88,
-            child: Scaffold(
-              appBar: AppBar(title: Text('Estado de Cuenta — Vista Previa ($paperLabel)')),
-              body: PdfPreview(
-                allowPrinting: true,
-                allowSharing: true,
-                canChangeOrientation: false,
-                canChangePageFormat: false,
-                pdfFileName: 'Estado_Cuenta_$supplierName.pdf',
-                build: (format) async => pdfBytes,
-              ),
-            ),
-          ),
-        ),
+        title: 'Estado de Cuenta — Vista Previa ($paperLabel)',
+        subtitle: supplierName,
+        icon: Icons.picture_as_pdf_rounded,
+        accent: AppModalAccent.blue,
+        initialPageFormat: pdfPageFormatFromPaperSize(paperSize),
+        pdfFileName: 'Estado_Cuenta_$supplierName.pdf',
+        build: (format) async => pdfBytes,
       );
     }
   }

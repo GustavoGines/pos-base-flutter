@@ -4,6 +4,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import '../domain/entities/cash_register_shift.dart';
 
 class ZClosePdfService {
@@ -26,30 +28,17 @@ class ZClosePdfService {
     );
 
     if (context.mounted) {
-      await showDialog(
+      final size = MediaQuery.sizeOf(context);
+      await showAppPdfPreviewDialog(
         context: context,
-        builder: (ctx) {
-          final size = MediaQuery.sizeOf(ctx);
-          return Dialog(
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: SizedBox(
-              width: size.width * 0.75, // 75% of screen width
-              height: size.height * 0.9, // 90% of screen height
-              child: Scaffold(
-                appBar: AppBar(title: const Text('Cierre Z - Vista Previa')),
-                body: PdfPreview(
-                  allowPrinting: true,
-                  allowSharing: true,
-                  canChangeOrientation: false,
-                  canChangePageFormat: false,
-                  pdfFileName: 'Cierre_Z_${shift.id}.pdf',
-                  build: (format) async => pdfBytes,
-                ),
-              ),
-            ),
-          );
-        },
+        title: 'Cierre Z - Vista Previa',
+        subtitle: 'Turno #${shift.id} • Reporte de arqueo y cierre de caja',
+        icon: Icons.picture_as_pdf_rounded,
+        accent: AppModalAccent.blue,
+        maxWidth: size.width * 0.78,
+        initialPageFormat: PdfPageFormat.a4,
+        pdfFileName: 'Cierre_Z_${shift.id}.pdf',
+        build: (format) async => pdfBytes,
       );
     }
   }

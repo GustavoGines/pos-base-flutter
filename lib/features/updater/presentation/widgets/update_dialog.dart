@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/update_info.dart';
@@ -583,10 +585,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
   @override
   Widget build(BuildContext context) {
     final Color componentColor = _isFull
-        ? const Color(0xFF1E3A8A)
+        ? AppColors.indigo
         : _isFrontend
-            ? const Color(0xFF673AB7)
-            : const Color(0xFF0D9488);
+            ? AppColors.primary
+            : AppColors.teal;
     final IconData componentIcon = _isFull
         ? Icons.auto_mode_rounded
         : _isFrontend
@@ -605,82 +607,114 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
     return PopScope(
       canPop: widget.updateInfo.isCritical ? false : !_isDownloading,
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: AppModalShell(
+        title: _isFull
+            ? 'Actualización del Sistema'
+            : 'Actualización Disponible',
+        subtitle: '$componentLabel • Versión ${widget.updateInfo.version}',
+        icon: _isFull ? Icons.system_update_rounded : componentIcon,
+        accent: _isFull
+            ? AppModalAccent.indigo
+            : (_isFrontend ? AppModalAccent.blue : AppModalAccent.teal),
+        showCloseButton: !_isDownloading && !widget.updateInfo.isCritical,
+        onClose: () => Navigator.of(context).pop(_isComplete),
+        compact: true,
+        maxWidth: 520,
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: componentColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: componentColor.withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(componentIcon, size: 14, color: componentColor),
-                  const SizedBox(width: 6),
-                  Text(
-                    componentLabel,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: componentColor,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
             Row(
               children: [
-                Icon(
-                    _isFull
-                        ? Icons.system_update_rounded
-                        : Icons.system_update_alt,
-                    color: componentColor),
-                const SizedBox(width: 10),
-                Text(_isFull ? 'Actualización del Sistema' : 'Actualización Disponible',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: componentColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: componentColor.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(componentIcon, size: 14, color: componentColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        componentLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: componentColor,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'v${widget.updateInfo.version}',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: componentColor,
+                  ),
+                ),
               ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Versión ${widget.updateInfo.version}',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: componentColor),
-            ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             Text(
               componentDescription,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
             ),
-            const SizedBox(height: 12),
-            const Text('Novedades:',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 14),
+            const Text(
+              'Novedades:',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
-              child: SingleChildScrollView(
-                child: Text(widget.updateInfo.changelog),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.32,
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    widget.updateInfo.changelog,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
               ),
             ),
             if (_isDownloading) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
               LinearProgressIndicator(
                 value: _progress > 0 ? _progress : null,
-                backgroundColor: Colors.grey.shade200,
+                backgroundColor: AppColors.surfaceAlt,
                 color: componentColor,
                 minHeight: 8,
                 borderRadius: BorderRadius.circular(4),
@@ -690,22 +724,34 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 child: Text(
                   _status,
                   textAlign: TextAlign.center,
-                  style:
-                      const TextStyle(fontSize: 13, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
             ] else if (_status != 'Listo para actualizar') ...[
-              const SizedBox(height: 16),
-              Text(
-                _status,
-                style: TextStyle(
-                  color: _status.startsWith('Error') ||
-                          _status.startsWith('❌')
-                      ? Colors.red
-                      : _status.startsWith('⚠️')
-                          ? Colors.orange.shade700
-                          : Colors.green.shade700,
-                  fontSize: 13,
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceMuted,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  _status,
+                  style: TextStyle(
+                    color: _status.startsWith('Error') ||
+                            _status.startsWith('❌')
+                        ? AppColors.danger
+                        : _status.startsWith('⚠️')
+                            ? AppColors.amber
+                            : Colors.green.shade700,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
@@ -719,14 +765,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
                     Icon(
                       _showLog ? Icons.expand_less : Icons.expand_more,
                       size: 16,
-                      color: Colors.grey.shade600,
+                      color: AppColors.textSecondary,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _showLog ? 'Ocultar log del actualizador' : 'Ver log del actualizador',
-                      style: TextStyle(
+                      _showLog
+                          ? 'Ocultar log del actualizador'
+                          : 'Ver log del actualizador',
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: AppColors.textSecondary,
                         decoration: TextDecoration.underline,
                       ),
                     ),
@@ -750,24 +798,39 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   child: Column(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: const BoxDecoration(
                           color: Colors.black26,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(8),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.terminal, size: 12, color: Colors.grey.shade400),
-                            const SizedBox(width: 6),
-                            Text(
-                              'updater_log.txt — ${_backendTargetDir ?? ''}',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontFamily: 'monospace'),
-                              overflow: TextOverflow.ellipsis,
+                            Icon(
+                              Icons.terminal,
+                              size: 12,
+                              color: Colors.grey.shade400,
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'updater_log.txt — ${_backendTargetDir ?? ''}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade400,
+                                  fontFamily: 'monospace',
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                             if (_isDownloading)
                               SizedBox(
-                                width: 10, height: 10,
+                                width: 10,
+                                height: 10,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
                                   color: Colors.grey.shade400,
@@ -801,7 +864,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ],
           ],
         ),
-        actions: [
+        footerActions: [
           if (!_isDownloading)
             TextButton(
               onPressed: () => Navigator.of(context).pop(_isComplete),
@@ -810,22 +873,24 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 style: TextStyle(
                   color: _isComplete
                       ? componentColor
-                      : Colors.grey.shade600,
+                      : AppColors.textSecondary,
                   fontWeight:
                       _isComplete ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
             ),
           if (!_isDownloading && !_isComplete)
-            ElevatedButton(
+            FilledButton.icon(
               onPressed: _startUpdate,
-              style: ElevatedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 backgroundColor: componentColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              child: Text(_isFull ? 'ACTUALIZAR SISTEMA' : 'ACTUALIZAR AHORA'),
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: Text(_isFull ? 'ACTUALIZAR SISTEMA' : 'ACTUALIZAR AHORA'),
             ),
         ],
       ),

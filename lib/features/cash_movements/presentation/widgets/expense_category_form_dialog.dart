@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import '../../providers/expense_category_provider.dart';
 import '../../models/expense_category_model.dart';
 
@@ -16,9 +17,15 @@ class ExpenseCategoryFormDialog {
     return showDialog<ExpenseCategory>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(id == null ? 'Nueva Categoría' : 'Editar Categoría'),
-          content: Column(
+        builder: (context, setState) => AppModalShell(
+          title: id == null ? 'Nueva Categoría' : 'Editar Categoría',
+          subtitle: 'Definí el nombre para clasificar movimientos de egresos',
+          icon: Icons.label_outline,
+          accent: AppModalAccent.slate,
+          compact: true,
+          maxWidth: 440,
+          onClose: () => Navigator.pop(ctx),
+          body: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -35,7 +42,7 @@ class ExpenseCategoryFormDialog {
                 ),
             ],
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancelar'),

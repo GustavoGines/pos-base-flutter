@@ -6,9 +6,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../../../core/presentation/widgets/thermal_receipt_widget.dart';
 import '../../../../core/presentation/widgets/ticket_preview_dialog.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
@@ -403,15 +405,15 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           final proceed = await showDialog<bool>(
             context: context,
             barrierDismissible: false,
-            builder: (ctx) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.monetization_on, color: Colors.teal),
-                  SizedBox(width: 8),
-                  Text('Vuelto de Proveedor por Cheque'),
-                ],
-              ),
-              content: Column(
+            builder: (ctx) => AppModalShell(
+              title: 'Vuelto de Proveedor por Cheque',
+              subtitle: 'El cheque supera la deuda del proveedor seleccionado',
+              icon: Icons.monetization_on,
+              accent: AppModalAccent.teal,
+              compact: true,
+              maxWidth: 460,
+              showCloseButton: false,
+              body: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -437,14 +439,17 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   const Text('¿Desea asentar el pago e ingresar el vuelto a la caja registradora?'),
                 ],
               ),
-              actions: [
+              footerActions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.teal,
+                    foregroundColor: Colors.white,
+                  ),
                   child: const Text('Confirmar e Ingresar Vuelto'),
                 ),
               ],
@@ -786,24 +791,33 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
     return PopScope(
       canPop: !_isLoading && !_isUploadingFile,
-      child: AlertDialog(
-      title: const Text('Registrar Movimiento de Caja'),
-      content: SizedBox(
-        width: 600,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8),
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      child: AppModalShell(
+        title: 'Registrar Movimiento de Caja',
+        subtitle: _type == 'deposit'
+            ? 'Ingreso manual o refuerzo de fondos en caja'
+            : (_type == 'supplier_payment'
+                ? 'Pago imputable a cuenta corriente de proveedor'
+                : 'Registro de egreso o gasto operativo'),
+        icon: Icons.account_balance_wallet_outlined,
+        accent: _type == 'deposit'
+            ? AppModalAccent.emerald
+            : (_type == 'supplier_payment'
+                ? AppModalAccent.indigo
+                : AppModalAccent.amber),
+        maxWidth: 640,
+        onClose: () {
+          if (!_isLoading && !_isUploadingFile) Navigator.of(context).pop();
+        },
+        body: Form(
+          key: _formKey,
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                   if (!hasOpenShift)
                     Container(
                       margin: const EdgeInsets.only(bottom: 14),
@@ -1386,10 +1400,10 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: isFromPocket ? Colors.deepPurple.shade50 : Colors.blueGrey.shade50,
+                                    color: isFromPocket ? Colors.indigo.shade50 : Colors.blueGrey.shade50,
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                      color: isFromPocket ? Colors.deepPurple.shade200 : Colors.blueGrey.shade200,
+                                      color: isFromPocket ? Colors.indigo.shade200 : Colors.blueGrey.shade200,
                                     ),
                                   ),
                                   child: Row(
@@ -1400,7 +1414,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                             ? Icons.fact_check_outlined
                                             : (isFromPocket ? Icons.account_balance_wallet_outlined : Icons.point_of_sale),
                                         size: 12,
-                                        color: isFromPocket ? Colors.deepPurple.shade700 : Colors.blueGrey.shade700,
+                                        color: isFromPocket ? Colors.indigo.shade700 : Colors.blueGrey.shade700,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -1408,7 +1422,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
-                                          color: isFromPocket ? Colors.deepPurple.shade800 : Colors.blueGrey.shade800,
+                                          color: isFromPocket ? Colors.indigo.shade800 : Colors.blueGrey.shade800,
                                         ),
                                       ),
                                     ],
@@ -1498,12 +1512,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: effectiveFundingSource == 'owner_funds'
-                                          ? Colors.deepPurple.shade600
+                                          ? AppColors.indigo
                                           : Colors.white,
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: effectiveFundingSource == 'owner_funds'
-                                            ? Colors.deepPurple.shade700
+                                            ? Colors.indigo.shade700
                                             : Colors.blueGrey.shade200,
                                         width: effectiveFundingSource == 'owner_funds' ? 1.5 : 1,
                                       ),
@@ -1516,7 +1530,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                           size: 16,
                                           color: effectiveFundingSource == 'owner_funds'
                                               ? Colors.white
-                                              : Colors.deepPurple.shade700,
+                                              : AppColors.indigo,
                                         ),
                                         const SizedBox(width: 6),
                                         Flexible(
@@ -1527,7 +1541,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                               fontWeight: FontWeight.bold,
                                               color: effectiveFundingSource == 'owner_funds'
                                                   ? Colors.white
-                                                  : Colors.deepPurple.shade900,
+                                                  : Colors.indigo.shade900,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -1833,26 +1847,25 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
               ),
               ),
             ),
+        footerActions: [
+          TextButton(
+            onPressed: (_isLoading || _isUploadingFile)
+                ? null
+                : () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
           ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton.icon(
-          onPressed: _isLoading ? null : _submit,
-          icon: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.save),
-          label: const Text('Procesar Movimiento'),
-        ),
-      ],
+          FilledButton.icon(
+            onPressed: (_isLoading || _isUploadingFile) ? null : _submit,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.save),
+            label: const Text('Procesar Movimiento'),
+          ),
+        ],
       ),
     );
   }

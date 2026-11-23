@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
 class PosnetWaitingDialog extends StatefulWidget {
@@ -349,224 +351,202 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _isApproved
+        ? AppModalAccent.emerald
+        : (_errorMessage != null ? AppModalAccent.red : AppModalAccent.blue);
+    final isWaiting = !_isLoading && !_isApproved && _errorMessage == null;
+
+    List<Widget>? footerActions;
+    if (_errorMessage != null) {
+      footerActions = [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cerrar'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF009EE3),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _retryPointIntent,
+          child: const Text('Reintentar'),
+        ),
+      ];
+    } else if (isWaiting) {
+      footerActions = [
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red.shade700,
+            side: BorderSide(color: Colors.red.shade200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: _cancelOperation,
+          child: const Text('Cancelar Operación'),
+        ),
+      ];
+    }
+
     return PopScope(
       canPop: false,
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          width: 400,
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-              // Header
-              Row(
+      child: AppModalShell(
+        title: 'Mercado Pago Point',
+        subtitle: 'Terminal física integrada',
+        icon: Icons.point_of_sale_rounded,
+        accent: accent,
+        compact: true,
+        maxWidth: 420,
+        showCloseButton: !_isApproved && !_isLoading,
+        onClose: _cancelOperation,
+        bodyPadding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isLoading) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(color: Color(0xFF009EE3)),
+              const SizedBox(height: 20),
+              const Text(
+                'Enviando orden de cobro al Posnet...',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 16),
+            ] else if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Colors.red,
+                size: 52,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.red),
+              ),
+              const SizedBox(height: 8),
+            ] else if (_isApproved) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8F5E9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF2E7D32),
+                  size: 64,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '¡Pago Aprobado!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'ID Operación: ${_mpPaymentId ?? "Confirmado"}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              Text(
+                '\$${widget.amount.toCurrency()}',
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF009EE3),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // Icono espera de tarjeta
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: AppColors.primarySoft,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.credit_card_rounded,
+                  color: Color(0xFF009EE3),
+                  size: 54,
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              const Text(
+                'Esperando tarjeta en el Posnet...',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Acerque, inserte o deslice la tarjeta en el dispositivo físico',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              if (_externalReference != null)
+                Text(
+                  'Ref: $_externalReference',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              const SizedBox(height: 12),
+
+              // Spinner sutil
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF009EE3).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.point_of_sale_rounded,
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
                       color: Color(0xFF009EE3),
-                      size: 26,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
+                  SizedBox(width: 8),
+                  Flexible(
                     child: Text(
-                      'Mercado Pago Point',
+                      'Sondeando dispositivo en tiempo real...',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A),
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        fontStyle: FontStyle.italic,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (!_isApproved && !_isLoading)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.grey),
-                      onPressed: _cancelOperation,
-                      tooltip: 'Cancelar',
-                    ),
                 ],
               ),
-              const SizedBox(height: 24),
-
-              // Contenido
-              if (_isLoading) ...[
-                const SizedBox(height: 20),
-                const CircularProgressIndicator(color: Color(0xFF009EE3)),
-                const SizedBox(height: 20),
-                const Text(
-                  'Enviando orden de cobro al Posnet...',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.black87),
-                ),
-                const SizedBox(height: 20),
-              ] else if (_errorMessage != null) ...[
-                const SizedBox(height: 12),
-                const Icon(Icons.error_outline_rounded,
-                    color: Colors.red, size: 52),
-                const SizedBox(height: 12),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: Colors.red),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(null),
-                      child: const Text('Cerrar'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF009EE3),
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: _retryPointIntent,
-                      child: const Text('Reintentar'),
-                    ),
-                  ],
-                ),
-              ] else if (_isApproved) ...[
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE8F5E9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_rounded,
-                    color: Color(0xFF2E7D32),
-                    size: 64,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '¡Pago Aprobado!',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2E7D32),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'ID Operación: ${_mpPaymentId ?? "Confirmado"}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 20),
-              ] else ...[
-                Text(
-                  '\$${widget.amount.toCurrency()}',
-                  style: const TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF009EE3),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Icono animado/spinner de espera de tarjeta
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.credit_card_rounded,
-                    color: Color(0xFF009EE3),
-                    size: 54,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                const Text(
-                  'Esperando tarjeta en el Posnet...',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Acerque, inserte o deslice la tarjeta en el dispositivo físico',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                if (_externalReference != null)
-                  Text(
-                    'Ref: $_externalReference',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                  ),
-                const SizedBox(height: 16),
-
-                // Spinner sutil
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF009EE3),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'Sondeando dispositivo en tiempo real...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: _cancelOperation,
-                    child: const Text('Cancelar Operación'),
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
+        footerActions: footerActions,
       ),
-    ),
-  );
+    );
   }
 }

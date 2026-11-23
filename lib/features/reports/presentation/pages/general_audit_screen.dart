@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:math' as math;
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
@@ -379,50 +380,41 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.receipt_long, color: Colors.blue.shade700),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Detalle del Turno #${shift.id}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      builder: (context) => AppModalShell(
+        title: 'Detalle del Turno #${shift.id}',
+        subtitle: 'Arqueo de caja, desglose de cobros y ventas del turno',
+        icon: Icons.receipt_long_rounded,
+        accent: shift.isOpen ? AppModalAccent.emerald : AppModalAccent.blue,
+        maxWidth: 900,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(context),
+        headerTrailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: shift.isOpen
+                ? Colors.green.withValues(alpha: 0.22)
+                : Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: shift.isOpen
+                  ? Colors.greenAccent.withValues(alpha: 0.55)
+                  : Colors.white24,
             ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color:
-                    shift.isOpen ? Colors.green.shade50 : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: shift.isOpen
-                        ? Colors.green.shade200
-                        : Colors.grey.shade300),
-              ),
-              child: Text(
-                shift.isOpen ? 'ABIERTO' : 'CERRADO',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: shift.isOpen
-                      ? Colors.green.shade700
-                      : Colors.grey.shade700,
-                ),
-              ),
+          ),
+          child: Text(
+            shift.isOpen ? 'ABIERTO' : 'CERRADO',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: shift.isOpen ? Colors.greenAccent.shade100 : Colors.white70,
             ),
-          ],
+          ),
         ),
-        content: SizedBox(
-          width: 900,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _detailHeader(shift),
+        bodyPadding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _detailHeader(shift),
                 const SizedBox(height: 20),
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -557,9 +549,7 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
                 ),
               ],
             ),
-          ),
-        ),
-        actions: [
+        footerActions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar'),

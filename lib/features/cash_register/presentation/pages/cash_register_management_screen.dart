@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../domain/entities/cash_register.dart';
 import '../providers/cash_register_provider.dart';
@@ -46,16 +47,31 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
     try {
       submittedName = await showDialog<String>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(register == null ? 'Nueva Caja Física' : 'Editar Caja'),
-          content: TextField(
+        builder: (ctx) => AppModalShell(
+          title: register == null ? 'Nueva Caja Física' : 'Editar Caja',
+          subtitle: 'Nombre identificatorio de la terminal de cobro',
+          icon: Icons.point_of_sale_rounded,
+          accent: AppModalAccent.blue,
+          compact: true,
+          maxWidth: 420,
+          useAlertDialogWrapper: true,
+          onClose: () => Navigator.pop(ctx),
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          body: TextField(
             controller: nameCtrl,
-            decoration: const InputDecoration(labelText: 'Nombre o Ubicación', prefixIcon: Icon(Icons.computer)),
+            decoration: const InputDecoration(
+              labelText: 'Nombre o Ubicación',
+              prefixIcon: Icon(Icons.computer),
+              border: OutlineInputBorder(),
+            ),
             autofocus: true,
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            ElevatedButton(
+          footerActions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
               onPressed: () {
                 final name = nameCtrl.text.trim();
                 if (name.isNotEmpty) {
@@ -63,7 +79,7 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
                 }
               },
               child: const Text('Guardar'),
-            )
+            ),
           ],
         ),
       );
@@ -133,20 +149,14 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
   }
 
   Future<void> _deleteRegister(int id) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Caja'),
-        content: const Text('¿Está seguro de eliminar esta caja física?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true), 
-            child: const Text('Eliminar')
-          ),
-        ],
-      )
+    final confirmar = await AppConfirmDialog.show(
+      context,
+      title: 'Eliminar Caja',
+      message: '¿Está seguro de eliminar esta caja física?',
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
 
     if (confirmar != true) return;
@@ -180,7 +190,7 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
       backgroundColor: Colors.grey.shade100,
       appBar: const GlobalAppBar(
         currentRoute: '/settings/registers',
-        title: 'Gestión de Cajas Físicas',
+        title: 'Cajas Físicas',
         showBackButton: true,
       ),
       body: Consumer<CashRegisterProvider>(

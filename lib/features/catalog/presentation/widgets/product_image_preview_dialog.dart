@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 
 /// Diálogo de vista previa ampliada/pantalla completa para la imagen de un producto.
@@ -163,39 +164,22 @@ class _ProductImagePreviewDialogState extends State<ProductImagePreviewDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Barra de título con botón de cerrar
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.image_outlined, size: 20, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Semantics(
-                      header: true,
-                      child: Text(
-                        widget.title ?? 'Vista previa de imagen',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                            ) ??
-                            const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Cerrar',
-                    onPressed: _isDismissing ? null : () => _safePop(),
-                  ),
-                ],
+            // Cabecera unificada Dark Navy
+            AppModalHeader(
+              titleWidget: Semantics(
+                header: true,
+                child: Text(
+                  widget.title ?? 'Vista previa de imagen',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              icon: Icons.image_outlined,
+              accent: AppModalAccent.slate,
+              compact: true,
+              closeTooltip: 'Cerrar',
+              onClose: _isDismissing ? null : () => _safePop(),
             ),
-            const Divider(height: 1),
 
             // Contenedor de la imagen ampliada con zoom interactivo y doble toque
             Flexible(
@@ -228,50 +212,63 @@ class _ProductImagePreviewDialogState extends State<ProductImagePreviewDialog> {
               ),
             ),
 
-            const Divider(height: 1),
-
-            // Barra de acciones inferiores
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  if (widget.onRemoveImage != null && hasImage)
-                    OutlinedButton.icon(
-                      key: const Key('preview_remove_image_button'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.colorScheme.error,
-                        side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            // Barra de acciones inferiores unificada
+            AppModalFooter(
+              actions: (widget.onRemoveImage != null && hasImage) ||
+                      widget.onChangeImage != null
+                  ? [
+                      if (widget.onRemoveImage != null && hasImage)
+                        OutlinedButton.icon(
+                          key: const Key('preview_remove_image_button'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.error,
+                            side: BorderSide(
+                              color: theme.colorScheme.error
+                                  .withValues(alpha: 0.5),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Quitar Foto'),
+                          onPressed: _isDismissing
+                              ? null
+                              : () {
+                                  final callback = widget.onRemoveImage;
+                                  _safePop(callback);
+                                },
+                        ),
+                      if (widget.onChangeImage != null)
+                        FilledButton.icon(
+                          key: const Key('preview_change_image_button'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.photo_library_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Cambiar Foto'),
+                          onPressed: _isDismissing
+                              ? null
+                              : () {
+                                  final callback = widget.onChangeImage;
+                                  _safePop(callback);
+                                },
+                        ),
+                    ]
+                  : [
+                      TextButton(
+                        onPressed:
+                            _isDismissing ? null : () => _safePop(),
+                        child: const Text('Cerrar'),
                       ),
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Quitar Foto'),
-                      onPressed: _isDismissing
-                          ? null
-                          : () {
-                              final callback = widget.onRemoveImage;
-                              _safePop(callback);
-                            },
-                    ),
-                  if (widget.onChangeImage != null)
-                    FilledButton.icon(
-                      key: const Key('preview_change_image_button'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      ),
-                      icon: const Icon(Icons.photo_library_outlined, size: 18),
-                      label: const Text('Cambiar Foto'),
-                      onPressed: _isDismissing
-                          ? null
-                          : () {
-                              final callback = widget.onChangeImage;
-                              _safePop(callback);
-                            },
-                    ),
-                ],
-              ),
+                    ],
             ),
           ],
         ),

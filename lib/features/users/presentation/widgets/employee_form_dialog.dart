@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/constants/app_permissions.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Categoría lógica que agrupa permisos relacionados
 class PermissionCategory {
@@ -435,51 +437,22 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
       }
     }
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 780),
-        child: LayoutBuilder(
-          builder: (context, dialogConstraints) {
-            final isWide = dialogConstraints.maxWidth >= 680;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
+    return AppModalShell(
+      title: _isEditing ? 'Editar Empleado' : 'Nuevo Empleado',
+      subtitle: 'Configurá datos de acceso, rol y permisos del operador',
+      icon: Icons.person_add_rounded,
+      accent: AppModalAccent.blue,
+      maxWidth: 960,
+      maxHeight: 780,
+      bodyPadding: const EdgeInsets.fromLTRB(22, 16, 22, 14),
+      body: LayoutBuilder(
+        builder: (context, dialogConstraints) {
+          final isWide = dialogConstraints.maxWidth >= 680;
+          return Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade800,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person_add_rounded, color: Colors.white, size: 26),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _isEditing ? 'Editar Empleado' : 'Nuevo Empleado',
-                          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        tooltip: 'Cerrar',
-                      ),
-                    ],
-                  ),
-                ),
-                // Body
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
                           if (isWide)
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,50 +671,24 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
                             ),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-                // Footer buttons
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      SizedBox(
-                        width: 150,
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Cancelar'),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 200,
-                        child: FilledButton.icon(
-                          onPressed: () {
-                            final data = _submit();
-                            if (data != null) Navigator.of(context).pop(data);
-                          },
-                          icon: const Icon(Icons.save_rounded),
-                          label: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(_isEditing ? 'Guardar Cambios' : 'Crear Empleado'),
-                          ),
-                          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                    );
+        },
       ),
+      footerActions: [
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () {
+            final data = _submit();
+            if (data != null) Navigator.of(context).pop(data);
+          },
+          icon: const Icon(Icons.save_rounded),
+          label: Text(_isEditing ? 'Guardar Cambios' : 'Crear Empleado'),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.primaryDark),
+        ),
+      ],
     );
   }
 }

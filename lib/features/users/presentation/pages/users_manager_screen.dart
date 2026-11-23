@@ -6,6 +6,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../widgets/employee_form_dialog.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
@@ -60,20 +61,14 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
 
   Future<void> _deleteEmployee(Map<String, dynamic> employee) async {
     final name = employee['name']?.toString() ?? 'Empleado';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Empleado'),
-        content: Text('¿Estás seguro de que deseás eliminar a $name?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+    final confirmed = await AppConfirmDialog.show(
+      context,
+      title: 'Eliminar Empleado',
+      message: '¿Estás seguro de que deseás eliminar a $name?',
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      icon: Icons.delete_outline,
+      isDestructive: true,
     );
     if (confirmed != true || !mounted) return;
 
@@ -106,7 +101,7 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const GlobalAppBar(
-        currentRoute: '/staff',
+        currentRoute: '/users',
         title: 'Personal y Permisos',
         showBackButton: true,
       ),

@@ -19,7 +19,9 @@ import '../../../customers/providers/customer_provider.dart';
 import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'mercadopago_qr_dialog.dart';
 import 'posnet_waiting_dialog.dart';
 
@@ -1710,218 +1712,204 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             final estimatedGrand =
                 parsed > 0 ? (parsed + currentExtras) : _grandTotal;
 
-            return AlertDialog(
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: const Row(
+            return AppModalShell(
+              title: 'Pactar / Redondear Total de Mercadería',
+              subtitle: 'Prorratea la diferencia para cierre fiscal exacto',
+              icon: Icons.tune_rounded,
+              accent: AppModalAccent.emerald,
+              compact: true,
+              maxWidth: 460,
+              onClose: () => Navigator.of(dialogCtx).pop(),
+              bodyPadding: const EdgeInsets.all(18),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('🎯 ', style: TextStyle(fontSize: 20)),
-                  Expanded(
-                    child: Text(
-                      'Pactar / Redondear Total de Mercadería',
-                      style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
+                  Text(
+                    'Prorratea la diferencia en cada línea del ticket para que el subtotal de ARCA y el comprobante cierren al centavo.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blueGrey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMuted,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Mercadería actual:',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '\$${currentMerch.toCurrency()}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: ctrl,
+                    focusNode: focusNode,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: const [ArsThousandsInputFormatter()],
+                    onChanged: (_) => setDialogState(() {}),
+                    onSubmitted: (_) {
+                      final v = ArsThousandsInputFormatter.parse(ctrl.text);
+                      if (v > 0) Navigator.of(dialogCtx).pop(v);
+                    },
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Nuevo Subtotal de Mercadería Pactado',
+                      prefixText: '\$ ',
+                      filled: true,
+                      fillColor: AppColors.surfaceMuted,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
-                ],
-              ),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Prorratea la diferencia en cada línea del ticket para que el subtotal de ARCA y el comprobante cierren al centavo.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueGrey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Mercadería actual:',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
+                  if (quickTargets.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Redondeo rápido:',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey.shade700,
                           ),
-                          Text(
-                            '\$${currentMerch.toCurrency()}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: ctrl,
-                      focusNode: focusNode,
-                      autofocus: true,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: const [ArsThousandsInputFormatter()],
-                      onChanged: (_) => setDialogState(() {}),
-                      onSubmitted: (_) {
-                        final v = ArsThousandsInputFormatter.parse(ctrl.text);
-                        if (v > 0) Navigator.of(dialogCtx).pop(v);
-                      },
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Nuevo Subtotal de Mercadería Pactado',
-                        prefixText: '\$ ',
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
                         ),
-                      ),
-                    ),
-                    if (quickTargets.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            'Redondeo rápido:',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.blueGrey.shade700,
-                            ),
-                          ),
-                          for (final t in quickTargets)
-                            ActionChip(
-                              label: Text(
-                                '\$${t.toCurrency()}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1E40AF),
-                                ),
+                        for (final t in quickTargets)
+                          ActionChip(
+                            label: Text(
+                              '\$${t.toCurrency()}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E40AF),
                               ),
-                              backgroundColor: const Color(0xFFEFF6FF),
-                              side: const BorderSide(color: Color(0xFFBFDBFE)),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                ctrl.text = t.toArsInput();
-                                ctrl.selection = TextSelection.collapsed(
-                                  offset: ctrl.text.length,
-                                );
-                                setDialogState(() {});
-                              },
                             ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
+                            backgroundColor: AppColors.primarySoft,
+                            side: const BorderSide(color: Color(0xFFBFDBFE)),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              ctrl.text = t.toArsInput();
+                              ctrl.selection = TextSelection.collapsed(
+                                offset: ctrl.text.length,
+                              );
+                              setDialogState(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: diff < -0.01
+                          ? Colors.green.shade50
+                          : AppColors.surfaceMuted,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
                         color: diff < -0.01
-                            ? Colors.green.shade50
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: diff < -0.01
-                              ? Colors.green.shade200
-                              : const Color(0xFFE2E8F0),
-                        ),
+                            ? Colors.green.shade200
+                            : AppColors.border,
                       ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                diff < -0.01
-                                    ? 'Bonificación por redondeo:'
-                                    : 'Ajuste mercadería:',
-                                style: const TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              diff < -0.01
+                                  ? 'Bonificación por redondeo:'
+                                  : 'Ajuste mercadería:',
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              '${diff >= 0 ? '+' : '-'}\$${diff.abs().toCurrency()}',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: diff < -0.01
+                                    ? Colors.green.shade800
+                                    : AppColors.textPrimary,
                               ),
-                              Text(
-                                '${diff >= 0 ? '+' : '-'}\$${diff.abs().toCurrency()}',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: diff < -0.01
-                                      ? Colors.green.shade800
-                                      : const Color(0xFF0F172A),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (currentExtras.abs() > 0.01) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Extras (IIBB / Envío / Recargo):',
-                                  style: TextStyle(fontSize: 11.5),
-                                ),
-                                Text(
-                                  '+\$${currentExtras.toCurrency()}',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
-                          const Divider(height: 12),
+                        ),
+                        if (currentExtras.abs() > 0.01) ...[
+                          const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text(
-                                'Total Final a Cobrar est.:',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                'Extras (IIBB / Envío / Recargo):',
+                                style: TextStyle(fontSize: 11.5),
                               ),
                               Text(
-                                '\$${estimatedGrand.toCurrency()}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.blue.shade800,
+                                '+\$${currentExtras.toCurrency()}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
                           ),
                         ],
-                      ),
+                        const Divider(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total Final a Cobrar est.:',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              '\$${estimatedGrand.toCurrency()}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              actions: [
+              footerActions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogCtx).pop(),
                   child: const Text('Cancelar'),
@@ -1931,7 +1919,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ? () => Navigator.of(dialogCtx).pop(parsed)
                       : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Aplicar'),
@@ -2045,24 +2033,28 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.workspace_premium,
-                color: Colors.orange.shade700, size: 28),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
+      builder: (ctx) => AppModalShell(
+        title: title,
+        subtitle: 'Función exclusiva del Plan Premium',
+        icon: Icons.workspace_premium_rounded,
+        accent: AppModalAccent.amber,
+        compact: true,
+        maxWidth: 420,
+        useAlertDialogWrapper: true,
+        onClose: () => Navigator.pop(ctx),
+        bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        body: Text(
+          content,
+          style: const TextStyle(
+            fontSize: 13.5,
+            height: 1.45,
+            color: AppColors.textPrimary,
+          ),
         ),
-        content: Text(content),
-        actions: [
-          TextButton(
+        footerActions: [
+          FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            style:
-                TextButton.styleFrom(foregroundColor: Colors.purple.shade700),
-            child: const Text('Entendido',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Entendido'),
           ),
         ],
       ),
@@ -3871,40 +3863,46 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.watch<SettingsProvider>().settings;
     final isPending = widget.saleId != null;
 
+    final isShortScreen = MediaQuery.of(context).size.height < 640;
+
     if (provider.paymentMethods.isEmpty) {
-      return Dialog(
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text("Cargando métodos de pago..."),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text("Cerrar"),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      await provider.loadPaymentMethods();
-                      if (mounted && provider.paymentMethods.isNotEmpty && _lines.isEmpty) {
-                        setState(() => _initFirstLine());
-                      }
-                    },
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text("Reintentar"),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      return AppModalShell(
+        title: isPending ? 'Cobrar Orden #${widget.saleId}' : 'Desglose de Pago',
+        subtitle: 'Inicializando medios de pago',
+        icon: isPending
+            ? Icons.receipt_long_outlined
+            : Icons.point_of_sale_rounded,
+        accent: AppModalAccent.emerald,
+        compact: true,
+        maxWidth: 400,
+        showCloseButton: false,
+        bodyPadding: const EdgeInsets.all(24),
+        body: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Cargando métodos de pago...'),
+          ],
         ),
+        footerActions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await provider.loadPaymentMethods();
+              if (mounted &&
+                  provider.paymentMethods.isNotEmpty &&
+                  _lines.isEmpty) {
+                setState(() => _initFirstLine());
+              }
+            },
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Reintentar'),
+          ),
+        ],
       );
     }
 
@@ -3925,9 +3923,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             ? KeyEventResult.handled
             : KeyEventResult.ignored,
         child: Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            clipBehavior: Clip.antiAlias,
             backgroundColor: Colors.white,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            surfaceTintColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: () {
@@ -3940,40 +3940,45 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               },
               child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
-              child: Container(
-              padding: const EdgeInsets.all(24),
               child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-// ──── Header
-              if (isPending) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.receipt_long_outlined,
-                        color: Colors.blue.shade700, size: 22),
-                    const SizedBox(width: 8),
-                    Text('Cobrar Orden #${widget.saleId}',
-                        style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.blue.shade700,
-                            fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ] else
-                const Text('Desglose de Pago',
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.black54,
-                        fontWeight: FontWeight.bold)),
-
-              const SizedBox(height: 16),
+              // ──── Cabecera unificada Dark Navy
+              AppModalHeader(
+                title: isPending
+                    ? 'Cobrar Orden #${widget.saleId}'
+                    : 'Desglose de Pago',
+                subtitle: isShortScreen
+                    ? null
+                    : (isPending
+                        ? 'Confirmar cobro de orden pendiente'
+                        : 'F2 pago exacto · F4 mixto · F6 cliente · Enter confirmar'),
+                icon: isPending
+                    ? Icons.receipt_long_outlined
+                    : Icons.point_of_sale_rounded,
+                accent: AppModalAccent.emerald,
+                compact: isShortScreen,
+                showCloseButton: !(_isSubmitting ||
+                    provider.isLoading ||
+                    _lines.any((l) => l.mpPaid)),
+                onClose: () {
+                  _saveDraftToProvider();
+                  Navigator.pop(context);
+                },
+              ),
 
               Flexible(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    isShortScreen ? 10 : 14,
+                    20,
+                    isShortScreen ? 8 : 12,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     Expanded(
                       flex: 5,
                       child: SingleChildScrollView(
@@ -5384,61 +5389,88 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     ),
                   ],
                 ),
+                ),
               ),
-              const SizedBox(height: 16),
-              // Actions
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16)),
-                      onPressed: (_isSubmitting || provider.isLoading || _lines.any((l) => l.mpPaid))
-                          ? null
-                          : () {
-                              _saveDraftToProvider();
-                              Navigator.pop(context);
-                            },
-                      child: const Text('Cancelar',
-                          style: TextStyle(fontSize: 16)),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        disabledBackgroundColor: Colors.grey.shade300,
+              // Footer Sticky Unificado
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  isShortScreen ? 10 : 12,
+                  20,
+                  isShortScreen ? 10 : 14,
+                ),
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceMuted,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            vertical: isShortScreen ? 13 : 16,
+                          ),
+                        ),
+                        onPressed: (_isSubmitting ||
+                                provider.isLoading ||
+                                _lines.any((l) => l.mpPaid))
+                            ? null
+                            : () {
+                                _saveDraftToProvider();
+                                Navigator.pop(context);
+                              },
+                        child: const Text(
+                          'Cancelar',
+                          style: TextStyle(fontSize: 16),
+                        ),
                       ),
-                      onPressed:
-                          (_canSubmit && !provider.isLoading && !_isSubmitting)
-                              ? _processCheckout
-                              : null,
-                      child: (provider.isLoading || _isSubmitting)
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2))
-                          : Text(
-                              isPending ? 'CONFIRMAR COBRO' : 'CONFIRMAR PAGO',
-                              style: const TextStyle(
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          padding: EdgeInsets.symmetric(
+                            vertical: isShortScreen ? 13 : 16,
+                          ),
+                          disabledBackgroundColor: Colors.grey.shade300,
+                        ),
+                        onPressed: (_canSubmit &&
+                                !provider.isLoading &&
+                                !_isSubmitting)
+                            ? _processCheckout
+                            : null,
+                        child: (provider.isLoading || _isSubmitting)
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                isPending
+                                    ? 'CONFIRMAR COBRO'
+                                    : 'CONFIRMAR PAGO',
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white),
-                            ),
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
       ),
-          ),
         ),
     );
   }
@@ -5461,16 +5493,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       margin: const EdgeInsets.only(top: 10, bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.deepPurple.shade50.withValues(alpha: 0.6),
+        color: Colors.indigo.shade50.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.deepPurple.shade200),
+        border: Border.all(color: Colors.indigo.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.tune_rounded, size: 16, color: Colors.deepPurple.shade800),
+              Icon(Icons.tune_rounded, size: 16, color: Colors.indigo.shade800),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -5479,7 +5511,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple.shade900,
+                    color: Colors.indigo.shade900,
                   ),
                 ),
               ),
@@ -5539,10 +5571,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.deepPurple.shade700 : Colors.white,
+          color: isSelected ? Colors.indigo.shade700 : Colors.white,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isSelected ? Colors.deepPurple.shade800 : Colors.deepPurple.shade200,
+            color: isSelected ? Colors.indigo.shade800 : Colors.indigo.shade200,
           ),
         ),
         child: Text(
@@ -5550,7 +5582,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : Colors.deepPurple.shade900,
+            color: isSelected ? Colors.white : Colors.indigo.shade900,
           ),
         ),
       ),
@@ -5577,115 +5609,127 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        width: 450,
-        height: 600,
-        padding: const EdgeInsets.all(24),
-        child: Column(
+    return AppModalShell(
+      title: 'Seleccionar Cliente',
+      subtitle: 'Asociar cliente al cobro actual',
+      icon: Icons.people_outline_rounded,
+      accent: AppModalAccent.blue,
+      maxWidth: 480,
+      maxHeight: 600,
+      expandBody: true,
+      topBar: Container(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Seleccionar Cliente',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: 'Buscar por nombre, DNI o Tel...',
-                prefixIcon: const Icon(Icons.search),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                icon: const Icon(Icons.person_add),
-                label: const Text('NUEVO CLIENTE'),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => const CustomerFormDialog(),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
             Expanded(
-              child: Consumer<CustomerProvider>(
-                builder: (ctx, provider, _) {
-                  if (provider.isLoading && provider.customers.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final query = _searchCtrl.text.toLowerCase();
-                  final list = provider.customers.where((c) {
-                    return c.name.toLowerCase().contains(query) ||
-                        (c.documentNumber.contains(query)) ||
-                        (c.phone != null && c.phone!.contains(query));
-                  }).toList();
-
-                  if (list.isEmpty) {
-                    return const Center(
-                        child: Text('No se encontraron clientes.',
-                            style: TextStyle(color: Colors.grey)));
-                  }
-
-                  return ListView.separated(
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const Divider(),
-                    itemBuilder: (ctx, i) {
-                      final c = list[i];
-                      final creditInfo = (c.isInternalAccount || c.creditLimit <= 0)
-                          ? 'Sin límite'
-                          : '\$${(c.creditLimit - c.balance).toCurrency()}';
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Text(
-                              c.name.trim().isNotEmpty
-                                  ? c.name.trim()[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(color: Colors.blue)),
-                        ),
-                        title: Text(c.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(
-                            'ID: ${c.documentNumber} • Tel: ${c.phone ?? '-'} • Disp: $creditInfo'),
-                        trailing: IconButton(
-                          icon: Icon(Icons.edit_outlined,
-                              size: 20, color: Colors.blueGrey.shade600),
-                          tooltip: 'Editar cliente',
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (dialogCtx) =>
-                                  CustomerFormDialog(customer: c),
-                            );
-                          },
-                        ),
-                        onTap: () => widget.onSelected(c),
-                      );
-                    },
-                  );
-                },
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Buscar por nombre, DNI o Tel...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
               ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonalIcon(
+              icon: const Icon(Icons.person_add, size: 17),
+              label: const Text('Nuevo'),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => const CustomerFormDialog(),
+                );
+              },
             ),
           ],
         ),
       ),
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      body: Consumer<CustomerProvider>(
+        builder: (ctx, provider, _) {
+          if (provider.isLoading && provider.customers.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final query = _searchCtrl.text.toLowerCase();
+          final list = provider.customers.where((c) {
+            return c.name.toLowerCase().contains(query) ||
+                (c.documentNumber.contains(query)) ||
+                (c.phone != null && c.phone!.contains(query));
+          }).toList();
+
+          if (list.isEmpty) {
+            return const Center(
+              child: Text(
+                'No se encontraron clientes.',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (ctx, i) {
+              final c = list[i];
+              final creditInfo = (c.isInternalAccount || c.creditLimit <= 0)
+                  ? 'Sin límite'
+                  : '\$${(c.creditLimit - c.balance).toCurrency()}';
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.primarySoft,
+                  child: Text(
+                    c.name.trim().isNotEmpty
+                        ? c.name.trim()[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  c.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  'ID: ${c.documentNumber} • Tel: ${c.phone ?? '-'} • Disp: $creditInfo',
+                ),
+                trailing: IconButton(
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 20,
+                    color: Colors.blueGrey.shade600,
+                  ),
+                  tooltip: 'Editar cliente',
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (dialogCtx) => CustomerFormDialog(customer: c),
+                    );
+                  },
+                ),
+                onTap: () => widget.onSelected(c),
+              );
+            },
+          );
+        },
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }

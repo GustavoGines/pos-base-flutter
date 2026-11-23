@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/app_modal_shell.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../domain/entities/cart_item.dart';
 
@@ -351,216 +353,194 @@ class _MercadoPagoQrDialogState extends State<MercadoPagoQrDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _isApproved
+        ? AppModalAccent.emerald
+        : (_errorMessage != null ? AppModalAccent.red : AppModalAccent.blue);
+    final isWaiting = !_isLoading && !_isApproved && _errorMessage == null;
+
+    List<Widget>? footerActions;
+    if (_errorMessage != null) {
+      footerActions = [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cerrar'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF009EE3),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _createOrder,
+          child: const Text('Reintentar'),
+        ),
+      ];
+    } else if (isWaiting) {
+      footerActions = [
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red.shade700,
+            side: BorderSide(color: Colors.red.shade200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: _cancelOrder,
+          child: const Text('Cancelar Cobro QR'),
+        ),
+      ];
+    }
+
     return PopScope(
       canPop: false,
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          width: 420,
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-              // ── Header con branding Mercado Pago
-              Row(
+      child: AppModalShell(
+        title: 'Mercado Pago QR',
+        subtitle: 'Cobro instantáneo con QR interoperable',
+        icon: Icons.qr_code_2_rounded,
+        accent: accent,
+        compact: true,
+        maxWidth: 430,
+        showCloseButton: !_isApproved && !_isLoading,
+        onClose: _cancelOrder,
+        bodyPadding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isLoading) ...[
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(color: Color(0xFF009EE3)),
+              const SizedBox(height: 20),
+              const Text(
+                'Generando orden de cobro en Mercado Pago...',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 24),
+            ] else if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Colors.red,
+                size: 52,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.red),
+              ),
+              const SizedBox(height: 8),
+            ] else if (_isApproved) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8F5E9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF2E7D32),
+                  size: 64,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '¡Pago Aprobado!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'ID Operación: ${_mpPaymentId ?? "Confirmado"}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              // Estado Waiting: Monto + QR + Ref
+              Text(
+                '\$${widget.amount.toCurrency()}',
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF009EE3),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Escaneá con Mercado Pago o cualquier billetera interoperable',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              if (_qrData != null && _qrData!.isNotEmpty)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: QrImageView(
+                    data: _qrData!,
+                    version: QrVersions.auto,
+                    size: 210,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              const SizedBox(height: 14),
+
+              if (_externalReference != null)
+                Text(
+                  'Ref: $_externalReference',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              const SizedBox(height: 12),
+
+              // Indicador de sondeo / espera
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF009EE3).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.qr_code_2_rounded,
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
                       color: Color(0xFF009EE3),
-                      size: 26,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
+                  SizedBox(width: 8),
+                  Flexible(
                     child: Text(
-                      'Mercado Pago QR',
+                      'Esperando confirmación del pago...',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A),
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        fontStyle: FontStyle.italic,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (!_isApproved && !_isLoading)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.grey),
-                      onPressed: _cancelOrder,
-                      tooltip: 'Cancelar',
-                    ),
                 ],
               ),
-              const SizedBox(height: 20),
-
-              // ── Contenido según Estado
-              if (_isLoading) ...[
-                const SizedBox(height: 30),
-                const CircularProgressIndicator(color: Color(0xFF009EE3)),
-                const SizedBox(height: 20),
-                const Text(
-                  'Generando orden de cobro en Mercado Pago...',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.black87),
-                ),
-                const SizedBox(height: 30),
-              ] else if (_errorMessage != null) ...[
-                const SizedBox(height: 16),
-                const Icon(Icons.error_outline_rounded,
-                    color: Colors.red, size: 52),
-                const SizedBox(height: 12),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: Colors.red),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(null),
-                      child: const Text('Cerrar'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF009EE3),
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: _createOrder,
-                      child: const Text('Reintentar'),
-                    ),
-                  ],
-                ),
-              ] else if (_isApproved) ...[
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE8F5E9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_rounded,
-                    color: Color(0xFF2E7D32),
-                    size: 64,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '¡Pago Aprobado!',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2E7D32),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'ID Operación: ${_mpPaymentId ?? "Confirmado"}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 20),
-              ] else ...[
-                // Estado Waiting: Monto + QR + Ref
-                Text(
-                  '\$${widget.amount.toCurrency()}',
-                  style: const TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF009EE3),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Escaneá con Mercado Pago o cualquier billetera interoperable',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                if (_qrData != null && _qrData!.isNotEmpty)
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: QrImageView(
-                      data: _qrData!,
-                      version: QrVersions.auto,
-                      size: 210,
-                      backgroundColor: Colors.white,
-                    ),
-                  ),
-                const SizedBox(height: 14),
-
-                if (_externalReference != null)
-                  Text(
-                    'Ref: $_externalReference',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                  ),
-                const SizedBox(height: 14),
-
-                // Indicador de sondeo / espera
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF009EE3),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'Esperando confirmación del pago...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Botón cancelar orden
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
-                      side: BorderSide(color: Colors.red.shade200),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: _cancelOrder,
-                    child: const Text('Cancelar Cobro QR'),
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
+        footerActions: footerActions,
       ),
-    ),
-  );
+    );
   }
 }
