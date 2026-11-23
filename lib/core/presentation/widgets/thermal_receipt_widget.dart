@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
@@ -770,6 +771,7 @@ class ThermalReceiptWidget extends StatelessWidget {
       double unitPrice = 0.0;
       double subtotal = 0.0;
       bool isSoldByWeight = false;
+      String? rawUnitType;
       double ivaRate = 21.0;
       String discountTag = '';
       double regularPrice = 0.0;
@@ -782,6 +784,7 @@ class ThermalReceiptWidget extends StatelessWidget {
         unitPrice = rawItem.unitPrice;
         subtotal = rawItem.subtotal;
         isSoldByWeight = rawItem.product.isSoldByWeight;
+        rawUnitType = rawItem.product.unitType;
         ivaRate = rawItem.product.ivaRate;
         regularPrice = rawItem.effectiveRegularUnitPrice;
         itemSavings = rawItem.discountSavings;
@@ -811,6 +814,7 @@ class ThermalReceiptWidget extends StatelessWidget {
             (quantity * unitPrice);
         isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
             prod['is_sold_by_weight'] == true;
+        rawUnitType = (rawItem['unit_type'] ?? prod['unit_type'])?.toString();
         ivaRate = double.tryParse(
                 (rawItem['iva_rate'] ??
                         prod['iva_rate'] ??
@@ -840,9 +844,15 @@ class ThermalReceiptWidget extends StatelessWidget {
         }
       }
 
+      final unitSuffix = Product.resolveReceiptUnitSuffix(
+        unitType: rawUnitType,
+        isSoldByWeight: isSoldByWeight,
+      );
       final qtyStr = isSoldByWeight
-          ? '${quantity.toQty()} kg'
-          : (quantity % 1 == 0 ? '${quantity.toInt()} un' : '${quantity.toQty()} un');
+          ? '${quantity.toQty()} $unitSuffix'
+          : (quantity % 1 == 0
+              ? '${quantity.toInt()} $unitSuffix'
+              : '${quantity.toQty()} $unitSuffix');
 
       final aliquotTag = showIvaAliquot
           ? ' (${ivaRate == ivaRate.roundToDouble() ? ivaRate.toInt() : ivaRate})'
@@ -1319,12 +1329,14 @@ class ThermalReceiptWidget extends StatelessWidget {
     String? customDetails;
     double quantity = 1.0;
     bool isSoldByWeight = false;
+    String? rawUnitType;
 
     if (rawItem is CartItem) {
       name = rawItem.effectiveDisplayName;
       customDetails = rawItem.customDetails?.trim();
       quantity = rawItem.quantity;
       isSoldByWeight = rawItem.product.isSoldByWeight;
+      rawUnitType = rawItem.product.unitType;
     } else if (rawItem is Map<String, dynamic>) {
       final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
       final customDesc = rawItem['custom_description']?.toString().trim();
@@ -1338,13 +1350,18 @@ class ThermalReceiptWidget extends StatelessWidget {
       quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
       isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
           prod['is_sold_by_weight'] == true;
+      rawUnitType = (rawItem['unit_type'] ?? prod['unit_type'])?.toString();
     }
 
+    final unitSuffix = Product.resolveReceiptUnitSuffix(
+      unitType: rawUnitType,
+      isSoldByWeight: isSoldByWeight,
+    );
     final qtyStr = isSoldByWeight
-        ? '${quantity.toQty()} kg'
+        ? '${quantity.toQty()} $unitSuffix'
         : (quantity % 1 == 0
-            ? '${quantity.toInt()} un'
-            : '${quantity.toQty()} un');
+            ? '${quantity.toInt()} $unitSuffix'
+            : '${quantity.toQty()} $unitSuffix');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),

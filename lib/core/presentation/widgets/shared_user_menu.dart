@@ -4,6 +4,7 @@ import '../../constants/app_permissions.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../features/settings/presentation/providers/settings_provider.dart';
+import 'app_modal_shell.dart';
 
 class SharedUserMenu extends StatelessWidget {
   const SharedUserMenu({super.key});
@@ -21,13 +22,13 @@ class SharedUserMenu extends StatelessWidget {
           child: PopupMenuButton<String>(
             position: PopupMenuPosition.under,
             offset: const Offset(0, 6),
-            elevation: 8,
-            color: Colors.white,
+            elevation: 14,
+            color: const Color(0xFF16233F),
             surfaceTintColor: Colors.transparent,
-            shadowColor: Colors.black.withValues(alpha: 0.16),
+            shadowColor: const Color(0x73020617),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: Color(0xFF2A3F66), width: 1.5),
             ),
             tooltip: 'Opciones de Usuario ($userName)',
             child: Container(
@@ -117,32 +118,15 @@ class SharedUserMenu extends StatelessWidget {
                   }
                   break;
                 case 'logout':
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Row(
-                        children: [
-                          Icon(Icons.swap_horiz_rounded, color: Colors.blueGrey),
-                          SizedBox(width: 8),
-                          Text('Cambiar Usuario'),
-                        ],
-                      ),
-                      content: const Text(
+                  final confirmed = await AppConfirmDialog.show(
+                    context,
+                    title: 'Cambiar Usuario',
+                    message:
                         '¿Deseas cerrar la sesión actual y volver a la pantalla de ingreso de PIN?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancelar'),
-                        ),
-                        FilledButton.icon(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          icon: const Icon(Icons.logout_rounded),
-                          label: const Text('Cambiar'),
-                          style: FilledButton.styleFrom(backgroundColor: Colors.blueGrey.shade700),
-                        ),
-                      ],
-                    ),
+                    confirmLabel: 'Cambiar',
+                    cancelLabel: 'Cancelar',
+                    icon: Icons.swap_horiz_rounded,
+                    isDestructive: false,
                   );
                   if (confirmed == true && context.mounted) {
                     context.read<AuthProvider>().logout();
@@ -163,7 +147,7 @@ class SharedUserMenu extends StatelessWidget {
                   PopupMenuItem<String>(
                     enabled: false,
                     height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -171,7 +155,7 @@ class SharedUserMenu extends StatelessWidget {
                           width: 8,
                           height: 8,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF10B981),
+                            color: Color(0xFF34D399),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -182,27 +166,30 @@ class SharedUserMenu extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 13.5,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                            horizontal: 7,
+                            vertical: 2.5,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(5),
+                            color: const Color(0xFF10B981).withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF34D399).withValues(alpha: 0.45),
+                            ),
                           ),
                           child: const Text(
                             'SESIÓN ACTIVA',
                             style: TextStyle(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF059669),
+                              color: Color(0xFF34D399),
                               letterSpacing: 0.4,
                             ),
                           ),
@@ -210,37 +197,42 @@ class SharedUserMenu extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const PopupMenuDivider(height: 8),
+                  _buildDivider(),
                 ],
                 if (hasZReports)
                   _buildMenuItem(
                     value: 'shift_audit',
                     icon: Icons.manage_search_rounded,
                     label: 'Auditoría General',
+                    accentColor: const Color(0xFF38BDF8),
                   ),
                 _buildMenuItem(
                   value: 'users',
                   icon: Icons.manage_accounts_outlined,
                   label: 'Personal y Accesos',
+                  accentColor: const Color(0xFF818CF8),
                 ),
-                const PopupMenuDivider(height: 8),
+                _buildDivider(),
                 _buildMenuItem(
                   value: 'trash',
                   icon: Icons.delete_outline,
                   label: 'Papelera de Reciclaje',
+                  accentColor: const Color(0xFF94A3B8),
                 ),
                 _buildMenuItem(
                   value: 'settings',
                   icon: Icons.settings_outlined,
                   label: 'Configuración del Sistema',
+                  accentColor: const Color(0xFF34D399),
                 ),
                 _buildMenuItem(
                   value: 'logout',
                   icon: Icons.swap_horiz_rounded,
                   label: 'Cambiar Usuario / Bloquear',
+                  accentColor: const Color(0xFFFBBF24),
                 ),
                 if (hasZReports) ...[
-                  const PopupMenuDivider(height: 8),
+                  _buildDivider(),
                   _buildMenuItem(
                     value: 'close_shift',
                     icon: Icons.lock_outline,
@@ -256,30 +248,59 @@ class SharedUserMenu extends StatelessWidget {
     );
   }
 
+  PopupMenuEntry<String> _buildDivider() {
+    return const PopupMenuItem<String>(
+      enabled: false,
+      height: 10,
+      padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: Color(0xFF263859),
+      ),
+    );
+  }
+
   PopupMenuItem<String> _buildMenuItem({
     required String value,
     required IconData icon,
     required String label,
+    Color? accentColor,
     bool isDanger = false,
   }) {
-    final color = isDanger ? Colors.redAccent : Colors.blueGrey.shade700;
+    final effectiveAccent = isDanger
+        ? const Color(0xFFFB7185)
+        : (accentColor ?? const Color(0xFF94A3B8));
     return PopupMenuItem<String>(
       value: value,
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 12),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: effectiveAccent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: effectiveAccent.withValues(alpha: 0.32),
+              ),
+            ),
+            child: Icon(icon, size: 16.5, color: effectiveAccent),
+          ),
+          const SizedBox(width: 11),
           Flexible(
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13.5,
-                fontWeight: isDanger ? FontWeight.bold : FontWeight.w500,
-                color: isDanger ? Colors.redAccent : Colors.black87,
+                fontWeight: isDanger ? FontWeight.w700 : FontWeight.w500,
+                color: isDanger
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFFF1F5F9),
               ),
             ),
           ),

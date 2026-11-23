@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme.dart';
+import 'app_modal_shell.dart';
 import 'thermal_receipt_widget.dart';
 
 /// Diálogo de Vista Previa del ticket en formato papel térmico simulado (58mm y 80mm).
@@ -84,166 +86,171 @@ class _TicketPreviewDialogState extends State<TicketPreviewDialog> {
         .replaceAll(' 58mm', ' ${is58 ? "58mm" : "80mm"}')
         .replaceAll(' 80mm', ' ${is58 ? "58mm" : "80mm"}');
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440, maxHeight: 740),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final isVeryNarrow = MediaQuery.of(context).size.width < 320;
+
+    return AppModalShell(
+      title: effectiveTitle,
+      icon: Icons.receipt_long_rounded,
+      accent: AppModalAccent.blue,
+      compact: true,
+      maxWidth: 440,
+      maxHeight: 740,
+      showCloseButton: false,
+      headerTrailing: IconButton(
+        icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+        tooltip: 'Cerrar',
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        onPressed: () => Navigator.pop(context, false),
+      ),
+      topBar: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Row(
+          mainAxisAlignment: isVeryNarrow
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.spaceBetween,
           children: [
-            // Header
+            if (!isVeryNarrow) ...[
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.straighten_rounded,
+                      size: 15,
+                      color: AppColors.textSecondary,
+                    ),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Ancho de papel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                color: AppColors.navyStart,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.navyEnd),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.receipt_long, color: Colors.white70, size: 18),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      effectiveTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  // Selector rápido 58mm / 80mm
-                  Flexible(
-                    flex: 0,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade800,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade700),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildWidthChip('58mm', ThermalPaperWidth.mm58),
-                            _buildWidthChip('80mm', ThermalPaperWidth.mm80),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70, size: 18),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () => Navigator.pop(context, false),
-                  ),
+                  _buildWidthChip('58mm', ThermalPaperWidth.mm58),
+                  _buildWidthChip('80mm', ThermalPaperWidth.mm80),
                 ],
               ),
             ),
-
-            // Ticket simulado en papel térmico
-            Flexible(
-              child: Container(
-                color: const Color(0xFFEFEFEF),
-                width: double.infinity,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOutCubic,
-                        width: effectivePaperWidth,
-                        child: effectiveReceiptWidget ??
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOutCubic,
-                              width: effectivePaperWidth,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.12),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: is58 ? 8 : 14,
-                                vertical: 16,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: effectiveLines
-                                    .map((line) => _buildLine(line, is58: is58))
-                                    .toList(),
-                              ),
-                            ),
-                      ),
+          ],
+        ),
+      ),
+      bodyPadding: EdgeInsets.zero,
+      body: Container(
+        color: AppColors.surfaceAlt,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              width: effectivePaperWidth,
+              child: effectiveReceiptWidget ??
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    width: effectivePaperWidth,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: is58 ? 8 : 14,
+                      vertical: 16,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: effectiveLines
+                          .map((line) => _buildLine(line, is58: is58))
+                          .toList(),
                     ),
                   ),
+            ),
+          ),
+        ),
+      ),
+      customFooter: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(top: BorderSide(color: AppColors.border)),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Cancelar'),
                 ),
               ),
             ),
-
-            // Actions
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('Cancelar'),
-                      ),
-                    ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: () {
+                  if (widget.onConfirmPrintWithWidth != null) {
+                    widget.onConfirmPrintWithWidth!(_selectedWidth);
+                  }
+                  if (widget.onConfirmPrint != null) {
+                    widget.onConfirmPrint!();
+                  } else {
+                    Navigator.pop(context, true);
+                  }
+                },
+                icon: const Icon(Icons.print, size: 18),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Imprimir'),
+                      const SizedBox(width: 4),
+                      Text('(${is58 ? "58mm" : "80mm"})'),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        if (widget.onConfirmPrintWithWidth != null) {
-                          widget.onConfirmPrintWithWidth!(_selectedWidth);
-                        }
-                        if (widget.onConfirmPrint != null) {
-                          widget.onConfirmPrint!();
-                        } else {
-                          Navigator.pop(context, true);
-                        }
-                      },
-                      icon: const Icon(Icons.print, size: 18),
-                      label: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Imprimir'),
-                            const SizedBox(width: 4),
-                            Text('(${is58 ? "58mm" : "80mm"})'),
-                          ],
-                        ),
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                ),
               ),
             ),
           ],
@@ -261,13 +268,13 @@ class _TicketPreviewDialogState extends State<TicketPreviewDialog> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: selected ? Colors.blue.shade600 : Colors.transparent,
+          color: selected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : Colors.grey.shade400,
+            color: selected ? Colors.white : const Color(0xFF94A3B8),
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),

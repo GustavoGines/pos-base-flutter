@@ -28,8 +28,10 @@ import 'features/mobile/presentation/screens/mobile_scanner_screen.dart';
 import 'features/mobile/presentation/screens/mobile_audit_screen.dart';
 import 'features/mobile/presentation/screens/mobile_dashboard_screen.dart';
 import 'core/config/app_config.dart';
+import 'core/theme/app_theme.dart';
 import 'features/updater/data/services/ota_startup_checker.dart';
 
+import 'core/presentation/widgets/app_modal_shell.dart';
 import 'core/presentation/widgets/license_guard.dart';
 import 'core/presentation/widgets/caja4u_startup_splash.dart';
 import 'core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -1150,28 +1152,45 @@ class _MainAppState extends State<MainApp> {
     await showDialog(
       context: ctx,
       barrierDismissible: false,
-      builder: (dCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.orange.shade50,
-        title: Row(children: [
-          Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
-          const SizedBox(width: 12),
-          const Expanded(
-              child: Text('Sesión Cerrada',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
-        ]),
-        content: const Text(
-            'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
-            'Por seguridad, solo se permite una sesión activa por usuario a la vez.'),
-        actions: [
-          FilledButton.icon(
-            style:
-                FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
-            onPressed: () => Navigator.pop(dCtx),
-            icon: const Icon(Icons.login),
-            label: const Text('Volver al Login'),
+      builder: (dCtx) => PopScope(
+        canPop: false,
+        child: AppModalShell(
+          title: 'Sesión Cerrada',
+          subtitle: 'Inicio de sesión detectado en otro dispositivo',
+          icon: Icons.phonelink_off_rounded,
+          accent: AppModalAccent.orange,
+          showCloseButton: false,
+          compact: true,
+          maxWidth: 440,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          body: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.orange.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.orange.withValues(alpha: 0.30),
+              ),
+            ),
+            child: const Text(
+              'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
+              'Por seguridad, solo se permite una sesión activa por usuario a la vez.',
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.45,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
-        ],
+          footerActions: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
+              onPressed: () => Navigator.pop(dCtx),
+              icon: const Icon(Icons.login),
+              label: const Text('Volver al Login'),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -1684,59 +1703,7 @@ class _MainAppState extends State<MainApp> {
         Locale('es', 'ES'),
         Locale('en', 'US'),
       ],
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-        canvasColor: Colors.white,
-        cardColor: Colors.white,
-        colorScheme: ThemeData(
-          primarySwatch: Colors.blue,
-          useMaterial3: true,
-        ).colorScheme.copyWith(
-              surface: Colors.white,
-              surfaceTint: Colors.transparent,
-              surfaceContainerLowest: Colors.white,
-              surfaceContainerLow: Colors.white,
-              surfaceContainer: Colors.white,
-              surfaceContainerHigh: Colors.white,
-              surfaceContainerHighest: const Color(0xFFF1F5F9),
-            ),
-        cardTheme: const CardThemeData(
-          color: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        dialogTheme: const DialogThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        popupMenuTheme: const PopupMenuThemeData(
-          color: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        menuTheme: const MenuThemeData(
-          style: MenuStyle(
-            backgroundColor: WidgetStatePropertyAll(Colors.white),
-            surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          scrolledUnderElevation: 0,
-        ),
-        bottomSheetTheme: const BottomSheetThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        drawerTheme: const DrawerThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        datePickerTheme: const DatePickerThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
+      theme: AppTheme.light(
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: <TargetPlatform, PageTransitionsBuilder>{
             TargetPlatform.windows: FadePageRouteTransitionsBuilder(),
@@ -2003,23 +1970,23 @@ class _NetworkSettingsDialogState extends State<_NetworkSettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.dns_outlined, color: Colors.blueAccent),
-          SizedBox(width: 8),
-          Text('Configurar Servidor',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: Column(
+    return AppModalShell(
+      title: 'Configurar Servidor',
+      subtitle: 'Conexión a la PC Servidor en la red local',
+      icon: Icons.dns_outlined,
+      accent: AppModalAccent.blue,
+      compact: true,
+      maxWidth: 460,
+      onClose: () => Navigator.of(context).pop(),
+      bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      body: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'No hubo respuesta del servidor configurado tras 3 segundos.\n'
             'Ingrese la IP local de la PC Servidor o use 127.0.0.1 si esta PC es el servidor:',
-            style: TextStyle(color: Colors.blueGrey, fontSize: 13),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -2045,7 +2012,7 @@ class _NetworkSettingsDialogState extends State<_NetworkSettingsDialog> {
           ],
         ],
       ),
-      actions: [
+      footerActions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
@@ -2054,7 +2021,7 @@ class _NetworkSettingsDialogState extends State<_NetworkSettingsDialog> {
           onPressed: _submit,
           icon: const Icon(Icons.save),
           label: const Text('Guardar y Reintentar'),
-          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
         ),
       ],
     );

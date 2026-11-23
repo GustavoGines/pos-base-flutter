@@ -63,9 +63,13 @@ extension CurrencyFormatter on num {
   String toUnitStockDisplay({
     bool isSoldByWeight = false,
     String unitSuffix = 'u',
+    String? weightUnit,
   }) {
     if (isSoldByWeight) {
-      return '${toQty()} kg';
+      final effectiveUnit = (weightUnit != null && weightUnit.trim().isNotEmpty)
+          ? weightUnit.trim()
+          : 'kg';
+      return '${toQty()} $effectiveUnit';
     }
 
     if (this < 0) {

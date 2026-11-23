@@ -17,16 +17,38 @@ import 'package:frontend_desktop/features/pos/presentation/providers/pos_provide
 import 'package:frontend_desktop/features/cash_movements/providers/cash_movement_provider.dart';
 import 'package:frontend_desktop/features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   static const Color kNavBgStart = Color(0xFF121C33);
   static const Color kNavBgMid = Color(0xFF16233F);
   static const Color kNavBorderBottom = Color(0xFF1E2D4A);
+  static const Color kNavDropdownBg = Color(0xFF16233F);
+  static const Color kNavDropdownBorder = Color(0xFF2A3F66);
+  static const Color kNavDropdownHover = Color(0xFF1E2F52);
   static const Color kBrandEmerald = Color(0xFF10B981);
   static const Color kBrandMint = Color(0xFF34D399);
   static const Color kBrandAmber = Color(0xFFF59E0B);
   static const Color kBrandAmberLight = Color(0xFFFBBF24);
+
+  /// Rutas de primer nivel que ya se muestran resaltadas en la barra central
+  /// (Terminal POS, Gestión • ..., Finanzas • ..., Operaciones • ...).
+  /// Nunca deben mostrar breadcrumb al lado del nombre de la empresa para evitar
+  /// redundancia visual y recorte de espacio en la barra de navegación.
+  static const Set<String> kPrimaryNavRoutes = {
+    '/pos',
+    '/sales-history',
+    '/quotes',
+    '/catalog',
+    '/suppliers',
+    '/cash-movements',
+    '/cuentas-corrientes',
+    '/checks',
+    '/reports',
+    '/delivery-notes',
+  };
 
   final String currentRoute;
   final String title;
@@ -121,8 +143,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             uri.hasScheme &&
                             uri.hasAuthority &&
                             uri.host.isNotEmpty;
+                        final isPrimaryNavRoute =
+                            kPrimaryNavRoutes.contains(currentRoute);
                         final showBreadcrumb = !hideCompanyName &&
-                            screenWidth >= 1200 &&
+                            screenWidth >= 1100 &&
+                            !isPrimaryNavRoute &&
                             name.isNotEmpty &&
                             title.isNotEmpty &&
                             title != 'Caja4U' &&
@@ -201,27 +226,32 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   color: Colors.white38,
                                 ),
                                 const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: kBrandEmerald.withValues(alpha: 0.14),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: kBrandEmerald.withValues(alpha: 0.35),
+                                Tooltip(
+                                  message: title,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
                                     ),
-                                  ),
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(maxWidth: 125),
-                                    child: Text(
-                                      title,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: kBrandMint,
+                                    decoration: BoxDecoration(
+                                      color: kBrandEmerald.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: kBrandEmerald.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: screenWidth >= 1400 ? 210 : 170,
+                                      ),
+                                      child: Text(
+                                        title,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: kBrandMint,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -242,7 +272,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   builder: (context, constraints) {
                     final w = constraints.maxWidth;
                     final isIconOnly = w < 480;
-                    final isCompact = w < 760;
+                    final isCompact = w < 640;
 
                     final String? gestionSubLabel = switch (currentRoute) {
                       '/sales-history' => 'Ventas',
@@ -302,7 +332,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Registro de Ventas',
                                       icon: Icons.receipt_long_outlined,
-                                      color: Colors.blueAccent,
+                                      color: const Color(0xFF60A5FA),
                                       route: '/sales-history',
                                     ),
                                     if (canAccessQuotes)
@@ -310,7 +340,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         context: context,
                                         label: 'Presupuestos',
                                         icon: Icons.description_outlined,
-                                        color: Colors.indigo.shade700,
+                                        color: const Color(0xFF818CF8),
                                         route: '/quotes',
                                         permissionKey: AppPermissions.manageQuotes,
                                       ),
@@ -318,7 +348,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Catálogo de Productos',
                                       icon: Icons.inventory_2_outlined,
-                                      color: Colors.deepPurple,
+                                      color: const Color(0xFFA78BFA),
                                       route: '/catalog',
                                       permissionKey: AppPermissions.manageCatalog,
                                     ),
@@ -326,7 +356,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Proveedores',
                                       icon: canAccessSuppliers ? Icons.local_shipping_outlined : Icons.lock_outline,
-                                      color: Colors.brown.shade600,
+                                      color: const Color(0xFFFBBF24),
                                       route: '/suppliers',
                                       permissionKey: AppPermissions.viewSuppliers,
                                       isLocked: !canAccessSuppliers,
@@ -352,7 +382,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Gastos y Mov. de Caja',
                                       icon: canAccessExpenses ? Icons.receipt_long_outlined : Icons.lock_outline,
-                                      color: Colors.blue.shade700,
+                                      color: const Color(0xFF38BDF8),
                                       route: '/cash-movements',
                                       permissionKey: AppPermissions.viewExpenses,
                                       isLocked: !canAccessExpenses,
@@ -367,7 +397,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Cuentas Corrientes',
                                       icon: canAccessCurrentAccounts ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
-                                      color: Colors.orange.shade700,
+                                      color: const Color(0xFFFB923C),
                                       route: '/cuentas-corrientes',
                                       permissionKey: AppPermissions.viewCustomersAccount,
                                       isLocked: !canAccessCurrentAccounts,
@@ -383,7 +413,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Cartera de Cheques',
                                       icon: canAccessChecks ? Icons.account_balance_wallet : Icons.lock_outline,
-                                      color: Colors.green.shade700,
+                                      color: const Color(0xFF34D399),
                                       route: '/checks',
                                       permissionKey: AppPermissions.viewChecks,
                                       isLocked: !canAccessChecks,
@@ -399,7 +429,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       context: context,
                                       label: 'Reportes Gerenciales',
                                       icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
-                                      color: Colors.purple.shade700,
+                                      color: const Color(0xFFC084FC),
                                       route: '/reports',
                                       permissionKey: AppPermissions.viewReports,
                                       isLocked: !canAccessAdvancedReports,
@@ -428,7 +458,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         context: context,
                                         label: 'Logística / Remitos',
                                         icon: Icons.airport_shuttle,
-                                        color: Colors.green.shade800,
+                                        color: const Color(0xFF4ADE80),
                                         route: '/delivery-notes',
                                         permissionKey: AppPermissions.manageDeliveryNotes,
                                       ),
@@ -580,7 +610,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                     if (screenWidth >= 880) ...[
                       const SizedBox(width: 6),
-                      LiveClockWidget(compact: screenWidth < 1300),
+                      LiveClockWidget(compact: screenWidth < 1440),
                     ],
                     SizedBox(width: screenWidth < 500 ? 4 : 6),
                     const SharedUserMenu(),
@@ -702,7 +732,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   // Builder para elementos dentro de los Dropdowns
-  MenuItemButton _buildMenuItem({
+  Widget _buildMenuItem({
     required BuildContext context,
     required String label,
     required IconData icon,
@@ -715,34 +745,83 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     VoidCallback? onTap,
   }) {
     final isActive = currentRoute == route;
-    final displayColor = isLocked ? Colors.grey.shade400 : color;
+    final displayColor = isLocked ? const Color(0xFF94A3B8) : color;
+    final badgeIconColor = isActive ? GlobalAppBar.kBrandMint : displayColor;
 
-    return MenuItemButton(
-      leadingIcon: Icon(icon, color: displayColor, size: 20),
-      onPressed: (isActive && onTap == null)
-          ? null
-          : () async {
-              if (isLocked) {
-                _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
-                return;
-              }
-              String? unlockedPin;
-              if (permissionKey != null) {
-                final resultPin = await AdminPinDialog.verifyAndGetPin(context, action: label, permissionKey: permissionKey);
-                if (resultPin == null || !context.mounted) return;
-                unlockedPin = resultPin == 'ALREADY_AUTHORIZED' ? null : resultPin;
-              }
-              if (onTap != null) {
-                onTap();
-                return;
-              }
-              Navigator.of(context).pushReplacementNamed(
-                route,
-                arguments: {'unlocked_pin': unlockedPin},
-              );
-            },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0),
+      child: MenuItemButton(
+        style: ButtonStyle(
+          padding: WidgetStateProperty.all(
+            const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+          ),
+          minimumSize: WidgetStateProperty.all(const Size(230, 44)),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+              side: isActive
+                  ? BorderSide(
+                      color: GlobalAppBar.kBrandMint.withValues(alpha: 0.30),
+                    )
+                  : BorderSide.none,
+            ),
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (isActive) {
+              return GlobalAppBar.kBrandEmerald.withValues(alpha: 0.16);
+            }
+            if (states.contains(WidgetState.hovered) ||
+                states.contains(WidgetState.focused)) {
+              return GlobalAppBar.kNavDropdownHover;
+            }
+            return Colors.transparent;
+          }),
+          overlayColor: WidgetStateProperty.all(
+            Colors.white.withValues(alpha: 0.05),
+          ),
+        ),
+        leadingIcon: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: isActive
+                ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.22)
+                : (isLocked
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : displayColor.withValues(alpha: 0.16)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive
+                  ? GlobalAppBar.kBrandMint.withValues(alpha: 0.45)
+                  : (isLocked
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : displayColor.withValues(alpha: 0.30)),
+            ),
+          ),
+          child: Icon(icon, color: badgeIconColor, size: 17),
+        ),
+        onPressed: (isActive && onTap == null)
+            ? null
+            : () async {
+                if (isLocked) {
+                  _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
+                  return;
+                }
+                String? unlockedPin;
+                if (permissionKey != null) {
+                  final resultPin = await AdminPinDialog.verifyAndGetPin(context, action: label, permissionKey: permissionKey);
+                  if (resultPin == null || !context.mounted) return;
+                  unlockedPin = resultPin == 'ALREADY_AUTHORIZED' ? null : resultPin;
+                }
+                if (onTap != null) {
+                  onTap();
+                  return;
+                }
+                Navigator.of(context).pushReplacementNamed(
+                  route,
+                  arguments: {'unlocked_pin': unlockedPin},
+                );
+              },
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -750,29 +829,53 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
             Text(
               label,
               style: TextStyle(
-                color: isLocked ? Colors.grey.shade600 : Colors.black87,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13.5,
+                color: isActive
+                    ? GlobalAppBar.kBrandMint
+                    : (isLocked
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFFF1F5F9)),
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
             if (isActive) ...[
               const SizedBox(width: 8),
               Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(color: displayColor, shape: BoxShape.circle),
-              )
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: GlobalAppBar.kBrandMint,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: GlobalAppBar.kBrandMint.withValues(alpha: 0.55),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
             ],
             if (isLocked) ...[
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade100,
-                  borderRadius: BorderRadius.circular(4),
+                  color: GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
+                  ),
                 ),
-                child: Text('PREMIUM', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
-              )
-            ]
+                child: const Text(
+                  'PREMIUM',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w800,
+                    color: GlobalAppBar.kBrandAmberLight,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -829,15 +932,20 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
       child: MenuAnchor(
         controller: _controller,
         style: MenuStyle(
-          elevation: WidgetStateProperty.all(10),
+          elevation: WidgetStateProperty.all(14),
+          shadowColor: WidgetStateProperty.all(const Color(0x73020617)),
+          surfaceTintColor: WidgetStateProperty.all(Colors.transparent),
           padding: WidgetStateProperty.all(EdgeInsets.zero),
           shape: WidgetStateProperty.all(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(
+                color: GlobalAppBar.kNavDropdownBorder,
+                width: 1.5,
+              ),
             ),
           ),
-          backgroundColor: WidgetStateProperty.all(Colors.white),
+          backgroundColor: WidgetStateProperty.all(GlobalAppBar.kNavDropdownBg),
         ),
         builder: (context, controller, child) {
           final isHighlighted = widget.isActive || controller.isOpen || _isHoveringButton;
@@ -920,26 +1028,29 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
               _checkClose();
             },
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    height: 3.5,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          GlobalAppBar.kBrandEmerald,
-                          GlobalAppBar.kBrandMint,
-                        ],
+              borderRadius: BorderRadius.circular(12.5),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 236),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      height: 3.0,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            GlobalAppBar.kBrandEmerald,
+                            GlobalAppBar.kBrandMint,
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  ...widget.menuChildren,
-                  const SizedBox(height: 4),
-                ],
+                    const SizedBox(height: 6),
+                    ...widget.menuChildren,
+                    const SizedBox(height: 6),
+                  ],
+                ),
               ),
             ),
           )
@@ -982,9 +1093,7 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
                 fontSize: widget.isCompact ? 13 : 13.5,
               ),
             ),
-            if (widget.isActive &&
-                widget.activeSubLabel != null &&
-                !widget.isCompact) ...[
+            if (widget.isActive && widget.activeSubLabel != null) ...[
               const SizedBox(width: 5),
               Text(
                 '• ${widget.activeSubLabel}',
@@ -1020,86 +1129,92 @@ void _showUpgradeDialog(
 }) {
   showDialog(
     context: context,
-    builder: (_) => Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF7C3AED), Color(0xFF3B82F6)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+    builder: (ctx) => AppModalShell(
+      title: title,
+      subtitle: 'Plan Básico activo — Mejorá tu plan para desbloquear',
+      icon: Icons.workspace_premium_rounded,
+      accent: AppModalAccent.amber,
+      compact: true,
+      maxWidth: 440,
+      onClose: () => Navigator.pop(ctx),
+      bodyPadding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Con el Plan Premium desbloqueás:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...features.map(
+            (f) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      f,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.chat_rounded, color: Colors.white),
+              label: const Text(
+                'Contratar Plan Premium por WhatsApp',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
                 ),
               ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
-                    child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  Text('Plan Básico activo — Mejorá tu plan para desbloquear', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.80), fontSize: 12)),
-                ],
-              ),
+              onPressed: () async {
+                final url = Uri.parse(
+                  'https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20del%20Sistema%20POS',
+                );
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                }
+              },
             ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Con el Plan Premium desbloqueás:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 12),
-                  ...features.map((f) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_rounded, color: Color(0xFF7C3AED), size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(f, style: const TextStyle(fontSize: 13, color: Colors.black87))),
-                      ],
-                    ),
-                  )),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.chat_rounded, color: Colors.white),
-                      label: const Text('Contratar Plan Premium por WhatsApp', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                      onPressed: () async {
-                        final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20del%20Sistema%20POS');
-                        if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cerrar', style: TextStyle(color: Colors.black54)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cerrar'),
+        ),
+      ],
     ),
   );
 }
@@ -1268,31 +1383,37 @@ class _TerminalPeripheralsDialogState
 
       final selectedDevice = await showDialog<Map<String, dynamic>>(
         context: context,
-        builder: (dialogCtx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.point_of_sale, color: Color(0xFF009EE3)),
-              SizedBox(width: 8),
-              Text(
-                'Seleccionar Point para esta Caja',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 420,
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: devices.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (ctx, i) {
-                final d = devices[i];
-                final id = d['id']?.toString() ?? '';
-                final posId = d['pos_id']?.toString() ?? '';
-                final mode = d['operating_mode']?.toString().toUpperCase() ?? 'PDV';
-                final isSelected = p.mpPointDeviceId == id;
+        builder: (dialogCtx) => AppModalShell(
+          title: 'Seleccionar Point para esta Caja',
+          subtitle: 'Terminales detectadas en Mercado Pago',
+          icon: Icons.point_of_sale_rounded,
+          accent: AppModalAccent.blue,
+          compact: true,
+          maxWidth: 440,
+          onClose: () => Navigator.of(dialogCtx).pop(null),
+          bodyPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          body: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: devices.length,
+            separatorBuilder: (_, __) => const Divider(height: 6),
+            itemBuilder: (ctx, i) {
+              final d = devices[i];
+              final id = d['id']?.toString() ?? '';
+              final posId = d['pos_id']?.toString() ?? '';
+              final mode = d['operating_mode']?.toString().toUpperCase() ?? 'PDV';
+              final isSelected = p.mpPointDeviceId == id;
 
-                return ListTile(
+              return Material(
+                color: isSelected ? AppColors.primarySoft : Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: isSelected ? AppColors.primaryBorder : Colors.transparent,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
                   dense: true,
                   leading: Icon(
                     Icons.contactless_rounded,
@@ -1302,7 +1423,9 @@ class _TerminalPeripheralsDialogState
                     id,
                     style: TextStyle(
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                      color: isSelected ? const Color(0xFF009EE3) : Colors.black87,
+                      color: isSelected
+                          ? const Color(0xFF009EE3)
+                          : AppColors.textPrimary,
                     ),
                   ),
                   subtitle: Text('Modo: $mode ${posId.isNotEmpty ? "• Caja MP #$posId" : ""}'),
@@ -1310,11 +1433,11 @@ class _TerminalPeripheralsDialogState
                       ? const Icon(Icons.check_circle, color: Color(0xFF009EE3), size: 20)
                       : null,
                   onTap: () => Navigator.of(dialogCtx).pop(d),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
-          actions: [
+          footerActions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(null),
               child: const Text('Cancelar'),
@@ -1502,234 +1625,168 @@ class _TerminalPeripheralsDialogState
           initialIndex: widget.initialTab.clamp(0, 2),
           child: Builder(
             builder: (tabContext) {
-              return AlertDialog(
-                backgroundColor: Colors.white,
-                surfaceTintColor: Colors.transparent,
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                titlePadding: EdgeInsets.zero,
-                contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 12),
-                title: Container(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 16, 16),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [GlobalAppBar.kNavBgStart, GlobalAppBar.kNavBgMid],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    border: Border(
-                      bottom: BorderSide(
-                        color: GlobalAppBar.kNavBorderBottom,
-                        width: 1.5,
+              return AppModalShell(
+                titleWidget: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        regName,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isOpen
+                            ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.18)
+                            : GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isOpen
+                              ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
+                              : GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Text(
+                        isOpen ? 'TURNO #${shift.id}' : 'CERRADA',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isOpen
+                              ? GlobalAppBar.kBrandMint
+                              : GlobalAppBar.kBrandAmberLight,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: 'Configuración de Terminal Física y Periféricos Conectados',
+                icon: Icons.point_of_sale_rounded,
+                accent: isOpen ? AppModalAccent.emerald : AppModalAccent.amber,
+                maxWidth: 640,
+                maxHeight: 620,
+                expandBody: true,
+                onClose: () => Navigator.pop(context),
+                headerTrailing: IconButton(
+                  tooltip: 'Refrescar dispositivos conectados',
+                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isOpen
-                                  ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.18)
-                                  : GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isOpen
-                                    ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
-                                    : GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.point_of_sale_rounded,
-                              color: isOpen
-                                  ? GlobalAppBar.kBrandMint
-                                  : GlobalAppBar.kBrandAmberLight,
-                              size: 22,
-                            ),
+                  icon: (_isLoadingPrinters || _isLoadingPorts)
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFCBD5E1),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        )
+                      : const Icon(
+                          Icons.refresh_rounded,
+                          size: 18,
+                          color: Color(0xFFCBD5E1),
+                        ),
+                  onPressed: (_isLoadingPrinters || _isLoadingPorts)
+                      ? null
+                      : _refreshHardwareLists,
+                ),
+                topBar: Material(
+                  color: AppColors.navyEnd,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: GlobalAppBar.kNavBorderBottom,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: TabBar(
+                        labelColor: Colors.white,
+                        unselectedLabelColor: const Color(0xFF94A3B8),
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        indicator: BoxDecoration(
+                          color: GlobalAppBar.kBrandEmerald.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: GlobalAppBar.kBrandMint.withValues(alpha: 0.50),
+                          ),
+                        ),
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                        ),
+                        unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                        tabs: const [
+                          Tab(
+                            height: 36,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        regName,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: isOpen
-                                            ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.18)
-                                            : GlobalAppBar.kBrandAmber.withValues(alpha: 0.18),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: isOpen
-                                              ? GlobalAppBar.kBrandEmerald.withValues(alpha: 0.45)
-                                              : GlobalAppBar.kBrandAmber.withValues(alpha: 0.45),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        isOpen ? 'TURNO #${shift.id}' : 'CERRADA',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: isOpen
-                                              ? GlobalAppBar.kBrandMint
-                                              : GlobalAppBar.kBrandAmberLight,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                const Text(
-                                  'Configuración de Terminal Física y Periféricos Conectados',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF94A3B8),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
+                                Icon(Icons.desktop_windows_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Terminal y Turno'),
                               ],
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Refrescar dispositivos conectados',
-                            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                            padding: EdgeInsets.zero,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(9),
-                                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
-                              ),
+                          Tab(
+                            height: 36,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.print_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Impresora y Cajón'),
+                              ],
                             ),
-                            icon: (_isLoadingPrinters || _isLoadingPorts)
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFFCBD5E1),
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.refresh_rounded,
-                                    size: 18,
-                                    color: Color(0xFFCBD5E1),
-                                  ),
-                            onPressed: (_isLoadingPrinters || _isLoadingPorts)
-                                ? null
-                                : _refreshHardwareLists,
                           ),
-                          const SizedBox(width: 6),
-                          IconButton(
-                            tooltip: 'Cerrar',
-                            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                            padding: EdgeInsets.zero,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(9),
-                                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
-                              ),
+                          Tab(
+                            height: 36,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.scale_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Balanza y Point'),
+                              ],
                             ),
-                            icon: const Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: Color(0xFFCBD5E1),
-                            ),
-                            onPressed: () => Navigator.pop(context),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.07),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
-                        ),
-                        child: TabBar(
-                          labelColor: Colors.white,
-                          unselectedLabelColor: const Color(0xFF94A3B8),
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          dividerColor: Colors.transparent,
-                          indicator: BoxDecoration(
-                            color: GlobalAppBar.kBrandEmerald.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: GlobalAppBar.kBrandMint.withValues(alpha: 0.50),
-                            ),
-                          ),
-                          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-                          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
-                          tabs: const [
-                            Tab(
-                              height: 36,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.desktop_windows_outlined, size: 16),
-                                  SizedBox(width: 6),
-                                  Text('Terminal y Turno'),
-                                ],
-                              ),
-                            ),
-                            Tab(
-                              height: 36,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.print_outlined, size: 16),
-                                  SizedBox(width: 6),
-                                  Text('Impresora y Cajón'),
-                                ],
-                              ),
-                            ),
-                            Tab(
-                              height: 36,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.scale_outlined, size: 16),
-                                  SizedBox(width: 6),
-                                  Text('Balanza y Point'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                content: SizedBox(
-                  width: 580,
-                  height: 455,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: TabBarView(
-                          children: [
+                bodyPadding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+                body: Column(
+                  children: [
+                    Expanded(
+                      child: TabBarView(
+                        children: [
                             // ── TAB 1: TERMINAL Y TURNO ──
                             SingleChildScrollView(
                               child: Column(
@@ -2313,32 +2370,39 @@ class _TerminalPeripheralsDialogState
                       ],
                     ],
                   ),
-                ),
-                actions: [
-                  Row(
+                  footerLeading: const Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.info_outline, color: Colors.blue.shade600, size: 16),
-                      const SizedBox(width: 6),
-                      Expanded(
+                      Icon(
+                        Icons.info_outline,
+                        color: AppColors.primary,
+                        size: 16,
+                      ),
+                      SizedBox(width: 6),
+                      Flexible(
                         child: Text(
                           'Guardado automático local para esta computadora.',
-                          style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade600),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Listo'),
                       ),
                     ],
                   ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
+                  footerActions: [
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Listo'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+    }
 
   Widget _buildHardwareSummaryCard({
     required IconData icon,

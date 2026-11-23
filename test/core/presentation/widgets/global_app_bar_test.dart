@@ -342,5 +342,229 @@ void main() {
       expect(find.text('SESIÓN ACTIVA'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+      'Desplegables de navegación y usuario usan estilo Dark Navy cohesivo (#16233F) y destacan ruta activa',
+      (tester) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final settingsProv = FakeSettingsProvider(
+          settings: const BusinessSettings(
+            companyName: 'Dev4U',
+            features: FeatureFlags(
+              fastPos: true,
+              quotes: true,
+              suppliers: true,
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(
+          buildTestAppBar(
+            settingsProv: settingsProv,
+            currentRoute: '/catalog',
+            title: 'Catálogo de Productos',
+          ),
+        );
+        await tester.pump();
+
+        // 1. Validar PopupMenuButton de SharedUserMenu con fondo Dark Navy
+        final popupBtn = tester.widget<PopupMenuButton<String>>(
+          find.byType(PopupMenuButton<String>),
+        );
+        expect(popupBtn.color, const Color(0xFF16233F));
+
+        // 2. Abrir desplegable "Gestión" y validar estilo Dark Navy + ruta activa
+        await tester.tap(find.text('Gestión'));
+        await tester.pumpAndSettle();
+
+        final gestionAnchor = tester.widget<MenuAnchor>(
+          find.byWidgetPredicate(
+            (w) =>
+                w is MenuAnchor &&
+                w.style?.backgroundColor?.resolve({}) ==
+                    GlobalAppBar.kNavDropdownBg,
+          ).first,
+        );
+        expect(
+          gestionAnchor.style?.backgroundColor?.resolve({}),
+          const Color(0xFF16233F),
+        );
+
+        expect(find.text('Registro de Ventas'), findsOneWidget);
+        expect(find.text('Presupuestos'), findsOneWidget);
+        expect(find.text('Catálogo de Productos'), findsWidgets);
+        expect(find.text('Proveedores'), findsOneWidget);
+
+        // El ítem de la ruta activa (/catalog) resalta en kBrandMint y negrita
+        final catalogMenuText = tester.widget<Text>(
+          find.descendant(
+            of: find.byType(MenuItemButton),
+            matching: find.text('Catálogo de Productos'),
+          ),
+        );
+        expect(catalogMenuText.style?.color, GlobalAppBar.kBrandMint);
+        expect(catalogMenuText.style?.fontWeight, FontWeight.w700);
+
+        final salesMenuText = tester.widget<Text>(
+          find.descendant(
+            of: find.byType(MenuItemButton),
+            matching: find.text('Registro de Ventas'),
+          ),
+        );
+        expect(salesMenuText.style?.color, const Color(0xFFF1F5F9));
+        expect(salesMenuText.style?.fontWeight, FontWeight.w500);
+
+        // Cerrar menú Gestión y abrir SharedUserMenu para validar color de ítem
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Admin Test'));
+        await tester.pumpAndSettle();
+
+        final userMenuText = tester.widget<Text>(
+          find.text('Personal y Accesos'),
+        );
+        expect(userMenuText.style?.color, const Color(0xFFF1F5F9));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Rutas principales del menú central NUNCA muestran breadcrumb duplicado al lado de la empresa y sí muestran sub-etiqueta activa',
+      (tester) async {
+        tester.view.physicalSize = const Size(1366, 768);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final settingsProv = FakeSettingsProvider(
+          settings: const BusinessSettings(
+            companyName: 'Dev4U',
+            features: FeatureFlags(
+              fastPos: true,
+              quotes: true,
+              suppliers: true,
+              checks: true,
+              expenses: true,
+              currentAccounts: true,
+              advancedReports: true,
+              logistics: true,
+            ),
+          ),
+        );
+
+        final cases = <(String, String, String?)>[
+          ('/pos', 'Terminal POS', null),
+          ('/sales-history', 'Registro de Ventas', '• Ventas'),
+          ('/quotes', 'Historial de Presupuestos', '• Presupuestos'),
+          ('/catalog', 'Catálogo de Productos', '• Catálogo'),
+          ('/suppliers', 'Gestión de Proveedores', '• Proveedores'),
+          ('/cash-movements', 'Gastos y Mov. de Caja', '• Gastos'),
+          ('/cuentas-corrientes', 'Cuentas Corrientes', '• Ctas. Ctes.'),
+          ('/checks', 'Cartera de Cheques', '• Cheques'),
+          ('/reports', 'Reportes Gerenciales', '• Reportes'),
+          ('/delivery-notes', 'Dashboard Logístico', '• Logística'),
+        ];
+
+        for (final (route, redundantTitle, expectedSubLabel) in cases) {
+          await tester.pumpWidget(
+            buildTestAppBar(
+              settingsProv: settingsProv,
+              currentRoute: route,
+              title: redundantTitle,
+            ),
+          );
+          await tester.pump();
+
+          expect(find.text('Dev4U'), findsOneWidget, reason: 'route=$route');
+          expect(
+            find.byIcon(Icons.chevron_right_rounded),
+            findsNothing,
+            reason: 'No debe haber breadcrumb junto a la empresa en $route',
+          );
+          if (expectedSubLabel != null) {
+            expect(
+              find.text(expectedSubLabel),
+              findsOneWidget,
+              reason: 'Debe mostrar $expectedSubLabel en barra central para $route',
+            );
+          }
+          expect(tester.takeException(), isNull, reason: 'Sin overflow en $route');
+        }
+      },
+    );
+
+    testWidgets(
+      'Pantallas secundarias (menú de usuario y sub-flujos) SÍ muestran breadcrumb con Tooltip sin overflow',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final settingsProv = FakeSettingsProvider(
+          settings: const BusinessSettings(
+            companyName: 'Dev4U',
+            features: FeatureFlags(
+              fastPos: true,
+              quotes: true,
+              suppliers: true,
+              checks: true,
+              logistics: true,
+            ),
+          ),
+        );
+
+        final secondaryCases = <(String, String)>[
+          ('/settings', 'Configuración'),
+          ('/settings/registers', 'Cajas Físicas'),
+          ('/users', 'Personal y Permisos'),
+          ('/general-audit', 'Auditoría General'),
+          ('/trash', 'Papelera'),
+          ('/quotes/new', 'Nuevo Presupuesto'),
+          ('/suppliers/account', 'Cta. Cte.: Distribuidora Central'),
+        ];
+
+        for (final (route, breadcrumbTitle) in secondaryCases) {
+          await tester.pumpWidget(
+            buildTestAppBar(
+              settingsProv: settingsProv,
+              currentRoute: route,
+              title: breadcrumbTitle,
+              showBackButton: true,
+            ),
+          );
+          await tester.pump();
+
+          expect(find.text('Dev4U'), findsOneWidget, reason: 'route=$route');
+          expect(
+            find.byIcon(Icons.chevron_right_rounded),
+            findsOneWidget,
+            reason: 'Debe mostrar chevron breadcrumb en $route',
+          );
+          expect(
+            find.text(breadcrumbTitle),
+            findsOneWidget,
+            reason: 'Debe mostrar "$breadcrumbTitle" en $route',
+          );
+          expect(
+            find.byTooltip(breadcrumbTitle),
+            findsOneWidget,
+            reason: 'Debe incluir Tooltip con título completo en $route',
+          );
+          expect(tester.takeException(), isNull, reason: 'Sin overflow en $route');
+        }
+      },
+    );
   });
 }

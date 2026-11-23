@@ -74,3 +74,76 @@ List<T> sortByAlphabeticalName<T>(
   copy.sort((a, b) => compareSpanishAlphabetical(nameOf(a), nameOf(b)));
   return copy;
 }
+
+/// Genera variantes singulares básicas para un token normalizado en español
+/// (ej: "machimbres" → "machimbre", "perfiles" → "perfil", "luces" → "luz"),
+/// conservando siempre el token original.
+List<String> expandSpanishSearchTokenVariants(String normalizedToken) {
+  final token = normalizedToken.trim();
+  if (token.isEmpty) return const [];
+  final variants = <String>[token];
+  final len = token.length;
+  if (len < 4) return variants;
+
+  if (token.endsWith('s')) {
+    final minus1 = token.substring(0, len - 1);
+    if (minus1.isNotEmpty && !variants.contains(minus1)) {
+      variants.add(minus1);
+    }
+  }
+
+  if (len >= 5 && token.endsWith('es')) {
+    final beforeEs = token[len - 3];
+    if (beforeEs == 'd' ||
+        beforeEs == 'l' ||
+        beforeEs == 'n' ||
+        beforeEs == 'r' ||
+        beforeEs == 's') {
+      final minus2 = token.substring(0, len - 2);
+      if (minus2.length >= 3 && !variants.contains(minus2)) {
+        variants.add(minus2);
+      }
+    }
+  }
+
+  if (len >= 5 && token.endsWith('ces')) {
+    final minus3Z = '${token.substring(0, len - 3)}z';
+    if (!variants.contains(minus3Z)) {
+      variants.add(minus3Z);
+    }
+  }
+
+  return variants;
+}
+
+/// Evalúa si [searchableFields] coincide con todas las palabras de [query],
+/// tolerando tildes, orden distinto de palabras y plurales comunes en español.
+bool matchesSpanishSearchQuery(
+  String query,
+  Iterable<String?> searchableFields,
+) {
+  final normQuery = normalizeSearchText(query);
+  if (normQuery.isEmpty) return false;
+  final tokens = normQuery
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .take(6)
+      .toList();
+  if (tokens.isEmpty) return false;
+
+  final normFields = searchableFields
+      .whereType<String>()
+      .map(normalizeSearchText)
+      .where((f) => f.isNotEmpty)
+      .toList();
+  if (normFields.isEmpty) return false;
+
+  for (final token in tokens) {
+    final variants = expandSpanishSearchTokenVariants(token);
+    final matched = normFields.any(
+      (field) => variants.any((v) => field.contains(v)),
+    );
+    if (!matched) return false;
+  }
+  return true;
+}

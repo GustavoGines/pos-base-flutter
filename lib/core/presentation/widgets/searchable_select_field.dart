@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 
 /// Opción seleccionable dentro de [SearchableSelectField].
@@ -442,7 +444,6 @@ class _SearchableSelectPickerDialogState<T>
   @override
   Widget build(BuildContext context) {
     final screen = MediaQuery.of(context).size;
-    final isCompactWidth = screen.width < 480;
     final normQuery = normalizeSearchText(_rawQuery);
     final filtered = _buildFilteredOptions(normQuery);
     final hasExactLabelMatch = normQuery.isNotEmpty &&
@@ -460,273 +461,252 @@ class _SearchableSelectPickerDialogState<T>
     return RemoteScannerListener(
       debugLabel: 'SearchableSelectPickerDialog',
       onBarcodeScanned: _handleSubmittedOrScanned,
-      child: Dialog(
-        insetPadding: EdgeInsets.symmetric(
-          horizontal: isCompactWidth ? 12 : 24,
-          vertical: screen.height < 520 ? 10 : 24,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 440,
-            maxHeight: math.min(500.0, screen.height * 0.86),
+      child: AppModalShell(
+        title: widget.title,
+        icon: Icons.manage_search_rounded,
+        accent: AppModalAccent.blue,
+        compact: true,
+        maxWidth: 440,
+        maxHeight: math.min(500.0, screen.height * 0.86),
+        showCloseButton: true,
+        onClose: () => Navigator.of(context).pop(),
+        topBar: Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          decoration: const BoxDecoration(
+            color: AppColors.surfaceMuted,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        widget.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
-                        ),
+          child: TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            onChanged: (val) {
+              setState(() => _rawQuery = val);
+              _triggerRemoteSearch(val);
+            },
+            onSubmitted: _handleSubmittedOrScanned,
+            decoration: InputDecoration(
+              hintText: widget.searchHintText,
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              prefixIcon: const Icon(Icons.search, size: 19),
+              suffixIcon: _isSearchingRemote
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    ),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(Icons.close_rounded, size: 20),
+                    )
+                  : (_rawQuery.isNotEmpty
+                      ? InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () {
+                            _searchCtrl.clear();
+                            setState(() => _rawQuery = '');
+                            _triggerRemoteSearch('');
+                          },
+                          child: const Icon(Icons.clear_rounded, size: 17),
+                        )
+                      : null),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            ),
+          ),
+        ),
+        bodyPadding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        body: filtered.isEmpty
+            ? Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isSearchingRemote)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 28,
+                        color: Colors.blueGrey.shade300,
+                      ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _isSearchingRemote
+                          ? 'Buscando en todo el catálogo...'
+                          : widget.emptySearchText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blueGrey.shade600,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _searchCtrl,
-                  autofocus: true,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (val) {
-                    setState(() => _rawQuery = val);
-                    _triggerRemoteSearch(val);
-                  },
-                  onSubmitted: _handleSubmittedOrScanned,
-                decoration: InputDecoration(
-                  hintText: widget.searchHintText,
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 19),
-                  suffixIcon: _isSearchingRemote
-                      ? const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxListHeight),
+                child: Scrollbar(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final option = filtered[index];
+                      final isSelected = option.value == widget.currentValue;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => Navigator.of(context)
+                            .pop(_PickerResult<T>.selected(option.value)),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 9,
                           ),
-                        )
-                      : (_rawQuery.isNotEmpty
-                          ? InkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () {
-                                _searchCtrl.clear();
-                                setState(() => _rawQuery = '');
-                                _triggerRemoteSearch('');
-                              },
-                              child: const Icon(Icons.clear_rounded, size: 17),
-                            )
-                          : null),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (filtered.isEmpty)
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isSearchingRemote)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      else
-                        Icon(
-                          Icons.search_off_rounded,
-                          size: 28,
-                          color: Colors.blueGrey.shade300,
-                        ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _isSearchingRemote
-                            ? 'Buscando en todo el catálogo...'
-                            : widget.emptySearchText,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.blueGrey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: maxListHeight),
-                    child: Scrollbar(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          final option = filtered[index];
-                          final isSelected = option.value == widget.currentValue;
-                          return InkWell(
+                          margin: const EdgeInsets.only(bottom: 2),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primarySoft
+                                : (option.isResetOption
+                                    ? AppColors.surfaceMuted
+                                    : Colors.transparent),
                             borderRadius: BorderRadius.circular(8),
-                            onTap: () => Navigator.of(context)
-                                .pop(_PickerResult<T>.selected(option.value)),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 9,
-                              ),
-                              margin: const EdgeInsets.only(bottom: 2),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFFEEF2FF)
-                                    : (option.isResetOption
-                                        ? const Color(0xFFF8FAFC)
-                                        : Colors.transparent),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          option.label,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      option.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: isSelected ||
+                                                option.isResetOption
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? AppColors.primaryDark
+                                            : (option.isResetOption
+                                                ? AppColors.textSecondary
+                                                : AppColors.textPrimary),
+                                      ),
+                                    ),
+                                    if (option.subtitle != null &&
+                                        option.subtitle!.trim().isNotEmpty)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 1.5),
+                                        child: Text(
+                                          option.subtitle!,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: isSelected ||
-                                                    option.isResetOption
-                                                ? FontWeight.w700
-                                                : FontWeight.w500,
-                                            color: isSelected
-                                                ? const Color(0xFF4338CA)
-                                                : (option.isResetOption
-                                                    ? const Color(0xFF475569)
-                                                    : const Color(0xFF0F172A)),
-                                          ),
-                                        ),
-                                        if (option.subtitle != null &&
-                                            option.subtitle!.trim().isNotEmpty)
-                                          Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 1.5),
-                                            child: Text(
-                                              option.subtitle!,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 11.5,
-                                                color: Colors.blueGrey.shade600,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (option.badgeText != null &&
-                                      option.badgeText!.trim().isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    ConstrainedBox(
-                                      constraints:
-                                          const BoxConstraints(maxWidth: 120),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 7,
-                                          vertical: 2.5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF1F5F9),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                          border: Border.all(
-                                            color: const Color(0xFFE2E8F0),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          option.badgeText!,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF475569),
+                                            fontSize: 11.5,
+                                            color: Colors.blueGrey.shade600,
                                           ),
                                         ),
                                       ),
-                                    ),
                                   ],
-                                  if (isSelected) ...[
-                                    const SizedBox(width: 6),
-                                    const Icon(
-                                      Icons.check_rounded,
-                                      size: 18,
-                                      color: Color(0xFF4338CA),
-                                    ),
-                                  ],
-                                ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                              if (option.badgeText != null &&
+                                  option.badgeText!.trim().isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 120),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceAlt,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      option.badgeText!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (isSelected) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.check_rounded,
+                                  size: 18,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+        customFooter: showCreateAction
+            ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceMuted,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                  borderRadius:
+                      BorderRadius.vertical(bottom: Radius.circular(16)),
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context)
+                        .pop(_PickerResult<T>.create(trimmedRaw)),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(
+                      widget.createLabelBuilder?.call(trimmedRaw) ??
+                          'Crear "$trimmedRaw"',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
                     ),
                   ),
                 ),
-              if (showCreateAction) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context)
-                      .pop(_PickerResult<T>.create(trimmedRaw)),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(
-                    widget.createLabelBuilder?.call(trimmedRaw) ??
-                        'Crear "$trimmedRaw"',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+              )
+            : null,
       ),
     );
   }

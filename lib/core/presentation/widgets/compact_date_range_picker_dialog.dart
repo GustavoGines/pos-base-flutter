@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../theme/app_theme.dart';
+import 'app_modal_shell.dart';
 
 /// Muestra una ventana compacta y ágil para elegir un rango de fechas (Desde / Hasta),
 /// permitiendo navegar fácilmente por mes y año (flechas y desplegables directos)
@@ -193,7 +195,6 @@ class _CompactDateRangePickerDialogState
     final df = DateFormat('dd/MM/yyyy');
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final screenSize = MediaQuery.of(context).size;
 
     final minYear = widget.firstDate.year;
     final maxYear = widget.lastDate.year < minYear
@@ -211,72 +212,20 @@ class _CompactDateRangePickerDialogState
         DateTime(_displayedMonth.year, _displayedMonth.month + 1, 0).day;
     final leadingEmptyDays = firstDayOfMonth.weekday - 1; // 0 para Lunes
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      backgroundColor: Colors.white,
-      child: Container(
-        width: (screenSize.width * 0.92).clamp(310.0, 440.0),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Cabecera ──────────────────────────────────────────────────
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.indigo.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.date_range_rounded,
-                      color: Colors.indigo.shade700,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey.shade900,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          _selectingEnd
-                              ? 'Ahora hacé clic en la fecha de fin (Hasta)'
-                              : 'Hacé clic en un día para iniciar o usá un atajo rápido',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: _selectingEnd
-                                ? Colors.indigo.shade700
-                                : Colors.blueGrey.shade500,
-                            fontWeight: _selectingEnd
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.of(context).pop(),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+    return AppModalShell(
+      title: widget.title,
+      subtitle: _selectingEnd
+          ? 'Ahora hacé clic en la fecha de fin (Hasta)'
+          : 'Hacé clic en un día para iniciar o usá un atajo rápido',
+      icon: Icons.date_range_rounded,
+      accent: AppModalAccent.indigo,
+      compact: true,
+      maxWidth: 440,
+      bodyPadding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
 
               // ── Indicadores Desde / Hasta (o Fecha Seleccionada) ──────────
               if (widget.singleDateMode)
@@ -704,42 +653,27 @@ class _CompactDateRangePickerDialogState
                   );
                 },
               ),
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-
-              // ── Botones de Acción ─────────────────────────────────────────
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancelar'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.of(context).pop(
-                      DateTimeRange(start: _startDate, end: _endDate),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.indigo.shade700,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                    ),
-                    icon: const Icon(Icons.check, size: 16),
-                    label: Text(
-                      widget.singleDateMode
-                          ? 'Aplicar Fecha'
-                          : 'Aplicar Rango',
-                    ),
-                  ),
-                ],
-              ),
-            ],
+        ],
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(
+            DateTimeRange(start: _startDate, end: _endDate),
+          ),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.indigo,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          icon: const Icon(Icons.check, size: 16),
+          label: Text(
+            widget.singleDateMode ? 'Aplicar Fecha' : 'Aplicar Rango',
           ),
         ),
-      ),
+      ],
     );
   }
 
