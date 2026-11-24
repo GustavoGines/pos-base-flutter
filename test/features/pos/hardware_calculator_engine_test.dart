@@ -97,9 +97,31 @@ void main() {
       expect(res.isValid, isTrue);
       expect(res.columnsAcrossWidth, 6);
       expect(res.rowsAlongSlope, 2);
+      expect(res.coveredSlopeLengthM, closeTo(7.8, 0.001));
+      expect(res.surplusPerColumnM, closeTo(0.3, 0.001));
       expect(res.totalSheetsNeeded, 12);
       expect(res.totalLinearMeters, 48.0);
       expect(res.billingQuantity, 12.0);
+    });
+
+    test('Techo 10x10.5m con chapa de 6m y solape 20cm calcula 20 chapas y expone cobertura y recorte por hilada', () {
+      final res = HardwareCalculatorEngine.calculateRoof(
+        roofWidthM: 10.0,
+        roofSlopeLengthM: 10.5,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+        longitudinalOverlapM: 0.20,
+        pricingMode: RoofPricingMode.perSheet,
+      );
+
+      expect(res.isValid, isTrue);
+      expect(res.columnsAcrossWidth, 10);
+      expect(res.rowsAlongSlope, 2);
+      expect(res.totalSheetsNeeded, 20);
+      expect(res.coveredSlopeLengthM, closeTo(11.8, 0.001));
+      expect(res.surplusPerColumnM, closeTo(1.3, 0.001));
+      expect(res.totalLinearMeters, 120.0);
     });
 
     test('Previene división o bucle inválido si largoChapa <= solapeLongitudinal en caída larga', () {
@@ -114,6 +136,65 @@ void main() {
 
       expect(invalid.isValid, isFalse);
       expect(invalid.errorMessage, isNotNull);
+    });
+
+    test('calculateRoofByArea estima chapas por m² directos con margen de desperdicio y modalidades de cobro', () {
+      // 40 m² + 10% = 44 m²; chapa útil 1.00m x 6.00m = 6 m²/chapa -> ceil(44 / 6) = 8 chapas
+      final bySheet = HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: 40.0,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+        wastePercent: 10.0,
+        pricingMode: RoofPricingMode.perSheet,
+      );
+
+      expect(bySheet.isValid, isTrue);
+      expect(bySheet.isAreaEstimate, isTrue);
+      expect(bySheet.wastePercent, 10.0);
+      expect(bySheet.roofAreaM2, 40.0);
+      expect(bySheet.totalSheetsNeeded, 8);
+      expect(bySheet.usefulAreaCoveredM2, 48.0);
+      expect(bySheet.totalLinearMeters, 48.0);
+      expect(bySheet.totalNominalM2, closeTo(52.8, 0.001));
+      expect(bySheet.billingQuantity, 8.0);
+      expect(bySheet.billingUnitLabel, 'chapas');
+      expect(bySheet.customDetailsNote, contains('Estimado Techo 40 m2 +10%'));
+      expect(bySheet.complements.length, 2);
+
+      // Modalidad m² y ml
+      final byM2 = HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: 24.0,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+        wastePercent: 0.0,
+        pricingMode: RoofPricingMode.perM2,
+      );
+      expect(byM2.totalSheetsNeeded, 4);
+      expect(byM2.billingQuantity, closeTo(26.4, 0.001));
+      expect(byM2.billingUnitLabel, 'm²');
+
+      final byMl = HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: 24.0,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+        wastePercent: 0.0,
+        pricingMode: RoofPricingMode.perLinearMeter,
+      );
+      expect(byMl.billingQuantity, 24.0);
+      expect(byMl.billingUnitLabel, 'ml');
+
+      // Validación área <= 0
+      final invalidArea = HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: 0,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+      );
+      expect(invalidArea.isValid, isFalse);
+      expect(invalidArea.isAreaEstimate, isTrue);
     });
   });
 
@@ -227,6 +308,13 @@ void main() {
         sheetLengthM: 4.50,
         longitudinalOverlapM: 0.20,
       );
+      final roofByArea = HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: 40.0,
+        sheetNominalWidthM: 1.10,
+        sheetUsefulWidthM: 1.00,
+        sheetLengthM: 6.00,
+        wastePercent: 10.0,
+      );
       final paint = HardwareCalculatorEngine.calculatePaint(
         surfaceAreaM2: 30.0,
         coats: 2,
@@ -237,6 +325,7 @@ void main() {
       for (final note in [
         wood.customDetailsNote,
         roof.customDetailsNote,
+        roofByArea.customDetailsNote,
         paint.customDetailsNote,
       ]) {
         expect(note.isNotEmpty, isTrue);

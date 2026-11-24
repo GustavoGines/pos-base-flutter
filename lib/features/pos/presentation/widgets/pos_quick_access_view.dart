@@ -41,6 +41,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   /// Si es true, muestra micro-indicador de atajo numérico [Alt+1..9] en las primeras 9 tarjetas.
   final bool showKeyboardShortcuts;
 
+  /// Si false (Ropería / Tech / Ferretería pura), evita badges y sufijos de balanza `/Kg`.
+  final bool canUseScaleWeight;
+
   const PosQuickAccessCatalogView({
     super.key,
     required this.products,
@@ -53,7 +56,46 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     this.onQuickLook,
     this.pinnedProductIds = const {},
     this.showKeyboardShortcuts = false,
+    this.canUseScaleWeight = true,
   });
+
+  String? _visibleSpecForCard(Product product) {
+    final spec = product.technicalSpec?.trim();
+    if (spec == null || spec.isEmpty) return null;
+    if (Product.resolveEffectiveReceiptDetails(
+          displayName: product.name,
+          technicalSpec: spec,
+        ) ==
+        null) {
+      return null;
+    }
+    return spec;
+  }
+
+  bool _isNonScaleFractional(Product product) =>
+      product.isSoldByWeight &&
+      (product.isMetricOrLiquidUnit ||
+          product.isDiscreteFractionalItem(
+              businessUsesScaleWeight: canUseScaleWeight) ||
+          !canUseScaleWeight);
+
+  String _effectiveUnitLabel(Product product) =>
+      Product.resolveQuantityUnitLabel(
+        unitType: product.unitType,
+        isSoldByWeight: product.isSoldByWeight,
+        preferDiscreteUn: product.isDiscreteFractionalItem(
+          businessUsesScaleWeight: canUseScaleWeight,
+        ),
+      );
+
+  String _fractionalBadgeText(Product product, {bool compact = false}) {
+    final unitLbl = _effectiveUnitLabel(product);
+    if (_isNonScaleFractional(product)) {
+      if (unitLbl == 'un.') return '📏 Fracc.';
+      return compact ? '📏 $unitLbl' : '📏 Por $unitLbl';
+    }
+    return compact ? '⚖️ $unitLbl' : '⚖️ Por $unitLbl';
+  }
 
   /// Paleta curada de 12 tonos sobrios de alto contraste para categorías (hash determinístico).
   static const List<Color> categoryPalette = [
@@ -103,8 +145,10 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   /// Envuelve cualquier ítem del catálogo con un tooltip limpio que muestra únicamente
   /// el nombre completo del producto por encima de la tarjeta (sin tapar el botón -).
   Widget _wrapWithProductTooltip(Widget child, Product product) {
+    final spec = _visibleSpecForCard(product);
+    final message = spec != null ? '${product.name}\n$spec' : product.name;
     return Tooltip(
-      message: product.name,
+      message: message,
       preferBelow: false,
       verticalOffset: 14,
       waitDuration: const Duration(milliseconds: 450),
@@ -244,8 +288,11 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     double borderRadius = 8,
     double iconRatio = 0.55,
   }) {
+    final isNonScale = _isNonScaleFractional(product);
     final icon = Icon(
-      isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+      isByWeight
+          ? (isNonScale ? Icons.straighten_rounded : Icons.scale_rounded)
+          : Icons.inventory_2_outlined,
       color: accent,
       size: size * iconRatio,
     );
@@ -489,6 +536,8 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     final cartQty = _getCartQuantity(context, product.id);
     final isPinned = pinnedProductIds.contains(product.id);
     final accent = _resolveSemanticAccent(product);
+    final visibleSpec = _visibleSpecForCard(product);
+    final isNonScaleFrac = _isNonScaleFractional(product);
     final lowStock = product.isCombo
         ? product.stock <= (product.minStock ?? 0)
         : (product.minStock != null && product.stock <= product.minStock!);
@@ -562,6 +611,27 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                               ),
                             ),
                           ),
+                        if (visibleSpec != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEEF2FF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: const Color(0xFFC7D2FE), width: 0.7),
+                            ),
+                            child: Text(
+                              visibleSpec,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                color: Color(0xFF3730A3),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         if (hasBarcode)
                           Text(
                             product.barcode!,
@@ -573,14 +643,18 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 5, vertical: 1),
                             decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
+                              color: isNonScaleFrac
+                                  ? Colors.teal.shade50
+                                  : Colors.orange.shade100,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              '⚖️ Por Kg',
+                              _fractionalBadgeText(product),
                               style: TextStyle(
                                 fontSize: 9.5,
-                                color: Colors.orange.shade900,
+                                color: isNonScaleFrac
+                                    ? Colors.teal.shade900
+                                    : Colors.orange.shade900,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -651,6 +725,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     final cartQty = _getCartQuantity(context, product.id);
     final isPinned = pinnedProductIds.contains(product.id);
     final accent = _resolveSemanticAccent(product);
+    final visibleSpec = _visibleSpecForCard(product);
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -713,10 +788,22 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                               fontSize: 11.5,
                               height: 1.12,
                             ),
-                            maxLines: 2,
+                            maxLines: (!tight && visibleSpec != null) ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (!tight && visibleSpec != null)
+                          Text(
+                            visibleSpec,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: Color(0xFF3730A3),
+                              fontWeight: FontWeight.w600,
+                              height: 1.08,
+                            ),
+                          ),
                         if (hasBadges) ...[
                           const SizedBox(height: 2),
                           FittedBox(
@@ -789,6 +876,8 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     final cartQty = _getCartQuantity(context, product.id);
     final isPinned = pinnedProductIds.contains(product.id);
     final accentColor = _resolveSemanticAccent(product);
+    final visibleSpec = _visibleSpecForCard(product);
+    final isNonScaleFrac = _isNonScaleFractional(product);
 
     return InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -835,8 +924,16 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           ),
                           errorWidget: (context, url, error) => Center(
                             child: Icon(
-                              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                              isByWeight
+                                  ? (isNonScaleFrac
+                                      ? Icons.straighten_rounded
+                                      : Icons.scale_rounded)
+                                  : Icons.inventory_2_outlined,
+                              color: isByWeight
+                                  ? (isNonScaleFrac
+                                      ? Colors.teal.shade600
+                                      : Colors.orange.shade600)
+                                  : Colors.blue.shade600,
                               size: isMedium ? 30 : 42,
                             ),
                           ),
@@ -878,16 +975,27 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                               vertical: 1.5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: Colors.orange.shade100.withValues(alpha: 0.95),
+                                              color: isNonScaleFrac
+                                                  ? Colors.teal.shade50
+                                                      .withValues(alpha: 0.95)
+                                                  : Colors.orange.shade100
+                                                      .withValues(alpha: 0.95),
                                               borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.orange.shade300, width: 0.8),
+                                              border: Border.all(
+                                                  color: isNonScaleFrac
+                                                      ? Colors.teal.shade300
+                                                      : Colors.orange.shade300,
+                                                  width: 0.8),
                                             ),
                                             child: Text(
-                                              isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
+                                              _fractionalBadgeText(product,
+                                                  compact: isMedium),
                                               maxLines: 1,
                                               style: TextStyle(
                                                 fontSize: isMedium ? 7.5 : 8.5,
-                                                color: Colors.orange.shade900,
+                                                color: isNonScaleFrac
+                                                    ? Colors.teal.shade900
+                                                    : Colors.orange.shade900,
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             ),
@@ -931,19 +1039,38 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(
-                            product.name,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: isMedium ? 11 : 12,
-                              height: 1.12,
-                              color: const Color(0xFF1E293B),
-                            ),
-                            // 3 líneas: aprovecha el espacio blanco bajo el título
-                            // para mostrar color/modelo completo.
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  product.name,
+                                  textAlign: TextAlign.start,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: isMedium ? 11 : 12,
+                                    height: 1.12,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                  maxLines: visibleSpec != null ? 2 : 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (visibleSpec != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  visibleSpec,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: isMedium ? 9.0 : 10.0,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF3730A3),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         Row(
@@ -1060,7 +1187,11 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                  isByWeight
+                                      ? (isNonScaleFrac
+                                          ? Icons.straighten_rounded
+                                          : Icons.scale_rounded)
+                                      : Icons.inventory_2_outlined,
                                   size: isMedium ? 11 : 12,
                                   color: accentColor,
                                 ),
@@ -1069,9 +1200,10 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                   child: Text(
                                     product.category?.name ??
                                         (isByWeight
-                                            ? ((product.unitType.trim().toLowerCase() != 'un' &&
-                                                    product.unitType.trim().toLowerCase() != 'kg')
-                                                ? 'Por ${product.effectiveQuantityUnitLabel}'
+                                            ? (_effectiveUnitLabel(product) != 'Kg'
+                                                ? (_effectiveUnitLabel(product) == 'un.'
+                                                    ? 'Fracc.'
+                                                    : 'Por ${_effectiveUnitLabel(product)}')
                                                 : 'Por Peso')
                                             : (product.internalCode.isNotEmpty
                                                 ? product.internalCode
@@ -1090,19 +1222,49 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 3),
-                        // Nombre expandido (3 líneas)
+                        // Nombre expandido (2 o 3 líneas según si tiene especificación)
                         Expanded(
-                          child: Text(
-                            product.name,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: _typographicNameFontSize(product.name, isMedium),
-                              height: 1.2,
-                              color: const Color(0xFF1E293B),
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  product.name,
+                                  textAlign: TextAlign.start,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: _typographicNameFontSize(product.name, isMedium),
+                                    height: 1.18,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                  maxLines: visibleSpec != null ? 2 : 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (visibleSpec != null) ...[
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEEF2FF),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    visibleSpec,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: isMedium ? 8.5 : 9.5,
+                                      color: const Color(0xFF3730A3),
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.08,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         // Código interno sutil
@@ -1200,12 +1362,13 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       displayPrice = ProductPricingCalculator.roundMoney(displayPrice);
     }
 
+    final unitLbl = _effectiveUnitLabel(product);
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
       child: Text(
         isByWeight
-            ? '\$${displayPrice.toCurrency()}/${product.effectiveQuantityUnitLabel}'
+            ? '\$${displayPrice.toCurrency()}/$unitLbl'
             : '\$${displayPrice.toCurrency()}',
         style: TextStyle(
           color: isByWeight ? Colors.orange.shade800 : const Color(0xFF1B873A),

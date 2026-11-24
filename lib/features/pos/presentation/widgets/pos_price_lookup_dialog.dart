@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/pos_search_history_popover.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
@@ -177,7 +178,12 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
     if (event.logicalKey == LogicalKeyboardKey.f7 &&
         _selectedProduct != null &&
         widget.onHardwareCalculatorRequested != null &&
-        context.read<SettingsProvider>().canUseHardwareCalculator) {
+        context.read<SettingsProvider>().canUseHardwareCalculatorFor(
+              product: _selectedProduct,
+              rubros: Provider.of<CatalogProvider?>(context, listen: false)
+                      ?.safeRubros ??
+                  const [],
+            )) {
       _hideHistoryPopover();
       final prod = _selectedProduct!;
       Navigator.of(context).pop();
@@ -986,14 +992,32 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
                             color: AppColors.indigo,
                             bgColor: Colors.indigo.shade50,
                           ),
-                        if (product.isSoldByWeight)
-                          _LookupBadge(
-                            label: product.unitShortLabel != 'Kg'
-                                ? 'Venta Fraccionada (${product.unitShortLabel})'
-                                : 'Venta por Peso (Kg)',
-                            color: Colors.indigo.shade700,
-                            bgColor: Colors.indigo.shade50,
-                          ),
+                        if (product.isSoldByWeight) ...[
+                          () {
+                            final profile = settingsProv?.safeVerticalProfile ??
+                                BusinessVerticalProfile.fromType(
+                                    BusinessVerticalProfile.retail);
+                            final preferDiscrete =
+                                product.isDiscreteFractionalItem(
+                              businessUsesScaleWeight:
+                                  profile.canUseScaleWeight,
+                            );
+                            final effLabel = Product.resolveQuantityUnitLabel(
+                              unitType: product.unitType,
+                              isSoldByWeight: product.isSoldByWeight,
+                              preferDiscreteUn: preferDiscrete,
+                            );
+                            final isScale =
+                                effLabel == 'Kg' || effLabel == 'g';
+                            return _LookupBadge(
+                              label: isScale
+                                  ? 'Venta por Peso ($effLabel)'
+                                  : 'Venta Fraccionada ($effLabel)',
+                              color: Colors.indigo.shade700,
+                              bgColor: Colors.indigo.shade50,
+                            );
+                          }(),
+                        ],
                         if (product.isService)
                           _LookupBadge(
                             label: 'Servicio',
@@ -1041,29 +1065,35 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
                         (product.technicalSpec != null &&
                             product.technicalSpec!.trim().isNotEmpty)) ...[
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          if (product.storageLocation != null &&
-                              product.storageLocation!.trim().isNotEmpty)
-                            _LookupBadge(
-                              icon: Icons.place_outlined,
-                              label:
-                                  'Ubic: ${product.storageLocation!.trim()}',
-                              color: Colors.amber.shade900,
-                              bgColor: Colors.amber.shade50,
-                            ),
-                          if (product.technicalSpec != null &&
-                              product.technicalSpec!.trim().isNotEmpty)
-                            _LookupBadge(
-                              icon: Icons.straighten_outlined,
-                              label: product.technicalSpec!.trim(),
-                              color: Colors.blueGrey.shade800,
-                              bgColor: Colors.blueGrey.shade100,
-                            ),
-                        ],
-                      ),
+                      () {
+                        final lookupProfile =
+                            settingsProv?.safeVerticalProfile ??
+                                BusinessVerticalProfile.fromType(
+                                    BusinessVerticalProfile.retail);
+                        return Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            if (product.storageLocation != null &&
+                                product.storageLocation!.trim().isNotEmpty)
+                              _LookupBadge(
+                                icon: Icons.place_outlined,
+                                label:
+                                    '${lookupProfile.locationShortPrefix}: ${product.storageLocation!.trim()}',
+                                color: Colors.amber.shade900,
+                                bgColor: Colors.amber.shade50,
+                              ),
+                            if (product.technicalSpec != null &&
+                                product.technicalSpec!.trim().isNotEmpty)
+                              _LookupBadge(
+                                icon: lookupProfile.specBadgeIcon,
+                                label: product.technicalSpec!.trim(),
+                                color: Colors.blueGrey.shade800,
+                                bgColor: Colors.blueGrey.shade100,
+                              ),
+                          ],
+                        );
+                      }(),
                     ],
                     const SizedBox(height: 14),
 
@@ -1261,7 +1291,14 @@ class _PosPriceLookupDialogState extends State<PosPriceLookupDialog> {
           ),
           if (product != null &&
               widget.onHardwareCalculatorRequested != null &&
-              (settingsProv?.canUseHardwareCalculator == true))
+              (settingsProv?.canUseHardwareCalculatorFor(
+                    product: product,
+                    rubros:
+                        Provider.of<CatalogProvider?>(context, listen: false)
+                                ?.safeRubros ??
+                            const [],
+                  ) ??
+                  false))
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.of(context).pop();

@@ -29,13 +29,14 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   Future<void> loadRubros() async {}
 
   @override
-  Future<int?> createRubro(String name, {String? description}) async {
+  Future<int?> createRubro(String name, {String? description, String? verticalType}) async {
     lastCreatedName = name;
     lastCreatedDesc = description;
     final created = Rubro(
       id: _rubros.length + 10,
       name: name,
       description: description,
+      verticalType: verticalType,
       isSystem: false,
     );
     _rubros.add(created);
@@ -44,13 +45,14 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   }
 
   @override
-  Future<bool> updateRubro(int id, String name, {String? description}) async {
+  Future<bool> updateRubro(int id, String name, {String? description, String? verticalType}) async {
     final idx = _rubros.indexWhere((r) => r.id == id);
     if (idx != -1) {
       _rubros[idx] = Rubro(
         id: id,
         name: name,
         description: description,
+        verticalType: verticalType,
         isSystem: _rubros[idx].isSystem,
       );
       notifyListeners();

@@ -60,6 +60,8 @@ class SaleItemRecord {
   final bool isService;
   final String? discountLabel;
   final String? customDetails;
+  final String? technicalSpec;
+  final Map<String, dynamic>? calcConfig;
 
   const SaleItemRecord({
     required this.id,
@@ -76,14 +78,27 @@ class SaleItemRecord {
     this.isService = false,
     this.discountLabel,
     this.customDetails,
+    this.technicalSpec,
+    this.calcConfig,
   }) : regularPrice = (regularPrice != null && regularPrice > 0) ? regularPrice : unitPrice;
+
+  bool get hasCalcConfig => calcConfig != null && calcConfig!.isNotEmpty;
+
+  String? effectiveReceiptDetails({bool asciiOnly = false}) =>
+      Product.resolveEffectiveReceiptDetails(
+        displayName: productName,
+        technicalSpec: technicalSpec,
+        customDetails: customDetails,
+        asciiOnly: asciiOnly,
+      );
 
   String get effectiveUnitLabel {
     final norm = unitType.trim().toLowerCase();
     if (norm.isNotEmpty && norm != 'un') {
       return Product.shortLabelFor(norm);
     }
-    return isSoldByWeight ? 'Kg' : 'u';
+    if (!isSoldByWeight || hasCalcConfig) return 'u';
+    return 'Kg';
   }
 
   /// Monto de ahorro / descuento unitario * cantidad
@@ -126,6 +141,9 @@ class SaleItemRecord {
 
     final customDesc = json['custom_description']?.toString().trim();
     final rawCustomDetails = json['custom_details']?.toString().trim();
+    final rawTechSpec =
+        (json['technical_spec'] ?? product?['technical_spec'])?.toString().trim();
+    final rawCalcCfg = json['calc_config'] ?? product?['calc_config'];
     final effectiveName = (customDesc != null && customDesc.isNotEmpty)
         ? customDesc
         : (json['product_name'] as String? ?? product?['name'] as String? ?? '');
@@ -149,6 +167,12 @@ class SaleItemRecord {
       discountLabel: discountLabel,
       customDetails: (rawCustomDetails != null && rawCustomDetails.isNotEmpty)
           ? rawCustomDetails
+          : null,
+      technicalSpec: (rawTechSpec != null && rawTechSpec.isNotEmpty)
+          ? rawTechSpec
+          : null,
+      calcConfig: rawCalcCfg is Map
+          ? Map<String, dynamic>.from(rawCalcCfg)
           : null,
     );
   }

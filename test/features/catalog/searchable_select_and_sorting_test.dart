@@ -64,13 +64,25 @@ class _TestCatalogRepository implements CatalogRepository {
   }
 
   @override
-  Future<Rubro> createRubro(String name, {String? description}) async {
-    return Rubro(id: _nextId++, name: name, description: description, isSystem: false);
+  Future<Rubro> createRubro(String name, {String? description, String? verticalType}) async {
+    return Rubro(
+      id: _nextId++,
+      name: name,
+      description: description,
+      verticalType: verticalType,
+      isSystem: false,
+    );
   }
 
   @override
-  Future<Rubro> updateRubro(int id, String name, {String? description}) async {
-    return Rubro(id: id, name: name, description: description, isSystem: false);
+  Future<Rubro> updateRubro(int id, String name, {String? description, String? verticalType}) async {
+    return Rubro(
+      id: id,
+      name: name,
+      description: description,
+      verticalType: verticalType,
+      isSystem: false,
+    );
   }
 
   @override

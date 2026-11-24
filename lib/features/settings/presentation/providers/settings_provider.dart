@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/ecommerce_integration.dart';
 import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_usecase.dart';
@@ -733,6 +736,32 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
       (settings?.canUseHardwareCalculator == true) &&
       !LicenseHeartbeatService().isBlocked;
 
+  /// Verifica acceso contextual a Calculadora F7 considerando licencia,
+  /// producto con `calcConfig` o Rubro `hardware_store` en modo `multi_rubro`.
+  bool canUseHardwareCalculatorFor({
+    Product? product,
+    Iterable<Rubro> rubros = const [],
+  }) {
+    if (LicenseHeartbeatService().isBlocked) return false;
+    if (canUseHardwareCalculator) return true;
+    if (product != null && product.hasHardwareCalcAccess) return true;
+    bool hasMultiRubro = false;
+    try {
+      hasMultiRubro = settings?.features.multiRubro == true;
+    } catch (_) {}
+    if (hasMultiRubro) {
+      for (final r in rubros) {
+        final vt = r.verticalType?.trim().toLowerCase() ?? '';
+        final rName = r.name.trim().toLowerCase();
+        if (vt == BusinessVerticalProfile.hardwareStore ||
+            RegExp(r'ferret|mader|corral').hasMatch(rName)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// Verifica rubro Ferretería sin exigir implementación extra en mocks
   /// heredados (`implements SettingsProvider`).
   bool get safeIsHardwareStore {
@@ -741,6 +770,20 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
       return isHardwareStore;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Perfil operativo/visual multi-rubro seguro para widgets y mocks heredados.
+  BusinessVerticalProfile get safeVerticalProfile {
+    try {
+      if (settings != null) return settings!.verticalProfile;
+      return isHardwareStore
+          ? BusinessVerticalProfile.fromType(
+              BusinessVerticalProfile.hardwareStore,
+            )
+          : BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    } catch (_) {
+      return BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     }
   }
 }

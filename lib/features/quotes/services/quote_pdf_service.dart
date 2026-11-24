@@ -1,6 +1,7 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -988,7 +989,22 @@ class QuotePdfService {
                   final memImg = itemThumbnails[i];
 
                   final isWeight = item.product?.isSoldByWeight == true;
-                  final weightSuffix = item.product?.effectiveReceiptUnitSuffix ?? 'kg';
+                  final businessUsesScale =
+                      businessSettings?.verticalProfile.canUseScaleWeight ?? true;
+                  final weightSuffix = item.product != null
+                      ? Product.resolveReceiptUnitSuffix(
+                          unitType: item.product!.unitType,
+                          isSoldByWeight: item.product!.isSoldByWeight,
+                          preferDiscreteUn: item.product!.isDiscreteFractionalItem(
+                            businessUsesScaleWeight: businessUsesScale,
+                          ),
+                        )
+                      : 'kg';
+                  final effectiveDetails = Product.resolveEffectiveReceiptDetails(
+                    displayName: item.productName,
+                    technicalSpec: item.product?.technicalSpec,
+                    customDetails: item.customDetails,
+                  );
                   final qtyText = isWeight
                       ? '${item.quantity.toQty()} $weightSuffix'
                       : (item.quantity % 1 == 0
@@ -1042,12 +1058,11 @@ class QuotePdfService {
                                       color: PdfColors.black,
                                     ),
                                   ),
-                                  if (item.customDetails != null &&
-                                      item.customDetails!.trim().isNotEmpty) ...[
+                                  if (effectiveDetails != null &&
+                                      effectiveDetails.isNotEmpty) ...[
                                     pw.SizedBox(height: 1.5),
                                     pw.Text(
-                                      _sanitizePdfText(
-                                          item.customDetails!.trim()),
+                                      _sanitizePdfText(effectiveDetails),
                                       style: pw.TextStyle(
                                         fontSize: 7.2,
                                         color: PdfColors.grey800,

@@ -288,9 +288,9 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
-              final canUseBatches = !settings.safeIsHardwareStore &&
-                  (settings.features.batchExpiration ||
-                      settings.features.production);
+              final canUseBatches =
+                  settings.features.batchExpiration ||
+                  settings.features.production;
               final expAlerts = canUseBatches
                   ? _safeExpirationAlerts(provider)
                   : const <dynamic>[];
@@ -503,8 +503,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        final canUseBatches = !settings.safeIsHardwareStore &&
-            (settings.features.batchExpiration || settings.features.production);
+        final canUseBatches =
+            settings.features.batchExpiration || settings.features.production;
         final expAlerts = canUseBatches
             ? _safeExpirationAlerts(provider)
             : const <dynamic>[];
@@ -598,8 +598,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        final canUseBatches = !settings.safeIsHardwareStore &&
-            (settings.features.batchExpiration || settings.features.production);
+        final canUseBatches =
+            settings.features.batchExpiration || settings.features.production;
         final expAlerts = canUseBatches
             ? _safeExpirationAlerts(provider)
             : const <dynamic>[];

@@ -16,6 +16,7 @@ import 'package:frontend_desktop/features/offers/data/models/offer_model.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
+import 'package:frontend_desktop/features/pos/presentation/widgets/pos_hardware_calculator_dialog.dart';
 import 'package:frontend_desktop/features/pos/presentation/widgets/pos_price_lookup_dialog.dart';
 import 'package:frontend_desktop/features/pos/presentation/widgets/pos_quick_customer_dialog.dart';
 import 'package:frontend_desktop/features/pos/presentation/widgets/pos_quick_quotes_dialog.dart';
@@ -48,6 +49,9 @@ class _PhaseBFakePosProvider extends ChangeNotifier implements PosProvider {
     _selectedCustomer = customer;
     notifyListeners();
   }
+
+  @override
+  PriceTier get activeTier => PriceTier.base;
 
   @override
   double get wholesaleFactor => 0.9;
@@ -400,6 +404,135 @@ void main() {
           expect(find.byType(AppModalFooter), findsOneWidget);
           expect(find.text('¡Presupuesto Generado!'), findsOneWidget);
           expect(find.text('Imprimir Ticket (Térmica)'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        }
+      },
+    );
+
+    testWidgets(
+      'PosHardwareCalculatorDialog muestra Complementos sugeridos sin scrollear y aclara cobertura/unitario singular en Techos',
+      (tester) async {
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final roofProduct = Product(
+          id: 202,
+          name: 'Chapa Trapezoidal C25 Prepintada Negra 1.10 x 6.00m',
+          internalCode: 'HW202',
+          costPrice: 45000,
+          sellingPrice: 68500,
+          stock: 40,
+          active: true,
+          isSoldByWeight: false,
+          calcConfig: const {
+            'type': 'roof',
+            'nominal_width_m': 1.10,
+            'useful_width_m': 1.00,
+            'length_m': 6.00,
+            'longitudinal_overlap_m': 0.20,
+            'pricing_mode': 'per_sheet',
+          },
+        );
+
+        for (final viewport in const [Size(1440, 900), Size(1280, 800)]) {
+          tester.view.physicalSize = viewport;
+          await tester.pumpWidget(
+            _wrapModal(
+              child: PosHardwareCalculatorDialog(
+                initialProduct: roofProduct,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Ingresar techo 10 x 10.5m
+          await tester.enterText(
+            find.widgetWithText(
+                TextField, 'Ancho del Techo (perpendicular a la caída)'),
+            '10',
+          );
+          await tester.enterText(
+            find.widgetWithText(
+                TextField, 'Largo de la Caída / Agua (pendiente)'),
+            '10.5',
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('20 Chapas de 6m'), findsOneWidget);
+          expect(find.textContaining('cubre 11.8m p/ 10.5m'), findsWidgets);
+          expect(find.textContaining('sobra 1.3m/hilada'), findsOneWidget);
+          expect(find.text('Unitario: \$68.500 / chapa'), findsOneWidget);
+
+          // Verificar que "Complementos sugeridos" entra completo sin scrollear dentro del TabBarView
+          final tabViewRect = tester.getRect(find.byType(TabBarView));
+          final complementsFinder = find.text('Complementos sugeridos:');
+          expect(complementsFinder, findsOneWidget);
+          final complementsRect = tester.getRect(complementsFinder);
+          expect(
+            complementsRect.bottom,
+            lessThanOrEqualTo(tabViewRect.bottom),
+            reason:
+                'Complementos sugeridos quedó cortado en viewport ${viewport.width}x${viewport.height} (tabView=$tabViewRect, complements=$complementsRect)',
+          );
+
+          // Probar modo m² Directos (Estimado) en Chapas: sincroniza m², calcula con margen y mantiene Complementos visibles sin scroll
+          await tester.tap(find.text('m² Directos'));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const ValueKey('roof_direct_m2_field')), findsOneWidget);
+          expect(
+            find.textContaining('Cálculo orientativo por superficie'),
+            findsOneWidget,
+          );
+
+          await tester.enterText(
+            find.byKey(const ValueKey('roof_direct_m2_field')),
+            '40',
+          );
+          await tester.pumpAndSettle();
+
+          // 40 m² + 10% = 44 m² / (1.0m x 6.0m) => 8 chapas
+          expect(find.text('8 Chapas de 6m'), findsOneWidget);
+          expect(find.textContaining('Estimado p/ 40 m² (+10%)'), findsOneWidget);
+
+          // Verificar que con 0% Exacto recalcula a 7 chapas (ceil(40/6) = 7)
+          await tester.tap(find.text('0% (Exacto)'));
+          await tester.pumpAndSettle();
+          expect(find.text('7 Chapas de 6m'), findsOneWidget);
+
+          // Complementos sugeridos siguen visibles sin scrollear también en modo m² Directos
+          final directComplementsRect =
+              tester.getRect(find.text('Complementos sugeridos:'));
+          expect(
+            directComplementsRect.bottom,
+            lessThanOrEqualTo(tabViewRect.bottom),
+            reason:
+                'Complementos sugeridos en m² Directos quedó cortado en ${viewport.width}x${viewport.height}',
+          );
+
+          // Verificar también Machimbre / Maderas y Pintura / Membrana sin banner de cambio de tab en 1280x800, y aún con banner en 1440x900
+          if (viewport.width >= 1400) {
+            await tester.tap(find.text('🪵 Machimbre / Maderas'));
+            await tester.pumpAndSettle();
+            expect(
+              tester.getRect(find.text('Complementos sugeridos:')).bottom,
+              lessThanOrEqualTo(
+                  tester.getRect(find.byType(TabBarView)).bottom),
+            );
+
+            await tester.tap(find.text('🎨 Pintura / Membrana'));
+            await tester.pumpAndSettle();
+            expect(
+              tester.getRect(find.text('Complementos sugeridos:')).bottom,
+              lessThanOrEqualTo(
+                  tester.getRect(find.byType(TabBarView)).bottom),
+            );
+          }
+
           expect(tester.takeException(), isNull);
 
           await tester.pumpWidget(const SizedBox.shrink());

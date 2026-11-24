@@ -1,10 +1,58 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/rubro.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+
+Widget _buildRubroVerticalDropdown({
+  required String? value,
+  required ValueChanged<String?>? onChanged,
+  bool isDense = false,
+  String labelText = 'Comportamiento del rubro (opcional)',
+}) {
+  return DropdownButtonFormField<String?>(
+    key: ValueKey('rubro_vertical_${labelText}_${value ?? 'auto'}'),
+    initialValue: BusinessVerticalProfile.allVerticalCodes.contains(value)
+        ? value
+        : null,
+    isExpanded: true,
+    decoration: InputDecoration(
+      labelText: labelText,
+      prefixIcon: isDense
+          ? null
+          : const Icon(Icons.store_mall_directory_outlined),
+      border: isDense
+          ? null
+          : OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      isDense: isDense,
+      contentPadding: isDense
+          ? const EdgeInsets.symmetric(vertical: 4)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    ),
+    items: [
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text(
+          'Automático (según negocio / nombre)',
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      ...BusinessVerticalProfile.allVerticalCodes.map(
+        (code) => DropdownMenuItem<String?>(
+          value: code,
+          child: Text(
+            BusinessVerticalProfile.selectorLabels[code] ?? code,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    ],
+    onChanged: onChanged,
+  );
+}
 
 /// Diálogo de gestión ABM de Rubros Comerciales (Exclusivo Plan Premium).
 class RubrosManagerDialog extends StatefulWidget {
@@ -38,6 +86,7 @@ class _QuickCreateRubroDialog extends StatefulWidget {
 class _QuickCreateRubroDialogState extends State<_QuickCreateRubroDialog> {
   late final TextEditingController _nameCtrl;
   final TextEditingController _descCtrl = TextEditingController();
+  String? _selectedVerticalType;
   bool _saving = false;
   String? _error;
 
@@ -71,6 +120,7 @@ class _QuickCreateRubroDialogState extends State<_QuickCreateRubroDialog> {
     final newId = await provider.createRubro(
       name,
       description: desc.isEmpty ? null : desc,
+      verticalType: _selectedVerticalType,
     );
 
     if (!mounted) return;
@@ -127,6 +177,13 @@ class _QuickCreateRubroDialogState extends State<_QuickCreateRubroDialog> {
             ),
             onSubmitted: (_) => _saving ? null : _submit(),
           ),
+          const SizedBox(height: 12),
+          _buildRubroVerticalDropdown(
+            value: _selectedVerticalType,
+            onChanged: _saving
+                ? null
+                : (val) => setState(() => _selectedVerticalType = val),
+          ),
           if (_error != null) ...[
             const SizedBox(height: 10),
             Text(
@@ -164,11 +221,13 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _nameFocusNode = FocusNode();
+  String? _selectedVerticalType;
   bool _adding = false;
 
   int? _editingId;
   final _editNameCtrl = TextEditingController();
   final _editDescCtrl = TextEditingController();
+  String? _editVerticalType;
 
   @override
   void initState() {
@@ -194,13 +253,18 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
     final desc = _descCtrl.text.trim();
 
     setState(() => _adding = true);
-    final id = await provider.createRubro(name, description: desc.isNotEmpty ? desc : null);
+    final id = await provider.createRubro(
+      name,
+      description: desc.isNotEmpty ? desc : null,
+      verticalType: _selectedVerticalType,
+    );
     if (!mounted) return;
     setState(() => _adding = false);
 
     if (id != null) {
       _nameCtrl.clear();
       _descCtrl.clear();
+      setState(() => _selectedVerticalType = null);
       _nameFocusNode.requestFocus();
       _showSnack('Rubro "$name" creado correctamente', isError: false);
     } else {
@@ -215,7 +279,12 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
       return;
     }
     final desc = _editDescCtrl.text.trim();
-    final ok = await provider.updateRubro(id, name, description: desc.isNotEmpty ? desc : null);
+    final ok = await provider.updateRubro(
+      id,
+      name,
+      description: desc.isNotEmpty ? desc : null,
+      verticalType: _editVerticalType,
+    );
     if (!mounted) return;
     if (ok) {
       _showSnack('Rubro actualizado', isError: false);
@@ -306,6 +375,14 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
                         onSubmitted: (_) => _createRubro(context.read<CatalogProvider>()),
                       ),
                       const SizedBox(height: 8),
+                      _buildRubroVerticalDropdown(
+                        value: _selectedVerticalType,
+                        onChanged: _adding
+                            ? null
+                            : (val) =>
+                                setState(() => _selectedVerticalType = val),
+                      ),
+                      const SizedBox(height: 8),
                       Consumer<CatalogProvider>(
                         builder: (ctx, provider, _) => FilledButton.icon(
                           icon: _adding
@@ -372,6 +449,14 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    _buildRubroVerticalDropdown(
+                      value: _selectedVerticalType,
+                      onChanged: _adding
+                          ? null
+                          : (val) =>
+                              setState(() => _selectedVerticalType = val),
                     ),
                   ],
                 );
@@ -471,11 +556,19 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
                   ),
                   onSubmitted: (_) => _saveEdit(provider, rubro.id),
                 ),
+                const SizedBox(height: 4),
+                _buildRubroVerticalDropdown(
+                  value: _editVerticalType,
+                  isDense: true,
+                  labelText: 'Comportamiento del rubro',
+                  onChanged: (val) => setState(() => _editVerticalType = val),
+                ),
               ],
             )
           : Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 6,
+              runSpacing: 4,
               children: [
                 Text(
                   rubro.name,
@@ -496,6 +589,26 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: Colors.blue.shade800,
+                      ),
+                    ),
+                  ),
+                if (rubro.verticalType != null &&
+                    BusinessVerticalProfile.shortBadgeLabels
+                        .containsKey(rubro.verticalType))
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.indigo.shade200),
+                    ),
+                    child: Text(
+                      BusinessVerticalProfile
+                          .shortBadgeLabels[rubro.verticalType!]!,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.indigo.shade800,
                       ),
                     ),
                   ),
@@ -544,6 +657,7 @@ class _RubrosManagerDialogState extends State<RubrosManagerDialog> {
                     _editingId = rubro.id;
                     _editNameCtrl.text = rubro.name;
                     _editDescCtrl.text = rubro.description ?? '';
+                    _editVerticalType = rubro.verticalType;
                   }),
                 ),
                 if (rubro.isSystem)

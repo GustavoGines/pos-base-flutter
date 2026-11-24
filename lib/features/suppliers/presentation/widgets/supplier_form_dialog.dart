@@ -164,6 +164,7 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                   Expanded(
                     flex: 3,
                     child: DropdownButtonFormField<String>(
+                      isExpanded: true,
                       // ignore: deprecated_member_use
                       value: _taxCategory,
                       decoration: const InputDecoration(

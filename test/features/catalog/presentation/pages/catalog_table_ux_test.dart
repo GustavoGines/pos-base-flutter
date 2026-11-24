@@ -435,7 +435,10 @@ void main() {
       expect(find.text('Bal.'), findsOneWidget);
       expect(find.text('Activo'), findsOneWidget);
       expect(find.text('VTO.'), findsOneWidget);
-      expect(find.text('Acciones'), findsOneWidget);
+      expect(
+        find.byTooltip('Acciones (clic en ⋮ o clic derecho en cualquier fila)'),
+        findsOneWidget,
+      );
       expect(find.text('15/11/2099'), findsOneWidget);
 
       final now = DateTime.now();
@@ -543,7 +546,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Acciones'), findsOneWidget);
+      expect(
+        find.byTooltip('Acciones (clic en ⋮ o clic derecho en cualquier fila)'),
+        findsOneWidget,
+      );
       expect(find.text('VTO.'), findsNothing);
       expect(find.byIcon(Icons.layers_outlined), findsNothing);
       expect(find.text('Producción'), findsNothing);

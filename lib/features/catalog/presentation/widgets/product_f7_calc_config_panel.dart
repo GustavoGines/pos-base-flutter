@@ -9,6 +9,8 @@ class ProductF7CalcConfigPanel extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>?> onChanged;
   final String? productNameHint;
   final ValueListenable<TextEditingValue>? productNameListenable;
+  final String? technicalSpecHint;
+  final ValueListenable<TextEditingValue>? technicalSpecListenable;
 
   const ProductF7CalcConfigPanel({
     super.key,
@@ -16,6 +18,8 @@ class ProductF7CalcConfigPanel extends StatefulWidget {
     required this.onChanged,
     this.productNameHint,
     this.productNameListenable,
+    this.technicalSpecHint,
+    this.technicalSpecListenable,
   });
 
   @override
@@ -26,6 +30,7 @@ class ProductF7CalcConfigPanel extends StatefulWidget {
 class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
   bool _isExpanded = false;
   String _selectedType = 'none'; // 'none' | 'wood' | 'roof' | 'paint'
+  String? _autoDetectWarningText;
 
   // Wood fields
   String _woodInchPreset = '4';
@@ -55,6 +60,7 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
   void initState() {
     super.initState();
     widget.productNameListenable?.addListener(_onProductNameListenableChanged);
+    widget.technicalSpecListenable?.addListener(_onProductNameListenableChanged);
     _loadFromConfig(widget.calcConfig);
     if (widget.calcConfig != null && widget.calcConfig!.isNotEmpty) {
       _isExpanded = true;
@@ -70,12 +76,27 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
       widget.productNameListenable
           ?.addListener(_onProductNameListenableChanged);
     }
+    if (oldWidget.technicalSpecListenable != widget.technicalSpecListenable) {
+      oldWidget.technicalSpecListenable
+          ?.removeListener(_onProductNameListenableChanged);
+      widget.technicalSpecListenable
+          ?.addListener(_onProductNameListenableChanged);
+    }
     if (widget.calcConfig == null && oldWidget.calcConfig != null) {
       _loadFromConfig(null);
-      setState(() => _isExpanded = false);
+      setState(() {
+        _isExpanded = false;
+        _autoDetectWarningText = null;
+      });
     } else if (widget.calcConfig != null &&
         !mapEquals(oldWidget.calcConfig, widget.calcConfig)) {
       _loadFromConfig(widget.calcConfig);
+      if (oldWidget.calcConfig == null) {
+        setState(() {
+          _isExpanded = true;
+          _autoDetectWarningText = null;
+        });
+      }
     }
   }
 
@@ -88,6 +109,8 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
   @override
   void dispose() {
     widget.productNameListenable
+        ?.removeListener(_onProductNameListenableChanged);
+    widget.technicalSpecListenable
         ?.removeListener(_onProductNameListenableChanged);
     _woodNomCmCtrl.dispose();
     _woodUseCmCtrl.dispose();
@@ -245,6 +268,7 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
 
   void _applyWoodPreset(String presetKey) {
     setState(() {
+      _autoDetectWarningText = null;
       _woodInchPreset = presetKey;
       final preset = HardwareCalculatorEngine.woodInchPresets
           .where((p) => p.key == presetKey)
@@ -265,21 +289,46 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
     return widget.productNameHint?.trim() ?? '';
   }
 
+  String get _resolvedTechnicalSpec {
+    final fromListenable = widget.technicalSpecListenable?.value.text.trim();
+    if (fromListenable != null && fromListenable.isNotEmpty) {
+      return fromListenable;
+    }
+    return widget.technicalSpecHint?.trim() ?? '';
+  }
+
   void _autoDetectFromName() {
     final name = _resolvedProductName;
-    if (name.isEmpty) {
+    final spec = _resolvedTechnicalSpec;
+    if (name.isEmpty && spec.isEmpty) {
       if (mounted) {
         SnackBarService.info(
           context,
-          'Escribí primero el nombre del artículo (ej: Machimbre 1/2 x 4 x 3.00m) para auto-detectar sus medidas.',
+          'Escribí primero el nombre o la medida del artículo (ej: Madera 1" x 6" x 4m) para auto-detectar.',
         );
       }
       return;
     }
-    final inferred = HardwareCalculatorEngine.inferConfigFromName(name);
+    final result = HardwareCalculatorEngine.analyzeProductText(
+      name: name,
+      technicalSpec: spec,
+    );
+    String? warningMsg;
+    if (result.missingWidthWarning && result.config['type'] == 'wood') {
+      final lenVal = _toDouble(result.config['length_m'], 3.0);
+      final thicknessText = result.detectedThicknessLabel != null
+          ? ' y grosor ${result.detectedThicknessLabel}'
+          : '';
+      final prefix = result.detectedLength
+          ? 'Detectamos largo ${_fmtNum(lenVal)}m$thicknessText, pero falta el ANCHO de la madera.'
+          : 'No encontramos el ANCHO en pulgadas en el nombre ni en la medida$thicknessText.';
+      warningMsg =
+          '$prefix Elegí el ancho de la tabla abajo (ej. 4", 5", 6", 8", 10", 12").';
+    }
     setState(() {
       _isExpanded = true;
-      _loadFromConfig(inferred);
+      _autoDetectWarningText = warningMsg;
+      _loadFromConfig(result.config);
     });
     _emitSnapshot();
   }
@@ -300,7 +349,8 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
   @override
   Widget build(BuildContext context) {
     final isConfigured = _selectedType != 'none';
-    final hasNameHint = _resolvedProductName.isNotEmpty;
+    final hasNameHint =
+        _resolvedProductName.isNotEmpty || _resolvedTechnicalSpec.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -439,6 +489,49 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
             ),
             if (_selectedType == 'wood') ...[
               const SizedBox(height: 10),
+              if (_autoDetectWarningText != null) ...[
+                Container(
+                  key: const ValueKey('f7_missing_width_warning'),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFCD34D)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 16,
+                        color: Color(0xFFB45309),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _autoDetectWarningText!,
+                          style: const TextStyle(
+                            fontSize: 11.2,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const Text(
+                'Ancho nominal de la tabla en pulgadas (el grosor/espesor no cambia los m²):',
+                style: TextStyle(
+                  fontSize: 11.2,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F766E),
+                ),
+              ),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -458,7 +551,10 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
                     selected: _woodInchPreset == 'custom',
                     visualDensity: VisualDensity.compact,
                     onSelected: (_) {
-                      setState(() => _woodInchPreset = 'custom');
+                      setState(() {
+                        _autoDetectWarningText = null;
+                        _woodInchPreset = 'custom';
+                      });
                       _emitSnapshot();
                     },
                   ),
@@ -474,7 +570,10 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) {
-                        _woodInchPreset = 'custom';
+                        setState(() {
+                          _autoDetectWarningText = null;
+                          _woodInchPreset = 'custom';
+                        });
                         _emitSnapshot();
                       },
                       decoration: const InputDecoration(
@@ -492,7 +591,10 @@ class _ProductF7CalcConfigPanelState extends State<ProductF7CalcConfigPanel> {
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) {
-                        _woodInchPreset = 'custom';
+                        setState(() {
+                          _autoDetectWarningText = null;
+                          _woodInchPreset = 'custom';
+                        });
                         _emitSnapshot();
                       },
                       validator: (_) {

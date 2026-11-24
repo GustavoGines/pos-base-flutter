@@ -117,17 +117,26 @@ class _FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
       : _settings = BusinessSettings(
           businessType: businessType,
           licensePlanType: 'premium',
-          features: const FeatureFlags(
+          features: FeatureFlags(
             quotes: true,
             suppliers: true,
             multiRubro: true,
-            batchExpiration: true,
-            production: true,
+            batchExpiration: businessType == 'retail',
+            production: businessType == 'retail',
           ),
         );
 
   void setBusinessType(String businessType) {
-    _settings = _settings.copyWith(businessType: businessType);
+    _settings = _settings.copyWith(
+      businessType: businessType,
+      features: FeatureFlags(
+        quotes: true,
+        suppliers: true,
+        multiRubro: true,
+        batchExpiration: businessType == 'retail',
+        production: businessType == 'retail',
+      ),
+    );
     notifyListeners();
   }
 

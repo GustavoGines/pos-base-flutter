@@ -681,8 +681,11 @@ void main() {
       expect(posProvider.cart.first.product.id, 101);
       expect(posProvider.cart.first.quantity, 1.0);
 
-      // Catalog selection cleared
-      expect(find.text('Lote (1)'), findsNothing);
+      // Al volver sin emitir presupuesto, la selección en catálogo se preserva
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Lote (1)'), findsOneWidget);
     });
 
     testWidgets('Generar Presupuesto with weighed product uses submitWeighedProduct (quantity 1.0 kg)', (tester) async {
@@ -839,7 +842,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Lote (1)'), findsNothing);
+      // Sin QuoteProvider no se emitió presupuesto, la selección se conserva intacta
+      expect(find.text('Lote (1)'), findsOneWidget);
     });
 
     testWidgets('Active Wholesale tier in QuoteProvider properly calculates unit prices for preloaded batch items', (tester) async {

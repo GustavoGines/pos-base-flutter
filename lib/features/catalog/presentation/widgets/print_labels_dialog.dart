@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
@@ -59,11 +60,12 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   // Se calcula en initState() una vez que se conocen los productos.
   bool _printDates = false;
   bool _useBatchBarcode = false;
-  bool _isHardwareStore = false;
+  BusinessVerticalProfile _profile =
+      BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
 
   bool _isScaleWeightProduct(Product p) {
     if (!p.isSoldByWeight) return false;
-    if (_isHardwareStore) return false;
+    if (!_profile.canUseScaleWeight) return false;
     final u = p.unitType.trim().toLowerCase();
     return u == 'kg' || u == 'g' || u == 'un' || u.isEmpty;
   }
@@ -89,11 +91,12 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   void initState() {
     super.initState();
     try {
-      _isHardwareStore =
-          Provider.of<SettingsProvider?>(context, listen: false)?.safeIsHardwareStore ??
-              false;
+      _profile =
+          Provider.of<SettingsProvider?>(context, listen: false)?.safeVerticalProfile ??
+              BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     } catch (_) {
-      _isHardwareStore = false;
+      _profile =
+          BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     }
     for (var p in widget.products) {
       final preset = widget.initialQuantities?[p.id];
@@ -296,6 +299,20 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                   maxLines: 2,
                   overflow: pw.TextOverflow.clip,
                 ),
+                if (product.technicalSpec != null &&
+                    product.technicalSpec!.trim().isNotEmpty) ...[
+                  pw.SizedBox(height: 0.6 * PdfPageFormat.mm),
+                  pw.Text(
+                    product.technicalSpec!.trim().toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 8.0,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                    textAlign: pw.TextAlign.center,
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
+                  ),
+                ],
                 pw.SizedBox(height: 1 * PdfPageFormat.mm),
 
                 // ── GRAMAJE (solo si tiene peso) ──
@@ -930,6 +947,18 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (p.technicalSpec != null &&
+                        p.technicalSpec!.trim().isNotEmpty)
+                      Text(
+                        p.technicalSpec!.trim(),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blueGrey.shade600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     Row(
                       children: [
                         Text(

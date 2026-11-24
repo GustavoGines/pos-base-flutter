@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/apparel_variant_helper_dialog.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/hardware_dimension_helper_dialog.dart';
 
 class ProductHardwareAndSupplierFieldsSection extends StatefulWidget {
   final bool isHardwareStore;
+  final BusinessVerticalProfile? profile;
+  final bool showDimensionHelper;
+  final String Function()? productNameGetter;
+  final void Function(String specText, Map<String, dynamic> calcConfig)?
+      onApplyHardwareDimension;
   final bool isService;
   final bool isCombo;
   final bool isNarrow;
@@ -19,6 +27,10 @@ class ProductHardwareAndSupplierFieldsSection extends StatefulWidget {
   const ProductHardwareAndSupplierFieldsSection({
     super.key,
     required this.isHardwareStore,
+    this.profile,
+    this.showDimensionHelper = false,
+    this.productNameGetter,
+    this.onApplyHardwareDimension,
     required this.isService,
     required this.isCombo,
     required this.isNarrow,
@@ -50,6 +62,14 @@ class _ProductHardwareAndSupplierFieldsSectionState
     'Atado',
   ];
 
+  BusinessVerticalProfile get _resolvedProfile =>
+      widget.profile ??
+      BusinessVerticalProfile.fromType(
+        widget.isHardwareStore
+            ? BusinessVerticalProfile.hardwareStore
+            : BusinessVerticalProfile.retail,
+      );
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +86,8 @@ class _ProductHardwareAndSupplierFieldsSectionState
             widget.conversionFactorCtrl.text ||
         oldWidget.storageLocationCtrl.text !=
             widget.storageLocationCtrl.text ||
-        oldWidget.technicalSpecCtrl.text != widget.technicalSpecCtrl.text) {
+        oldWidget.technicalSpecCtrl.text != widget.technicalSpecCtrl.text ||
+        oldWidget.profile?.primaryType != widget.profile?.primaryType) {
       _syncExpandedFlags();
     }
   }
@@ -77,9 +98,32 @@ class _ProductHardwareAndSupplierFieldsSectionState
       _showConversionPanel = true;
     }
     if (widget.storageLocationCtrl.text.trim().isNotEmpty ||
-        widget.technicalSpecCtrl.text.trim().isNotEmpty) {
+        widget.technicalSpecCtrl.text.trim().isNotEmpty ||
+        _resolvedProfile.showDetailsExpandedInForm) {
       _showRetailExtraDetails = true;
     }
+  }
+
+  Future<void> _openDimensionHelper() async {
+    final result = await HardwareDimensionHelperDialog.show(
+      context,
+      initialName: widget.productNameGetter?.call() ?? '',
+      initialSpec: widget.technicalSpecCtrl.text.trim(),
+    );
+    if (result == null || !mounted) return;
+    widget.technicalSpecCtrl.text = result.specText;
+    widget.onApplyHardwareDimension?.call(result.specText, result.calcConfig);
+    setState(() {});
+  }
+
+  Future<void> _openApparelHelper() async {
+    final result = await ApparelVariantHelperDialog.show(
+      context,
+      initialValue: widget.technicalSpecCtrl.text.trim(),
+    );
+    if (result == null || !mounted) return;
+    widget.technicalSpecCtrl.text = result;
+    setState(() {});
   }
 
   double? _parseFactor() {
@@ -105,14 +149,14 @@ class _ProductHardwareAndSupplierFieldsSectionState
     if (mounted) setState(() {});
   }
 
-  Widget _buildSupplierSkuField() {
+  Widget _buildSupplierSkuField(BusinessVerticalProfile prof) {
     return TextFormField(
       key: const ValueKey('product_supplier_sku_field'),
       controller: widget.supplierSkuCtrl,
       maxLength: 64,
       decoration: InputDecoration(
         labelText: 'Cód. Art. Proveedor',
-        hintText: widget.isHardwareStore ? 'Ej: BRE-4021' : 'Ej: DIST-104',
+        hintText: prof.supplierSkuHint,
         prefixIcon: const Icon(Icons.qr_code_2_outlined, size: 19),
         counterText: '',
         isDense: true,
@@ -120,36 +164,55 @@ class _ProductHardwareAndSupplierFieldsSectionState
     );
   }
 
-  Widget _buildTechnicalSpecField() {
+  Widget _buildTechnicalSpecField(BusinessVerticalProfile prof) {
+    final showHelper =
+        widget.showDimensionHelper && widget.onApplyHardwareDimension != null;
+    final showApparelHelper = !showHelper && prof.isApparel;
     return TextFormField(
       key: const ValueKey('product_technical_spec_field'),
       controller: widget.technicalSpecCtrl,
       maxLength: 120,
       decoration: InputDecoration(
-        labelText: widget.isHardwareStore
-            ? 'Medida / Especificación'
-            : 'Presentación / Medida',
-        hintText:
-            widget.isHardwareStore ? 'Ej: 1/2" · 10mm · Cal. 18' : 'Ej: 500ml',
-        prefixIcon: const Icon(Icons.straighten_outlined, size: 19),
+        labelText: prof.specFieldLabel,
+        hintText: prof.specFieldHint,
+        prefixIcon: Icon(prof.specBadgeIcon, size: 19),
+        suffixIcon: showHelper
+            ? IconButton(
+                key: const ValueKey('hardware_dimension_helper_btn'),
+                tooltip: 'Armar medida rápida (Grosor × Ancho × Largo)',
+                icon: const Icon(
+                  Icons.auto_fix_high_rounded,
+                  size: 18,
+                  color: Color(0xFF0F766E),
+                ),
+                onPressed: _openDimensionHelper,
+              )
+            : (showApparelHelper
+                ? IconButton(
+                    key: const ValueKey('apparel_variant_helper_btn'),
+                    tooltip: 'Asistente rápido de Talle y Color',
+                    icon: const Icon(
+                      Icons.checkroom_rounded,
+                      size: 18,
+                      color: Color(0xFF4F46E5),
+                    ),
+                    onPressed: _openApparelHelper,
+                  )
+                : null),
         counterText: '',
         isDense: true,
       ),
     );
   }
 
-  Widget _buildStorageLocationField() {
+  Widget _buildStorageLocationField(BusinessVerticalProfile prof) {
     return TextFormField(
       key: const ValueKey('product_storage_location_field'),
       controller: widget.storageLocationCtrl,
       maxLength: 120,
       decoration: InputDecoration(
-        labelText: widget.isHardwareStore
-            ? 'Ubicación / Estantería'
-            : 'Góndola / Ubicación',
-        hintText: widget.isHardwareStore
-            ? 'Ej: Pasillo 2 - Gaveta B4'
-            : 'Ej: Góndola 3',
+        labelText: prof.locationFieldLabel,
+        hintText: prof.locationFieldHint,
         prefixIcon: const Icon(Icons.place_outlined, size: 19),
         counterText: '',
         isDense: true,
@@ -157,12 +220,14 @@ class _ProductHardwareAndSupplierFieldsSectionState
     );
   }
 
-  Widget _buildConversionCard() {
+  Widget _buildConversionCard(BusinessVerticalProfile prof) {
     final factor = _parseFactor();
     final pkgName = widget.purchasePackageCtrl.text.trim();
     final unitCostVal = ArsThousandsInputFormatter.parse(widget.unitCostCtrl.text);
     final hasConfiguredConversion =
         pkgName.isNotEmpty || (factor != null && factor > 0);
+    final presets =
+        prof.packagePresets.isNotEmpty ? prof.packagePresets : _packagePresets;
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -227,7 +292,7 @@ class _ProductHardwareAndSupplierFieldsSectionState
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: _packagePresets.map((preset) {
+              children: presets.map((preset) {
                 final isSelected =
                     widget.purchasePackageCtrl.text.trim().toLowerCase() ==
                         preset.toLowerCase();
@@ -405,54 +470,57 @@ class _ProductHardwareAndSupplierFieldsSectionState
       return const SizedBox.shrink();
     }
 
-    if (widget.isHardwareStore) {
+    final prof = _resolvedProfile;
+
+    if (prof.showDetailsExpandedInForm) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (widget.isNarrow) ...[
-            _buildSupplierSkuField(),
+            _buildSupplierSkuField(prof),
             const SizedBox(height: 10),
-            _buildTechnicalSpecField(),
+            _buildTechnicalSpecField(prof),
             const SizedBox(height: 10),
-            _buildStorageLocationField(),
+            _buildStorageLocationField(prof),
           ] else
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 3, child: _buildSupplierSkuField()),
+                Expanded(flex: 3, child: _buildSupplierSkuField(prof)),
                 const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildTechnicalSpecField()),
+                Expanded(flex: 4, child: _buildTechnicalSpecField(prof)),
                 const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildStorageLocationField()),
+                Expanded(flex: 4, child: _buildStorageLocationField(prof)),
               ],
             ),
-          if (!widget.isCombo) _buildConversionCard(),
+          if (!widget.isCombo && prof.showPackageConversionInForm)
+            _buildConversionCard(prof),
         ],
       );
     }
 
-    // Retail: Cód. Proveedor siempre visible + opción plegable limpia para Góndola/Medida
+    // Perfiles con detalles plegables (Retail, Carnicería, Bazar/General)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.isNarrow) ...[
-          _buildSupplierSkuField(),
+          _buildSupplierSkuField(prof),
           if (_showRetailExtraDetails) ...[
             const SizedBox(height: 10),
-            _buildStorageLocationField(),
+            _buildStorageLocationField(prof),
             const SizedBox(height: 10),
-            _buildTechnicalSpecField(),
+            _buildTechnicalSpecField(prof),
           ],
         ] else
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(flex: 5, child: _buildSupplierSkuField()),
+              Expanded(flex: 5, child: _buildSupplierSkuField(prof)),
               const SizedBox(width: 10),
               if (_showRetailExtraDetails) ...[
-                Expanded(flex: 4, child: _buildStorageLocationField()),
+                Expanded(flex: 4, child: _buildStorageLocationField(prof)),
                 const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildTechnicalSpecField()),
+                Expanded(flex: 4, child: _buildTechnicalSpecField(prof)),
               ] else
                 Expanded(
                   flex: 6,
@@ -466,9 +534,9 @@ class _ProductHardwareAndSupplierFieldsSectionState
                           setState(() => _showRetailExtraDetails = true),
                       icon: const Icon(Icons.add_location_alt_outlined,
                           size: 16),
-                      label: const Text(
-                        'Agregar góndola / presentación',
-                        style: TextStyle(fontSize: 12),
+                      label: Text(
+                        prof.detailsToggleLabel,
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                   ),
@@ -482,12 +550,14 @@ class _ProductHardwareAndSupplierFieldsSectionState
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               onPressed: () => setState(() => _showRetailExtraDetails = true),
               icon: const Icon(Icons.add_location_alt_outlined, size: 16),
-              label: const Text(
-                'Agregar góndola / presentación',
-                style: TextStyle(fontSize: 12),
+              label: Text(
+                prof.detailsToggleLabel,
+                style: const TextStyle(fontSize: 12),
               ),
             ),
           ),
+        if (!widget.isCombo && prof.showPackageConversionInForm)
+          _buildConversionCard(prof),
       ],
     );
   }
