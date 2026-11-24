@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/logistics_provider.dart';
@@ -33,6 +34,7 @@ class DispatchFulfillmentDialog extends StatefulWidget {
 
 class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
   final Map<int, double> _dispatchQuantities = {};
+  final Map<int, TextEditingController> _qtyControllers = {};
   late List<dynamic> _items;
 
   @override
@@ -49,40 +51,87 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
       final delivered =
           double.tryParse(item['quantity_delivered'].toString()) ?? 0;
       final remaining = purchased - delivered;
+      final initialQty = remaining > 0 ? remaining : 0.0;
 
-      _dispatchQuantities[itemId] = remaining > 0 ? remaining : 0;
+      _dispatchQuantities[itemId] = initialQty;
+      _qtyControllers[itemId] =
+          TextEditingController(text: _formatQty(initialQty));
     }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _qtyControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _syncControllerText(int id, double value) {
+    final ctrl = _qtyControllers[id];
+    if (ctrl == null) return;
+    final formatted = _formatQty(value);
+    ctrl.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
   }
 
   void _increment(int id, double maxAllowed) {
     final current = _dispatchQuantities[id] ?? 0;
     if (current < maxAllowed) {
+      final next = (current + 1) > maxAllowed ? maxAllowed : (current + 1);
       setState(() {
-        _dispatchQuantities[id] = current + 1;
-        // Evitar desborde decimal por sumas inexactas
-        if (_dispatchQuantities[id]! > maxAllowed) {
-          _dispatchQuantities[id] = maxAllowed;
-        }
+        _dispatchQuantities[id] = next;
       });
+      _syncControllerText(id, next);
     }
   }
 
   void _decrement(int id) {
     final current = _dispatchQuantities[id] ?? 0;
     if (current > 0) {
+      final next = (current - 1) < 0 ? 0.0 : (current - 1);
       setState(() {
-        _dispatchQuantities[id] = current - 1;
-        if (_dispatchQuantities[id]! < 0) {
-          _dispatchQuantities[id] = 0;
-        }
+        _dispatchQuantities[id] = next;
       });
+      _syncControllerText(id, next);
+    }
+  }
+
+  void _onDecimalQtyChanged(int id, String raw, double maxAllowed) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    double parsed = double.tryParse(normalized) ?? 0.0;
+    if (parsed < 0) parsed = 0.0;
+    final wasClamped = parsed > maxAllowed;
+    if (wasClamped) parsed = maxAllowed;
+    setState(() {
+      _dispatchQuantities[id] = parsed;
+    });
+    if (wasClamped) {
+      _syncControllerText(id, parsed);
     }
   }
 
   Future<void> _onConfirm() async {
+    final sanitized = <int, double>{};
+    for (final rawItem in _items) {
+      final item = rawItem as Map;
+      final itemId = item['id'] as int;
+      final purchased =
+          double.tryParse(item['quantity_purchased'].toString()) ?? 0.0;
+      final delivered =
+          double.tryParse(item['quantity_delivered'].toString()) ?? 0.0;
+      final remaining = (purchased - delivered).clamp(0.0, double.infinity);
+      final chosen =
+          (_dispatchQuantities[itemId] ?? 0.0).clamp(0.0, remaining);
+      sanitized[itemId] = chosen;
+      _dispatchQuantities[itemId] = chosen;
+    }
+
     // Validar que al menos se entregue algo
     bool hasItemsToDeliver = false;
-    for (var q in _dispatchQuantities.values) {
+    for (var q in sanitized.values) {
       if (q > 0) {
         hasItemsToDeliver = true;
         break;
@@ -97,7 +146,7 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
 
     final provider = context.read<LogisticsProvider>();
     final success =
-        await provider.confirmDispatch(widget.note['id'], _dispatchQuantities);
+        await provider.confirmDispatch(widget.note['id'], sanitized);
 
     if (success) {
       if (mounted) {
@@ -142,6 +191,10 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<LogisticsProvider>();
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.watch<SettingsProvider?>();
+    } catch (_) {}
     final isDispatching = provider.isDispatching;
 
     return AppModalShell(
@@ -186,10 +239,17 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                 itemCount: _items.length,
                 separatorBuilder: (_, __) => const Divider(),
                 itemBuilder: (context, index) {
-                  final item = _items[index];
+                  final item = Map<String, dynamic>.from(_items[index] as Map);
                   final itemId = item['id'] as int;
-                  final product = item['product'] ?? {};
-                  final productName = product['name'] ?? 'Producto Desconocido';
+                  final saleMap = widget.note['sale'] is Map
+                      ? Map<String, dynamic>.from(widget.note['sale'] as Map)
+                      : null;
+                  final pres = DeliveryNotePdfService.resolveItemPresentation(
+                    item,
+                    sale: saleMap,
+                    businessSettings: settingsProv?.settings,
+                  );
+                  final productName = pres.displayName;
 
                   final purchased =
                       double.tryParse(item['quantity_purchased'].toString()) ??
@@ -210,10 +270,13 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                               fontWeight: FontWeight.bold,
                               decoration: TextDecoration.lineThrough,
                               color: Colors.grey)),
-                      subtitle: const Text('Ítem completado',
-                          style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                        pres.details != null
+                            ? '${pres.details}\nÍtem completado'
+                            : 'Ítem completado',
+                        style: const TextStyle(
+                            color: Colors.green, fontWeight: FontWeight.bold),
+                      ),
                       trailing:
                           const Icon(Icons.check_circle, color: Colors.green),
                     );
@@ -231,9 +294,19 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16)),
+                              if (pres.details != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  pres.details!,
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               Text(
-                                'Compró: ${_formatQty(purchased)} | Ya Retiró: ${_formatQty(delivered)} | Faltan: ${_formatQty(remaining)}',
+                                'Compró: ${_formatQty(purchased)} ${pres.unitLabel} | Ya Retiró: ${_formatQty(delivered)} ${pres.unitLabel} | Faltan: ${_formatQty(remaining)} ${pres.unitLabel}',
                                 style: TextStyle(
                                     color: Colors.grey.shade700,
                                     fontSize: 13,
@@ -259,17 +332,51 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                                 color: Colors.red.shade700,
                                 splashRadius: 24,
                               ),
-                              Container(
-                                constraints: const BoxConstraints(minWidth: 48),
-                                padding: const EdgeInsets.symmetric(horizontal: 6),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  _formatQty(currentQty),
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold),
+                              if (pres.allowDecimals)
+                                SizedBox(
+                                  width: 96,
+                                  child: TextField(
+                                    key: ValueKey('dispatch_qty_input_$itemId'),
+                                    controller: _qtyControllers[itemId],
+                                    enabled: !isDispatching,
+                                    textAlign: TextAlign.center,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                          RegExp(r'^\d*([.,]\d{0,4})?$')),
+                                    ],
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      border: InputBorder.none,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: 8),
+                                      suffixText: pres.unitLabel,
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    onChanged: (val) => _onDecimalQtyChanged(
+                                        itemId, val, remaining),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  constraints:
+                                      const BoxConstraints(minWidth: 48),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '${_formatQty(currentQty)} ${pres.unitLabel}',
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold),
+                                  ),
                                 ),
-                              ),
                               IconButton(
                                 onPressed:
                                     currentQty >= remaining || isDispatching
@@ -377,7 +484,11 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
       final showPreview = prefs.getBool('show_preview_remito') ?? false;
       if (!mounted) return;
 
-      final settings = context.read<SettingsProvider>().settings;
+      SettingsProvider? sp;
+      try {
+        sp = context.read<SettingsProvider?>();
+      } catch (_) {}
+      final settings = sp?.settings;
       final localTerminal = context.read<LocalTerminalProvider>();
       final isNarrow = localTerminal.printerFormat == 'thermal_58';
       final paperWidth =
@@ -433,8 +544,12 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
                   final item = items.firstWhere((i) => i['id'] == d['id'],
                       orElse: () => null);
                   if (item == null) return [const TicketLine.space()];
-                  final name =
-                      (item['product']?['name'] ?? 'Producto').toUpperCase();
+                  final pres = DeliveryNotePdfService.resolveItemPresentation(
+                    Map<String, dynamic>.from(item as Map),
+                    sale: sale is Map ? Map<String, dynamic>.from(sale) : null,
+                    businessSettings: settings,
+                  );
+                  final name = pres.displayName.toUpperCase();
                   final purchased =
                       double.parse(item['quantity_purchased'].toString());
                   final deliveredBefore =
@@ -444,8 +559,9 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
                       .clamp(0.0, double.infinity);
                   return [
                     TicketLine(name, isBold: true),
+                    if (pres.details != null) TicketLine(pres.details!),
                     TicketLine(
-                        'Entregando: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
+                        'Entregando: ${deliveredNow.toQty()} ${pres.unitLabel} | Saldo: ${remaining.toQty()} ${pres.unitLabel}'),
                     const TicketLine.space(),
                   ];
                 }),

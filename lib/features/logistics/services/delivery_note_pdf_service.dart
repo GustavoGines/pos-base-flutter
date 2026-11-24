@@ -6,15 +6,155 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../../core/config/business_vertical_profile.dart';
 import '../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../core/presentation/widgets/app_pdf_preview.dart';
 import '../../../core/utils/afip_fiscal_pdf_service.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../catalog/domain/entities/product.dart';
+import '../../settings/domain/entities/business_settings.dart';
 
 /// Genera el PDF del Remito de Entrega / Orden de Retiro en A4 y Letter
 /// con diseño técnico reglamentario estilo ARCA (Letra R / X).
 class DeliveryNotePdfService {
   static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
+
+  static ({
+    String displayName,
+    String? details,
+    String unitLabel,
+    String receiptUnitSuffix,
+    bool allowDecimals,
+  }) resolveItemPresentation(
+    Map<String, dynamic> item, {
+    Map<String, dynamic>? sale,
+    dynamic businessSettings,
+    bool asciiOnly = false,
+  }) {
+    final product = item['product'] is Map
+        ? Map<String, dynamic>.from(item['product'] as Map)
+        : const <String, dynamic>{};
+
+    final targetProductId = item['product_id'] ?? product['id'];
+    Map<String, dynamic>? saleItem;
+    final rawSaleItems = sale?['items'];
+    if (rawSaleItems is List && targetProductId != null) {
+      for (final si in rawSaleItems) {
+        if (si is Map && si['product_id'] == targetProductId) {
+          final map = Map<String, dynamic>.from(si);
+          saleItem ??= map;
+          if ((map['custom_details']?.toString().trim() ?? '').isNotEmpty) {
+            saleItem = map;
+            break;
+          }
+        }
+      }
+    }
+
+    final rawName =
+        (product['name'] ?? item['product_name'] ?? saleItem?['product_name'] ?? 'Producto')
+            .toString()
+            .trim();
+    final displayName = rawName.isEmpty ? 'Producto' : rawName;
+
+    final rawUnit =
+        (item['unit_type'] ?? product['unit_type'] ?? saleItem?['unit_type'] ?? 'un')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final unitType = rawUnit.isEmpty ? 'un' : rawUnit;
+
+    final isSoldByWeight = product['is_sold_by_weight'] == true ||
+        item['is_sold_by_weight'] == true ||
+        saleItem?['is_sold_by_weight'] == true;
+
+    bool businessUsesScale = true;
+    if (businessSettings is BusinessSettings) {
+      businessUsesScale =
+          BusinessVerticalProfile.fromSettings(businessSettings).canUseScaleWeight;
+    } else if (businessSettings is Map) {
+      final rawSec = businessSettings['secondary_business_types'];
+      final secList = rawSec is List
+          ? rawSec.map((e) => e.toString()).toList()
+          : const <String>[];
+      businessUsesScale = BusinessVerticalProfile.fromType(
+        businessSettings['business_type']?.toString(),
+        secondaryTypes: secList,
+      ).canUseScaleWeight;
+    }
+
+    final calcConfig = product['calc_config'];
+    final hasCalcConfig = calcConfig is Map && calcConfig.isNotEmpty;
+    final category = product['category'] is Map ? product['category'] as Map : null;
+    final rubro = category?['rubro'] is Map ? category!['rubro'] as Map : null;
+    final rubroVert =
+        (rubro?['vertical_type'] ?? '').toString().trim().toLowerCase();
+    final rubroName = (rubro?['name'] ?? '').toString().trim().toLowerCase();
+
+    bool preferDiscreteUn = false;
+    if (isSoldByWeight && unitType == 'un') {
+      if (hasCalcConfig ||
+          rubroVert == 'hardware_store' ||
+          RegExp(r'ferret|mader|corral|pintur').hasMatch(rubroName)) {
+        preferDiscreteUn = true;
+      } else if (rubroVert == 'retail' ||
+          rubroVert == 'butcher' ||
+          RegExp(r'verdul|carnic|fiambr|poller|supermerc|kiosc|almac|minimerc|panad')
+              .hasMatch(rubroName)) {
+        preferDiscreteUn = false;
+      } else {
+        preferDiscreteUn = !businessUsesScale;
+      }
+    }
+
+    final unitLabel = asciiOnly
+        ? Product.resolveReceiptUnitSuffix(
+            unitType: unitType,
+            isSoldByWeight: isSoldByWeight,
+            asciiOnly: true,
+            preferDiscreteUn: preferDiscreteUn,
+          )
+        : Product.resolveQuantityUnitLabel(
+            unitType: unitType,
+            isSoldByWeight: isSoldByWeight,
+            preferDiscreteUn: preferDiscreteUn,
+          );
+
+    final receiptUnitSuffix = Product.resolveReceiptUnitSuffix(
+      unitType: unitType,
+      isSoldByWeight: isSoldByWeight,
+      asciiOnly: asciiOnly,
+      preferDiscreteUn: preferDiscreteUn,
+    );
+
+    final details = Product.resolveEffectiveReceiptDetails(
+      displayName: displayName,
+      technicalSpec:
+          (product['technical_spec'] ?? item['technical_spec'])?.toString(),
+      customDetails:
+          (item['custom_details'] ?? saleItem?['custom_details'])?.toString(),
+      asciiOnly: asciiOnly,
+    );
+
+    final purchased =
+        double.tryParse(item['quantity_purchased']?.toString() ?? '') ?? 0.0;
+    final delivered =
+        double.tryParse(item['quantity_delivered']?.toString() ?? '') ?? 0.0;
+    final allowDecimals = isSoldByWeight ||
+        !Product.discreteUnitTypes.contains(unitType) ||
+        (purchased % 1 != 0) ||
+        (delivered % 1 != 0);
+
+    return (
+      displayName: asciiOnly
+          ? Product.sanitizeAsciiReceiptText(displayName)
+          : displayName,
+      details: details,
+      unitLabel: unitLabel,
+      receiptUnitSuffix: receiptUnitSuffix,
+      allowDecimals: allowDecimals,
+    );
+  }
 
   static String _formatCuit(String? raw) {
     if (raw == null || raw.trim().isEmpty) return '';
@@ -279,6 +419,7 @@ class DeliveryNotePdfService {
                           isCompact: true,
                           copyLabel: copyLabelTop,
                           logoBytes: resolvedLogo,
+                          businessSettings: businessSettings,
                         ),
                       ),
                       _buildCompactFooter(businessName, createdDate),
@@ -341,6 +482,7 @@ class DeliveryNotePdfService {
                           isCompact: true,
                           copyLabel: copyLabelBot,
                           logoBytes: resolvedLogo,
+                          businessSettings: businessSettings,
                         ),
                       ),
                       _buildCompactFooter(businessName, createdDate),
@@ -388,6 +530,7 @@ class DeliveryNotePdfService {
             deliveredNow: deliveredNow,
             totalUnits: totalUnits,
             isCompact: false,
+            businessSettings: businessSettings,
             copyLabel: copyLabelFull1,
             logoBytes: resolvedLogo,
           ),
@@ -421,6 +564,7 @@ class DeliveryNotePdfService {
             deliveredNow: deliveredNow,
             totalUnits: totalUnits,
             isCompact: false,
+            businessSettings: businessSettings,
             copyLabel: copyLabelFull2,
             logoBytes: resolvedLogo,
           ),
@@ -514,6 +658,7 @@ class DeliveryNotePdfService {
     required bool isCompact,
     String copyLabel = 'ORIGINAL',
     Uint8List? logoBytes,
+    dynamic businessSettings,
   }) {
     final boxLetter = isDispatch ? 'R' : 'X';
     final boxCode = isDispatch ? 'COD. 091' : 'INTERNO';
@@ -859,10 +1004,15 @@ class DeliveryNotePdfService {
             ],
           ),
           ...items.map((rawItem) {
-            final item = rawItem as Map<String, dynamic>;
-            final product = item['product'] as Map<String, dynamic>? ?? {};
-            final isByWeight = product['is_sold_by_weight'] == true ||
-                item['is_sold_by_weight'] == true;
+            final item = Map<String, dynamic>.from(rawItem as Map);
+            final product = item['product'] is Map
+                ? Map<String, dynamic>.from(item['product'] as Map)
+                : const <String, dynamic>{};
+            final pres = resolveItemPresentation(
+              item,
+              sale: sale,
+              businessSettings: businessSettings,
+            );
             final totalQty = double.tryParse(
                     item['quantity_purchased']?.toString() ?? '') ??
                 0.0;
@@ -883,18 +1033,48 @@ class DeliveryNotePdfService {
               effectiveItemStatus = 'partial';
             }
 
-            String fmt(double v) => isByWeight
-                ? '${v.toQty()} kg'
-                : (v % 1 == 0 ? '${v.toInt()} un' : '${v.toQty()} un');
+            String fmt(double v) => '${v.toQty()} ${pres.unitLabel}';
 
             final valToShow =
                 deliveredNow.isNotEmpty ? deliveredQtyNow : deliveredQtyDb;
             final code =
                 (product['internal_code'] ?? item['internal_code'] ?? '-')
                     .toString();
-            final name = (product['name'] ?? item['product_name'] ?? '-')
-                .toString()
-                .toUpperCase();
+            final name = pres.displayName.toUpperCase();
+            final pw.Widget descCell = pres.details == null
+                ? _td(
+                    name,
+                    align: pw.TextAlign.left,
+                    bold: true,
+                    isCompact: isCompact,
+                  )
+                : pw.Padding(
+                    padding: pw.EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: isCompact ? 3 : 4.5,
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        pw.Text(
+                          name,
+                          style: pw.TextStyle(
+                            fontSize: isCompact ? 7.5 : 8.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                        pw.Text(
+                          pres.details!,
+                          style: pw.TextStyle(
+                            fontSize: isCompact ? 6.8 : 7.5,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
 
             return pw.TableRow(
               children: [
@@ -903,12 +1083,7 @@ class DeliveryNotePdfService {
                   align: pw.TextAlign.center,
                   isCompact: isCompact,
                 ),
-                _td(
-                  name,
-                  align: pw.TextAlign.left,
-                  bold: true,
-                  isCompact: isCompact,
-                ),
+                descCell,
                 _td(
                   fmt(totalQty),
                   align: pw.TextAlign.center,

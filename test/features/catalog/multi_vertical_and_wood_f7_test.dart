@@ -22,7 +22,10 @@ import 'package:frontend_desktop/features/catalog/presentation/pages/catalog_scr
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/print_labels_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_f7_calc_config_panel.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/product_hardware_fields_section.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/supplier_quick_grid_dialog.dart';
+import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
+import 'package:frontend_desktop/features/logistics/presentation/widgets/dispatch_fulfillment_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/domain/services/hardware_calculator_engine.dart';
@@ -39,6 +42,7 @@ class _TestCatalogRepository implements CatalogRepository {
   final List<Category> categories;
   final List<Rubro> rubros;
   final List<Map<String, dynamic>> createdPayloads = [];
+  final List<Map<String, dynamic>> updatedPayloads = [];
   int _nextId = 500;
 
   _TestCatalogRepository({
@@ -74,6 +78,26 @@ class _TestCatalogRepository implements CatalogRepository {
       id: id,
       name: productData['name']?.toString() ?? 'Producto $id',
       internalCode: id.toString().padLeft(5, '0'),
+      costPrice: (productData['cost_price'] as num?)?.toDouble() ?? 0.0,
+      sellingPrice: (productData['selling_price'] as num?)?.toDouble() ?? 0.0,
+      stock: (productData['stock'] as num?)?.toDouble() ?? 0.0,
+      active: productData['active'] != false,
+      isSoldByWeight: productData['is_sold_by_weight'] == true,
+      unitType: productData['unit_type']?.toString() ?? 'un',
+      technicalSpec: productData['technical_spec']?.toString(),
+      calcConfig: productData['calc_config'] is Map
+          ? Map<String, dynamic>.from(productData['calc_config'] as Map)
+          : null,
+    );
+  }
+
+  @override
+  Future<Product> updateProduct(int id, Map<String, dynamic> productData) async {
+    updatedPayloads.add(Map<String, dynamic>.from(productData));
+    return ProductModel(
+      id: id,
+      name: productData['name']?.toString() ?? 'Producto $id',
+      internalCode: productData['internal_code']?.toString() ?? id.toString().padLeft(5, '0'),
       costPrice: (productData['cost_price'] as num?)?.toDouble() ?? 0.0,
       sellingPrice: (productData['selling_price'] as num?)?.toDouble() ?? 0.0,
       stock: (productData['stock'] as num?)?.toDouble() ?? 0.0,
@@ -296,10 +320,35 @@ class _FakeOfferProvider extends ChangeNotifier implements OfferProvider {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeLogisticsProvider extends ChangeNotifier implements LogisticsProvider {
+  int? lastNoteId;
+  Map<int, double>? lastDeliveredNow;
+
+  @override
+  bool get isDispatching => false;
+
+  @override
+  String? get errorMessage => null;
+
+  @override
+  Future<bool> confirmDispatch(
+    int deliveryNoteId,
+    Map<int, double> deliveredNow,
+  ) async {
+    lastNoteId = deliveryNoteId;
+    lastDeliveredNow = Map<int, double>.from(deliveredNow);
+    return true;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 Future<void> _pumpFormDialog(
   WidgetTester tester, {
   required CatalogProvider catalogProv,
   required _FakeSettingsProvider settingsProv,
+  Product? product,
 }) async {
   final supplierProv = _FakeSupplierProvider();
   final localTerminal = _FakeLocalTerminalProvider();
@@ -328,7 +377,7 @@ Future<void> _pumpFormDialog(
       ],
       child: MaterialApp(
         home: Scaffold(
-          body: ProductFormDialog(provider: catalogProv),
+          body: ProductFormDialog(provider: catalogProv, product: product),
         ),
       ),
     ),
@@ -1623,6 +1672,466 @@ void main() {
       Navigator.of(tester.element(find.byType(Dialog))).pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 700));
+    });
+  });
+
+  group('Vertical Isolation, Hardware Layout, Tech mt & Dispatch Decimal', () {
+    testWidgets(
+        'hardware_store sin addon batch_expiration oculta lotes/receta legados y preserva BD al guardar',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 960));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final legacyRubro = Rubro(id: 5, name: 'Pasteleria');
+      final legacyCat = Category(
+        id: 50,
+        name: 'Pastelería',
+        rubroId: 5,
+        rubro: legacyRubro,
+      );
+      final repo = _TestCatalogRepository(
+        rubros: [legacyRubro],
+        categories: [legacyCat],
+      );
+      final catalogProv = CatalogProvider(
+        getProductsUseCase: GetProductsUseCase(repo),
+        repository: repo,
+      );
+      await catalogProv.loadMetadata();
+      await catalogProv.loadRubros();
+
+      final settingsProv = _FakeSettingsProvider(
+        businessType: 'hardware_store',
+        multiRubro: false,
+        batchExpiration: false,
+        production: false,
+      );
+      addTearDown(() {
+        catalogProv.dispose();
+        settingsProv.dispose();
+      });
+
+      final legacyProduct = Product(
+        id: 6,
+        name: 'Alfajores de Maicena x12',
+        internalCode: '00006',
+        costPrice: 3200,
+        sellingPrice: 8500,
+        stock: 15,
+        minStock: 4,
+        active: true,
+        isSoldByWeight: false,
+        unitType: 'un',
+        category: legacyCat,
+        trackBatches: true,
+        expirationDate: '2026-11-26',
+        vencimientoDias: 7,
+        expiryAlertDays: 3,
+        hasProductionRecipe: true,
+      );
+
+      await _pumpFormDialog(
+        tester,
+        catalogProv: catalogProv,
+        settingsProv: settingsProv,
+        product: legacyProduct,
+      );
+
+      expect(
+        find.text('Control de Vencimiento y Alertas (Opcional)'),
+        findsNothing,
+      );
+      expect(find.text('Controlar vencimientos por lotes'), findsNothing);
+      expect(
+        find.textContaining('Receta de Elaboración Propia'),
+        findsNothing,
+      );
+
+      final saveBtn = find.text('Guardar Cambios');
+      await tester.ensureVisible(saveBtn);
+      await tester.tap(saveBtn);
+      await tester.pumpAndSettle();
+
+      expect(repo.updatedPayloads, hasLength(1));
+      final payload = repo.updatedPayloads.single;
+      expect(payload.containsKey('track_batches'), isFalse);
+      expect(payload.containsKey('expiration_date'), isFalse);
+      expect(payload.containsKey('vencimiento_dias'), isFalse);
+      expect(payload.containsKey('expiry_alert_days'), isFalse);
+      expect(payload.containsKey('lot_deduction_policy'), isFalse);
+      expect(payload.containsKey('allow_sell_expired'), isFalse);
+      expect(payload.containsKey('has_production_recipe'), isFalse);
+      expect(payload.containsKey('recipe_ingredients'), isFalse);
+    });
+
+    testWidgets(
+        'Pinturería (hardware_store con addon batch_expiration y sin production) muestra "o ingreso" y oculta Receta',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 960));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _TestCatalogRepository();
+      final catalogProv = CatalogProvider(
+        getProductsUseCase: GetProductsUseCase(repo),
+        repository: repo,
+      );
+      final settingsProv = _FakeSettingsProvider(
+        businessType: 'hardware_store',
+        batchExpiration: true,
+        production: false,
+      );
+      addTearDown(() {
+        catalogProv.dispose();
+        settingsProv.dispose();
+      });
+
+      await _pumpFormDialog(
+        tester,
+        catalogProv: catalogProv,
+        settingsProv: settingsProv,
+      );
+
+      final expHeader = find.text('Control de Vencimiento y Alertas (Opcional)');
+      expect(expHeader, findsOneWidget);
+      await tester.ensureVisible(expHeader);
+      await tester.tap(expHeader);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Cada compra o ingreso crea un lote propio y las ventas descuentan automáticamente por orden.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('u horneado'), findsNothing);
+      expect(
+        find.textContaining('Receta de Elaboración Propia'),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+        'Ferretería usa 2 filas amplias en desktop, ícono 📏 straighten_rounded, presets Balde/Tambor/Pallet y unidad docena',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 960));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final hwProfile = BusinessVerticalProfile.fromType('hardware_store');
+      expect(hwProfile.allowedUnitKeys, contains('docena'));
+      expect(
+        hwProfile.packagePresets,
+        containsAll(const ['Balde', 'Tambor', 'Pallet']),
+      );
+
+      final repo = _TestCatalogRepository();
+      final catalogProv = CatalogProvider(
+        getProductsUseCase: GetProductsUseCase(repo),
+        repository: repo,
+      );
+      final settingsProv = _FakeSettingsProvider(businessType: 'hardware_store');
+      addTearDown(() {
+        catalogProv.dispose();
+        settingsProv.dispose();
+      });
+
+      await _pumpFormDialog(
+        tester,
+        catalogProv: catalogProv,
+        settingsProv: settingsProv,
+      );
+
+      expect(
+        find.byType(ProductHardwareAndSupplierFieldsSection),
+        findsOneWidget,
+      );
+
+      final helperBtn = tester.widget<IconButton>(
+        find.byKey(const ValueKey('hardware_dimension_helper_btn')),
+      );
+      expect((helperBtn.icon as Icon).icon, Icons.straighten_rounded);
+
+      final skuPos = tester.getTopLeft(
+        find.widgetWithText(TextFormField, 'Cód. Art. Proveedor'),
+      );
+      final locPos = tester.getTopLeft(
+        find.widgetWithText(TextFormField, 'Ubicación / Estantería'),
+      );
+      final specPos = tester.getTopLeft(
+        find.widgetWithText(TextFormField, 'Medida / Especificación'),
+      );
+
+      expect((skuPos.dy - locPos.dy).abs(), lessThan(4.0));
+      expect(specPos.dy, greaterThan(skuPos.dy + 20.0));
+
+      final configBulto = find.text('Configurar bulto');
+      await tester.ensureVisible(configBulto);
+      await tester.tap(configBulto);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Balde'), findsOneWidget);
+      expect(find.text('Tambor'), findsOneWidget);
+      expect(find.text('Pallet'), findsOneWidget);
+    });
+
+    testWidgets(
+        'tech oculta switch de fraccionamiento en un y lo muestra en mt conservando mt',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 960));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _TestCatalogRepository();
+      final catalogProv = CatalogProvider(
+        getProductsUseCase: GetProductsUseCase(repo),
+        repository: repo,
+      );
+      final settingsProv = _FakeSettingsProvider(businessType: 'tech');
+      addTearDown(() {
+        catalogProv.dispose();
+        settingsProv.dispose();
+      });
+
+      await _pumpFormDialog(
+        tester,
+        catalogProv: catalogProv,
+        settingsProv: settingsProv,
+      );
+
+      expect(
+        find.byKey(const ValueKey('product_fractional_switch')),
+        findsNothing,
+      );
+
+      final unitDropdown = find.byKey(const ValueKey('unit_type_wide_un'));
+      await tester.ensureVisible(unitDropdown);
+      await tester.tap(unitDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Metros (mt)').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('unit_type_wide_mt')), findsOneWidget);
+      final fracSwitchFinder =
+          find.byKey(const ValueKey('product_fractional_switch'));
+      expect(fracSwitchFinder, findsOneWidget);
+
+      await tester.tap(fracSwitchFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('unit_type_wide_mt')), findsOneWidget);
+      final fracSwitch = tester.widget<SwitchListTile>(fracSwitchFinder);
+      expect(fracSwitch.value, isFalse);
+    });
+
+    testWidgets(
+        'Polirrubro mixto aísla tabs, F7 y vencimientos/receta por Rubro de categoría y expone Peso + Fracc.',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 960));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final mixedProfile = BusinessVerticalProfile.fromType(
+        'retail',
+        secondaryTypes: const ['hardware_store'],
+      );
+      expect(mixedProfile.canUseScaleWeight, isTrue);
+      expect(mixedProfile.canUseFractionalCut, isTrue);
+
+      final almacenRubro = Rubro(
+        id: 10,
+        name: 'Almacén',
+        verticalType: 'retail',
+      );
+      final ferretRubro = Rubro(
+        id: 11,
+        name: 'Ferretería',
+        verticalType: 'hardware_store',
+      );
+      final repo = _TestCatalogRepository(
+        rubros: [almacenRubro, ferretRubro],
+        categories: [
+          Category(id: 100, name: 'Comestibles', rubroId: 10, rubro: almacenRubro),
+          Category(id: 101, name: 'Bulonería', rubroId: 11, rubro: ferretRubro),
+        ],
+      );
+      final catalogProv = CatalogProvider(
+        getProductsUseCase: GetProductsUseCase(repo),
+        repository: repo,
+      );
+      await catalogProv.loadMetadata();
+      await catalogProv.loadRubros();
+
+      final settingsProv = _FakeSettingsProvider(
+        businessType: 'retail',
+        secondaryBusinessTypes: const ['hardware_store'],
+        multiRubro: true,
+        batchExpiration: true,
+        production: true,
+      );
+      addTearDown(() {
+        catalogProv.dispose();
+        settingsProv.dispose();
+      });
+
+      await _pumpFormDialog(
+        tester,
+        catalogProv: catalogProv,
+        settingsProv: settingsProv,
+      );
+
+      // Seleccionar Bulonería (Rubro hardware_store)
+      final catSelector = find.text('Categoría');
+      await tester.ensureVisible(catSelector);
+      await tester.tap(catSelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bulonería'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Artículo / Material'), findsOneWidget);
+      expect(
+        find.text('Calculadora Rápida F7 (Maderas / Chapas / Pintura)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Control de Vencimiento y Alertas (Opcional)'),
+        findsNothing,
+      );
+      expect(
+        find.textContaining('Receta de Elaboración Propia'),
+        findsNothing,
+      );
+
+      // Cambiar a Comestibles (Rubro retail)
+      await tester.ensureVisible(catSelector);
+      await tester.tap(catSelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Comestibles'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Producto Físico'), findsOneWidget);
+      expect(
+        find.text('Calculadora Rápida F7 (Maderas / Chapas / Pintura)'),
+        findsNothing,
+      );
+      expect(
+        find.text('Control de Vencimiento y Alertas (Opcional)'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Receta de Elaboración Propia'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'DispatchFulfillmentDialog muestra unidad real y medida, permite decimales con tope estricto y enteros paso a paso en bolsa',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final logisticsProv = _FakeLogisticsProvider();
+      final settingsProv = _FakeSettingsProvider(businessType: 'hardware_store');
+      final localTerminal = _FakeLocalTerminalProvider();
+      addTearDown(() {
+        logisticsProv.dispose();
+        settingsProv.dispose();
+        localTerminal.dispose();
+      });
+
+      final note = <String, dynamic>{
+        'id': 42,
+        'status': 'partial',
+        'sale': {
+          'id': 500,
+          'items': [
+            {
+              'product_id': 10,
+              'unit_type': 'm3',
+              'is_sold_by_weight': true,
+              'custom_details': '',
+            },
+          ],
+        },
+        'items': [
+          {
+            'id': 1,
+            'product_id': 10,
+            'unit_type': 'm3',
+            'quantity_purchased': 5.0,
+            'quantity_delivered': 2.5,
+            'product': {
+              'id': 10,
+              'name': 'Arena Lavada',
+              'unit_type': 'm3',
+              'is_sold_by_weight': true,
+              'technical_spec': 'Camionada 6 m³',
+            },
+          },
+          {
+            'id': 2,
+            'product_id': 20,
+            'unit_type': 'bolsa',
+            'quantity_purchased': 10.0,
+            'quantity_delivered': 3.0,
+            'product': {
+              'id': 20,
+              'name': 'Cemento 50kg',
+              'unit_type': 'bolsa',
+              'is_sold_by_weight': false,
+            },
+          },
+        ],
+      };
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LogisticsProvider>.value(
+              value: logisticsProv,
+            ),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settingsProv),
+            ChangeNotifierProvider<LocalTerminalProvider>.value(
+              value: localTerminal,
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: DispatchFulfillmentDialog(note: note),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Camionada 6 m³'), findsOneWidget);
+      expect(
+        find.text('Compró: 5 m³ | Ya Retiró: 2.5 m³ | Faltan: 2.5 m³'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Compró: 10 bolsa | Ya Retiró: 3 bolsa | Faltan: 7 bolsa'),
+        findsOneWidget,
+      );
+
+      final decimalInput = find.byKey(const ValueKey('dispatch_qty_input_1'));
+      expect(decimalInput, findsOneWidget);
+      expect(find.byKey(const ValueKey('dispatch_qty_input_2')), findsNothing);
+      expect(find.text('7 bolsa'), findsOneWidget);
+
+      // Tope estricto al saldo pendiente (2.5)
+      await tester.enterText(decimalInput, '9.5');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(decimalInput).controller?.text, '2.5');
+
+      // Ingreso decimal válido dentro del saldo
+      await tester.enterText(decimalInput, '1.75');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('CONFIRMAR DESPACHO'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(logisticsProv.lastNoteId, 42);
+      expect(logisticsProv.lastDeliveredNow, isNotNull);
+      expect(logisticsProv.lastDeliveredNow![1], closeTo(1.75, 0.001));
+      expect(logisticsProv.lastDeliveredNow![2], closeTo(7.0, 0.001));
     });
   });
 }
