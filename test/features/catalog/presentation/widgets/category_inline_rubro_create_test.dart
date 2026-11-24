@@ -45,7 +45,7 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   Future<void> loadRubros() async {}
 
   @override
-  Future<int?> createRubro(String name, {String? description}) async {
+  Future<int?> createRubro(String name, {String? description, String? verticalType}) async {
     if (shouldFailCreateRubro) {
       _errorMessage = 'Ya existe un rubro con ese nombre.';
       notifyListeners();
@@ -56,6 +56,7 @@ class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
       id: _nextRubroId++,
       name: name,
       description: description,
+      verticalType: verticalType,
     );
     _rubros.add(created);
     _rubros.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));

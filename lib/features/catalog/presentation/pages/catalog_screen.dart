@@ -13,6 +13,8 @@ import '../widgets/product_batches_dialog.dart';
 import '../widgets/production_orders_dialog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/rubro.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import '../widgets/catalog_import_dialog.dart';
 import '../widgets/supplier_quick_grid_dialog.dart';
 import '../../domain/entities/brand.dart';
@@ -28,7 +30,7 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/brands_manager_dialog.dart';
 import '../widgets/rubros_manager_dialog.dart';
-import '../../../suppliers/presentation/widgets/supplier_form_dialog.dart';
+import '../widgets/catalog_quick_create_dialogs.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../widgets/product_image_preview_dialog.dart';
 import '../widgets/product_hardware_fields_section.dart';
@@ -37,6 +39,7 @@ import '../../../pos/domain/services/hardware_calculator_engine.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
+import '../../../suppliers/models/supplier_model.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
@@ -67,6 +70,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Timer? _debounceTimer;
   final Map<int, Product> _selectedProducts = {};
   int? _contextMenuProductId;
+  bool _showFiltersBar = false;
   CatalogProvider? _catalogProviderRef;
 
   @override
@@ -115,7 +119,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   void dispose() {
-    _catalogProviderRef?.safeClearSupplierFilterSilently();
+    _catalogProviderRef?.safeClearCatalogFiltersSilently();
     HardwareKeyboard.instance.removeHandler(_handleCatalogSearchHistoryKey);
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();
@@ -450,6 +454,68 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     );
 
+                    final activeFiltersCount = provider.safeActiveCatalogFiltersCount;
+                    final filtersBarExpanded = _showFiltersBar ||
+                        provider.safeFilterCategoryId != null ||
+                        provider.safeFilterBrandId != null ||
+                        provider.safeFilterActive != null;
+                    final hasFiltersHighlight =
+                        activeFiltersCount > 0 || filtersBarExpanded;
+
+                    final filtersToggleBtn = Tooltip(
+                      message: filtersBarExpanded
+                          ? 'Ocultar barra de filtros'
+                          : 'Filtrar catálogo por Proveedor, Categoría, Marca o Estado',
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('catalog_toggle_filters_btn'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 11,
+                          ),
+                          backgroundColor: hasFiltersHighlight
+                              ? AppColors.primarySoft
+                              : Colors.white,
+                          foregroundColor: hasFiltersHighlight
+                              ? AppColors.primaryDark
+                              : Colors.blueGrey.shade800,
+                          side: BorderSide(
+                            color: hasFiltersHighlight
+                                ? AppColors.primary
+                                : Colors.grey.shade400,
+                            width: hasFiltersHighlight ? 1.4 : 1.0,
+                          ),
+                        ),
+                        icon: const Icon(Icons.tune_rounded, size: 17),
+                        label: Text(
+                          activeFiltersCount > 0
+                              ? 'Filtros ($activeFiltersCount)'
+                              : 'Filtros',
+                          style: TextStyle(
+                            fontWeight: hasFiltersHighlight
+                                ? FontWeight.w700
+                                : FontWeight.w600,
+                          ),
+                        ),
+                        onPressed: () {
+                          final next = !_showFiltersBar;
+                          setState(() => _showFiltersBar = next);
+                          if (next) {
+                            _ensureFiltersMetadataLoaded(provider);
+                          }
+                        },
+                      ),
+                    );
+
+                    final searchAndFilters = Row(
+                      children: [
+                        Expanded(child: searchWidget),
+                        const SizedBox(width: 8),
+                        filtersToggleBtn,
+                      ],
+                    );
+
                     final isNeedsReviewFilter = provider.sortBy == 'needs_catalog_review';
 
                     final actionRow = Row(
@@ -669,8 +735,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                           ),
                         ),
-                        if (!(context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false) &&
-                            (context.watch<SettingsProvider?>()?.features.production ?? false)) ...[
+                        if (context.watch<SettingsProvider?>()?.features.production ?? false) ...[
                           const SizedBox(width: 6),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
@@ -713,7 +778,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          searchWidget,
+                          searchAndFilters,
                           const SizedBox(height: 10),
                           SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
@@ -728,13 +793,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Flexible(
-                          flex: 4,
+                          flex: 5,
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 500),
-                            child: searchWidget,
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            child: searchAndFilters,
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14),
                         Flexible(
                           flex: 8,
                           child: Align(
@@ -759,6 +824,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
+              // ── Panel plegable de Filtros (Proveedor / Categoría / Marca / Estado) ──
+              if (_showFiltersBar ||
+                  provider.safeFilterCategoryId != null ||
+                  provider.safeFilterBrandId != null ||
+                  provider.safeFilterActive != null)
+                _buildFiltersBar(provider),
               // ── Filtro Activo por Proveedor ────────────────────────────────
               if (provider.safeFilterSupplierId != null)
                 _buildSupplierFilterBanner(provider),
@@ -769,6 +840,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Builder(
                   builder: (context) {
                     final isNeedsReviewFilter = provider.sortBy == 'needs_catalog_review';
+                    final hasActiveFilters = provider.safeActiveCatalogFiltersCount > 0;
                     final displayedProducts = isNeedsReviewFilter
                         ? provider.products.where((p) => p.needsCatalogReview).toList()
                         : provider.products;
@@ -803,6 +875,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                     sortDirection: 'asc',
                                   );
                                 },
+                              ),
+                            ] else if (hasActiveFilters) ...[
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                alignment: WrapAlignment.center,
+                                children: [
+                                  if (provider.safeFilterSupplierId != null)
+                                    FilledButton.tonalIcon(
+                                      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                                      label: const Text('Cambiar proveedor'),
+                                      onPressed: () => _openQuickSupplierSwitcher(provider),
+                                    ),
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                                    label: const Text('Quitar filtros'),
+                                    onPressed: () {
+                                      setState(() => _selectedProducts.clear());
+                                      provider.safeClearAllCatalogFilters();
+                                    },
+                                  ),
+                                ],
                               ),
                             ],
                           ],
@@ -909,7 +1004,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 case 3:
                   AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
                     if (auth && context.mounted) {
-                      showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
+                      showDialog<bool>(
+                        context: context,
+                        builder: (_) => BulkPriceUpdateDialog(
+                          provider: provider,
+                          targetProductIds: _selectedProducts.keys.toList(),
+                        ),
+                      ).then((updated) {
+                        if (updated == true && mounted) {
+                          setState(() => _selectedProducts.clear());
+                        }
+                      });
                     }
                   });
                   break;
@@ -1317,11 +1422,323 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13));
   }
 
+  void _ensureFiltersMetadataLoaded(CatalogProvider provider) {
+    if (provider.categories.isEmpty || provider.brands.isEmpty) {
+      provider.loadMetadata();
+    }
+    final canSeeSupplier =
+        context.read<SettingsProvider?>()?.features.suppliers ?? false;
+    if (canSeeSupplier) {
+      try {
+        final supProv = context.read<SupplierProvider?>();
+        if (supProv != null &&
+            supProv.suppliers.isEmpty &&
+            !supProv.isLoading) {
+          supProv.fetchSuppliers();
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _openQuickSupplierSwitcher(CatalogProvider provider) async {
+    SupplierProvider? supplierProv;
+    try {
+      supplierProv = context.read<SupplierProvider?>();
+    } catch (_) {}
+    if (supplierProv == null) return;
+
+    if (supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
+      await supplierProv.fetchSuppliers();
+    }
+    if (!mounted) return;
+
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (_) => _QuickSupplierPickerDialog(
+        currentSupplierId: provider.safeFilterSupplierId,
+      ),
+    );
+    if (!mounted || result == null) return;
+
+    if (result == -1) {
+      setState(() => _selectedProducts.clear());
+      await provider.safeSetSupplierFilter(null);
+      return;
+    }
+
+    final matched =
+        supplierProv.suppliers.where((s) => s.id == result).firstOrNull;
+    setState(() => _selectedProducts.clear());
+    await provider.safeSetSupplierFilter(
+      result,
+      supplierName: matched?.name,
+    );
+  }
+
+  Widget _buildFiltersBar(CatalogProvider provider) {
+    final sp = context.watch<SettingsProvider?>();
+    final canSeeSupplier = sp?.features.suppliers ?? false;
+    SupplierProvider? supplierProv;
+    if (canSeeSupplier) {
+      try {
+        supplierProv = context.watch<SupplierProvider?>();
+      } catch (_) {}
+    }
+
+    final sortedSuppliers = sortByAlphabeticalName(
+      supplierProv?.suppliers ?? const <Supplier>[],
+      (s) => s.name,
+    );
+    final sortedCategories = sortByAlphabeticalName(
+      provider.categories,
+      (c) => c.name,
+    );
+    final sortedBrands = sortByAlphabeticalName(
+      provider.brands,
+      (b) => b.name,
+    );
+
+    final activeSupplierId = provider.safeFilterSupplierId;
+    final activeCategoryId = provider.safeFilterCategoryId;
+    final activeBrandId = provider.safeFilterBrandId;
+    final activeStatus = provider.safeFilterActive;
+    final activeCount = provider.safeActiveCatalogFiltersCount;
+
+    final hasMatchingSupplier = activeSupplierId != null &&
+        sortedSuppliers.any((s) => s.id == activeSupplierId);
+    final fallbackSupName = provider.safeFilterSupplierName;
+    final showFallbackSupplier = !hasMatchingSupplier &&
+        activeSupplierId != null &&
+        fallbackSupName != null &&
+        fallbackSupName.isNotEmpty;
+
+    Widget buildSupplierFilter() => SearchableSelectField<int?>(
+          key: const ValueKey('catalog_filter_supplier_field'),
+          value: (hasMatchingSupplier || showFallbackSupplier)
+              ? activeSupplierId
+              : null,
+          clearValue: null,
+          isDense: true,
+          labelText: 'Proveedor',
+          dialogTitle: 'Filtrar por Proveedor',
+          searchHintText: 'Buscar proveedor o CUIT...',
+          prefixIcon: Icons.local_shipping_outlined,
+          border: const OutlineInputBorder(),
+          options: [
+            const SearchableSelectOption<int?>(
+              value: null,
+              label: '— Todos los proveedores —',
+              isResetOption: true,
+            ),
+            if (showFallbackSupplier)
+              SearchableSelectOption<int?>(
+                value: activeSupplierId,
+                label: fallbackSupName,
+              ),
+            ...sortedSuppliers.map((s) {
+              final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
+              return SearchableSelectOption<int?>(
+                value: s.id,
+                label: s.name,
+                subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+              );
+            }),
+          ],
+          onChanged: (val) {
+            setState(() => _selectedProducts.clear());
+            if (val == null) {
+              provider.safeSetSupplierFilter(null);
+            } else {
+              final matched =
+                  sortedSuppliers.where((s) => s.id == val).firstOrNull;
+              provider.safeSetSupplierFilter(
+                val,
+                supplierName: matched?.name ?? fallbackSupName,
+              );
+            }
+          },
+        );
+
+    Widget buildCategoryFilter() => SearchableSelectField<int?>(
+          key: const ValueKey('catalog_filter_category_field'),
+          value: sortedCategories.any((c) => c.id == activeCategoryId)
+              ? activeCategoryId
+              : null,
+          clearValue: null,
+          isDense: true,
+          labelText: 'Categoría',
+          dialogTitle: 'Filtrar por Categoría',
+          searchHintText: 'Buscar categoría o rubro...',
+          prefixIcon: Icons.category_outlined,
+          border: const OutlineInputBorder(),
+          options: [
+            const SearchableSelectOption<int?>(
+              value: null,
+              label: '— Todas las categorías —',
+              isResetOption: true,
+            ),
+            ...sortedCategories.map((c) {
+              final rId = c.rubroId ?? c.rubro?.id;
+              final rubroName = (rId != null
+                      ? provider.rubros
+                          .where((r) => r.id == rId)
+                          .firstOrNull
+                          ?.name
+                      : null) ??
+                  c.rubro?.name;
+              final hasRubro =
+                  rubroName != null && rubroName.trim().isNotEmpty;
+              return SearchableSelectOption<int?>(
+                value: c.id,
+                label: c.name,
+                subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                searchKeywords: hasRubro ? [rubroName] : const [],
+              );
+            }),
+          ],
+          onChanged: (val) {
+            setState(() => _selectedProducts.clear());
+            provider.safeSetCategoryFilter(val);
+          },
+        );
+
+    Widget buildBrandFilter() => SearchableSelectField<int?>(
+          key: const ValueKey('catalog_filter_brand_field'),
+          value: sortedBrands.any((b) => b.id == activeBrandId)
+              ? activeBrandId
+              : null,
+          clearValue: null,
+          isDense: true,
+          labelText: 'Marca',
+          dialogTitle: 'Filtrar por Marca',
+          searchHintText: 'Buscar marca...',
+          prefixIcon: Icons.branding_watermark_outlined,
+          border: const OutlineInputBorder(),
+          options: [
+            const SearchableSelectOption<int?>(
+              value: null,
+              label: '— Todas las marcas —',
+              isResetOption: true,
+            ),
+            ...sortedBrands.map(
+              (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+            ),
+          ],
+          onChanged: (val) {
+            setState(() => _selectedProducts.clear());
+            provider.safeSetBrandFilter(val);
+          },
+        );
+
+    Widget buildStatusFilter() => DropdownButtonFormField<bool?>(
+          key: const ValueKey('catalog_filter_active_dropdown'),
+          isExpanded: true,
+          initialValue: activeStatus,
+          decoration: const InputDecoration(
+            labelText: 'Estado POS',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: const [
+            DropdownMenuItem<bool?>(value: null, child: Text('Todos')),
+            DropdownMenuItem<bool?>(value: true, child: Text('Activos')),
+            DropdownMenuItem<bool?>(value: false, child: Text('Inactivos')),
+          ],
+          onChanged: (val) {
+            setState(() => _selectedProducts.clear());
+            provider.safeSetActiveFilter(val);
+          },
+        );
+
+    Widget buildClearBtn() => TextButton.icon(
+          key: const ValueKey('catalog_clear_all_filters_btn'),
+          onPressed: activeCount == 0
+              ? null
+              : () {
+                  setState(() => _selectedProducts.clear());
+                  provider.safeClearAllCatalogFilters();
+                },
+          icon: const Icon(Icons.filter_alt_off_outlined, size: 17),
+          label: const Text('Limpiar'),
+        );
+
+    return Container(
+      key: const ValueKey('catalog_filters_bar'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE2E8F0)),
+          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 880) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (canSeeSupplier && supplierProv != null) ...[
+                  Expanded(flex: 3, child: buildSupplierFilter()),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(flex: 2, child: buildCategoryFilter()),
+                const SizedBox(width: 10),
+                Expanded(flex: 2, child: buildBrandFilter()),
+                const SizedBox(width: 10),
+                SizedBox(width: 142, child: buildStatusFilter()),
+                const SizedBox(width: 6),
+                buildClearBtn(),
+              ],
+            );
+          }
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (canSeeSupplier && supplierProv != null)
+                SizedBox(
+                  width: math.min(250.0, constraints.maxWidth),
+                  child: buildSupplierFilter(),
+                ),
+              SizedBox(
+                width: math.min(220.0, constraints.maxWidth),
+                child: buildCategoryFilter(),
+              ),
+              SizedBox(
+                width: math.min(200.0, constraints.maxWidth),
+                child: buildBrandFilter(),
+              ),
+              SizedBox(
+                width: math.min(142.0, constraints.maxWidth),
+                child: buildStatusFilter(),
+              ),
+              buildClearBtn(),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildSupplierFilterBanner(CatalogProvider provider) {
     final supplierName = provider.safeFilterSupplierName ??
         'Proveedor #${provider.safeFilterSupplierId}';
     final isFallback185 = provider.safeSupplierFilterFallbackActive;
     final canPopBack = Navigator.of(context).canPop();
+    final canSwitchSupplier =
+        (context.watch<SettingsProvider?>()?.features.suppliers ?? false) &&
+            (() {
+              try {
+                return context.read<SupplierProvider?>() != null;
+              } catch (_) {
+                return false;
+              }
+            })();
 
     return Container(
       width: double.infinity,
@@ -1367,14 +1784,75 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(
-                      'Mostrando catálogo de proveedor: $supplierName',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                    const Text(
+                      'Mostrando catálogo de proveedor:',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.darkSubtitle,
                       ),
                     ),
+                    if (canSwitchSupplier)
+                      Tooltip(
+                        message: 'Clic para cambiar de proveedor sin volver atrás',
+                        child: Material(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            key: const ValueKey(
+                                'catalog_banner_switch_supplier_btn'),
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () => _openQuickSupplierSwitcher(provider),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.tealLight
+                                      .withValues(alpha: 0.55),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints:
+                                        const BoxConstraints(maxWidth: 280),
+                                    child: Text(
+                                      supplierName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 18,
+                                    color: AppColors.tealLight,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        supplierName,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
                     if (isFallback185)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1494,12 +1972,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
     final sp = context.watch<SettingsProvider?>();
-    final isHardwareStore = sp?.safeIsHardwareStore ?? false;
+    final profile = sp?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     final canSeeSupplier = sp?.features.suppliers ?? false;
-    final canUseBatches = !isHardwareStore &&
-        (sp == null
-            ? true
-            : (sp.features.batchExpiration || sp.features.production));
+    final canUseBatches = sp == null
+        ? true
+        : (sp.features.batchExpiration || sp.features.production);
 
     // Anchos fijos calibrados para columnas cortas/fechas y flex equilibrado para texto/precios
     const double wCheck = 38;
@@ -1509,12 +1987,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const double wUnidad = 92;
     const double wActivo = 70;
     const double wVto = 116;
-    final double wAcciones = canUseBatches ? 168 : 136;
+    const double wAcciones = 44;
 
     const int fNombre = 5;
     const int fBarcode = 3;
     const int fInterno = 2;
     const int fSupplierSku = 2;
+    const int fSpec = 2;
     const int fStorageLoc = 2;
     const int fCat = 2;
     const int fBrand = 2;
@@ -1627,34 +2106,41 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(flex: fNombre, label: 'Nombre', sortKey: 'name'),
               sortHeader(flex: fBarcode, label: 'Cód. Barras', sortKey: 'barcode'),
               sortHeader(flex: fInterno, label: 'Cód. Interno', sortKey: 'internal_code'),
-              if (isHardwareStore)
+              if (profile.showSupplierSkuColumnInCatalog)
                 sortHeader(
                   flex: fSupplierSku,
                   label: 'Cód. Prov.',
                   sortKey: 'supplier_sku',
                   tooltip: 'Código de artículo del proveedor',
                 ),
+              if (profile.showSpecColumnInCatalog)
+                sortHeader(
+                  flex: fSpec,
+                  label: profile.specColumnHeader,
+                  sortKey: 'technical_spec',
+                  tooltip: profile.specFieldLabel,
+                ),
               sortHeader(flex: fCat, label: 'Categoría', sortKey: 'category_id'),
               sortHeader(flex: fBrand, label: 'Marca', sortKey: 'brand_id'),
               if (canSeeSupplier) sortHeader(flex: fProv, label: 'Proveedor', sortKey: 'supplier_id'),
-              if (isHardwareStore)
+              if (profile.showLocationColumnInCatalog)
                 sortHeader(
                   flex: fStorageLoc,
                   label: 'Ubicación',
                   sortKey: 'storage_location',
-                  tooltip: 'Ubicación en depósito o estantería',
+                  tooltip: profile.locationFieldLabel,
                 ),
               sortHeader(flex: fCosto, label: 'Costo', sortKey: 'cost_price'),
               sortHeader(flex: fVenta, label: 'Venta', sortKey: 'selling_price'),
               sortHeader(flex: fStock, label: 'Stock', sortKey: 'stock'),
-              if (isHardwareStore)
+              if (profile.showUnitColumnInCatalog)
                 sortHeader(
                   width: wUnidad,
                   label: 'Unidad',
                   sortKey: 'unit_type',
                   tooltip: 'Unidad de venta y fraccionamiento',
                 )
-              else
+              else if (profile.showBalColumnInCatalog)
                 sortHeader(
                   width: wBal,
                   label: 'Bal.',
@@ -1675,17 +2161,59 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   initialDirection: 'desc',
                   tooltip: vtoTooltip,
                 ),
-              tableCell(
+              const SizedBox(
                 width: wAcciones,
-                child: Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis),
+                child: Tooltip(
+                  message: 'Acciones (clic en ⋮ o clic derecho en cualquier fila)',
+                  child: Center(
+                    child: Icon(Icons.more_vert_rounded, size: 18, color: Colors.blueGrey),
+                  ),
+                ),
               ),
             ],
           ),
         );
 
+    Widget cellTooltip({
+      required String? message,
+      required Widget child,
+    }) {
+      final clean = message?.trim() ?? '';
+      if (clean.isEmpty) return child;
+      return Tooltip(
+        message: clean,
+        waitDuration: const Duration(milliseconds: 350),
+        showDuration: const Duration(seconds: 4),
+        child: child,
+      );
+    }
+
     Widget productRow(Product p, int index) {
       final isContextActive = _contextMenuProductId == p.id;
       final isSelected = _selectedProducts.containsKey(p.id);
+      final nameTooltip = (p.technicalSpec != null && p.technicalSpec!.trim().isNotEmpty)
+          ? '${p.name} • ${p.technicalSpec!.trim()}'
+          : p.name;
+      final catRubroId = p.category?.rubroId ?? p.category?.rubro?.id;
+      final catRubroName = (catRubroId != null
+              ? provider.rubros.where((r) => r.id == catRubroId).firstOrNull?.name
+              : null) ??
+          p.category?.rubro?.name;
+      final categoryTooltip = p.category == null
+          ? null
+          : (catRubroName != null && catRubroName.trim().isNotEmpty
+              ? '${p.category!.name} • Rubro: ${catRubroName.trim()}'
+              : p.category!.name);
+      final supplierCuit = p.supplier?.cuit?.trim() ?? '';
+      final supplierTooltip = p.supplier == null
+          ? null
+          : (supplierCuit.isNotEmpty
+              ? '${p.supplier!.name} • CUIT: $supplierCuit'
+              : p.supplier!.name);
+      final hasSupplierSku =
+          p.supplierSku != null && p.supplierSku!.trim().isNotEmpty;
+      final hasStorageLoc =
+          p.storageLocation != null && p.storageLocation!.trim().isNotEmpty;
       return Material(
         color: isContextActive
             ? Colors.indigo.shade50
@@ -1741,9 +2269,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Row(
                   children: [
                     Flexible(
-                      child: Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                      child: cellTooltip(
+                        message: nameTooltip,
+                        child: Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                      ),
                     ),
-                    if (p.technicalSpec != null && p.technicalSpec!.trim().isNotEmpty) ...[
+                    if (!profile.showSpecColumnInCatalog &&
+                        p.technicalSpec != null &&
+                        p.technicalSpec!.trim().isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -1789,47 +2322,95 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               tableCell(flex: fBarcode, child: Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               tableCell(flex: fInterno, child: Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
-              if (isHardwareStore)
+              if (profile.showSupplierSkuColumnInCatalog)
                 tableCell(
                   flex: fSupplierSku,
-                  child: Text(
-                    (p.supplierSku != null && p.supplierSku!.isNotEmpty) ? p.supplierSku! : '—',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: (p.supplierSku != null && p.supplierSku!.isNotEmpty)
-                          ? Colors.brown.shade700
-                          : Colors.grey.shade400,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: hasSupplierSku
+                      ? cellTooltip(
+                          message: 'Cód. Prov.: ${p.supplierSku!.trim()}',
+                          child: Text(
+                            p.supplierSku!.trim(),
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: Colors.brown.shade700,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
                 ),
-              tableCell(flex: fCat, child: Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              if (profile.showSpecColumnInCatalog)
+                tableCell(
+                  flex: fSpec,
+                  child: (p.technicalSpec != null && p.technicalSpec!.trim().isNotEmpty)
+                      ? cellTooltip(
+                          message: p.technicalSpec!.trim(),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.shade50,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: Colors.blueGrey.shade200),
+                            ),
+                            child: Text(
+                              p.technicalSpec!.trim(),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blueGrey.shade800,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                      : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                ),
+              tableCell(
+                flex: fCat,
+                child: p.category != null
+                    ? cellTooltip(
+                        message: categoryTooltip,
+                        child: Text(p.category!.name, overflow: TextOverflow.ellipsis),
+                      )
+                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              ),
               tableCell(
                 flex: fBrand,
                 child: p.brand != null
-                    ? Text(p.brand!.name, overflow: TextOverflow.ellipsis)
+                    ? cellTooltip(
+                        message: p.brand!.name,
+                        child: Text(p.brand!.name, overflow: TextOverflow.ellipsis),
+                      )
                     : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
               ),
-              if (canSeeSupplier) tableCell(flex: fProv, child: Text(p.supplier?.name ?? '—', overflow: TextOverflow.ellipsis)),
-              if (isHardwareStore)
+              if (canSeeSupplier)
+                tableCell(
+                  flex: fProv,
+                  child: p.supplier != null
+                      ? cellTooltip(
+                          message: supplierTooltip,
+                          child: Text(p.supplier!.name, overflow: TextOverflow.ellipsis),
+                        )
+                      : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                ),
+              if (profile.showLocationColumnInCatalog)
                 tableCell(
                   flex: fStorageLoc,
-                  child: Text(
-                    (p.storageLocation != null && p.storageLocation!.isNotEmpty)
-                        ? p.storageLocation!
-                        : '—',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: (p.storageLocation != null && p.storageLocation!.isNotEmpty)
-                          ? const Color(0xFF0F766E)
-                          : Colors.grey.shade400,
-                      fontWeight: (p.storageLocation != null && p.storageLocation!.isNotEmpty)
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: hasStorageLoc
+                      ? cellTooltip(
+                          message: p.storageLocation!.trim(),
+                          child: Text(
+                            p.storageLocation!.trim(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF0F766E),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
                 ),
               tableCell(flex: fCosto, child: Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
               tableCell(flex: fVenta, child: Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
@@ -1863,7 +2444,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
               ),
-              if (isHardwareStore)
+              if (profile.showUnitColumnInCatalog)
                 tableCell(
                   width: wUnidad,
                   child: Align(
@@ -1910,69 +2491,39 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     ),
                   ),
                 )
-              else
+              else if (profile.showBalColumnInCatalog)
                 tableCell(width: wBal, child: Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               tableCell(width: wActivo, child: Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
               if (canUseBatches) tableCell(width: wVto, child: _buildExpiryCell(p, provider)),
-              tableCell(width: wAcciones, child: Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.print_outlined, size: 18),
-                    color: Colors.deepPurple,
-                    tooltip: 'Imprimir Etiquetas',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(products: [p])),
-                  ),
-                  if (canUseBatches && !p.isCombo && !p.isService)
-                    IconButton(
+              tableCell(
+                width: wAcciones,
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                child: Center(
+                  child: Builder(
+                    builder: (btnCtx) => IconButton(
+                      key: ValueKey('catalog_row_actions_${p.id}'),
                       icon: Icon(
-                        Icons.layers_outlined,
-                        size: 18,
-                        color: p.trackBatches ? Colors.deepOrange.shade700 : Colors.blueGrey,
+                        Icons.more_vert_rounded,
+                        size: 19,
+                        color: isContextActive
+                            ? Colors.indigo.shade700
+                            : Colors.blueGrey.shade600,
                       ),
-                      tooltip: p.trackBatches ? 'Lotes y Vencimientos' : 'Administrar Lotes',
+                      tooltip: 'Más acciones (o clic derecho)',
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      onPressed: () => _openProductBatches(provider, p),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      splashRadius: 18,
+                      onPressed: () {
+                        final box = btnCtx.findRenderObject() as RenderBox?;
+                        final anchor = box != null
+                            ? box.localToGlobal(Offset(box.size.width, box.size.height))
+                            : Offset.zero;
+                        _showProductContextMenu(context, anchor, provider, p);
+                      },
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.warehouse_outlined, size: 18),
-                    color: Colors.teal,
-                    tooltip: 'Ajuste de Stock',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () async {
-                      final auth = await AdminPinDialog.verify(context, action: 'Ajustar Stock', permissionKey: 'adjust_stock');
-                      if (auth && context.mounted) _showStockAdjustment(context, provider, p);
-                    },
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    color: Colors.blue,
-                    tooltip: 'Editar',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () async {
-                      final auth = await AdminPinDialog.verify(context, action: 'Editar Producto', permissionKey: 'manage_catalog');
-                      if (auth && context.mounted) _showProductForm(context, provider, product: p);
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    color: Colors.red,
-                    tooltip: 'Eliminar',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () async {
-                      final auth = await AdminPinDialog.verify(context, action: 'Eliminar Producto', permissionKey: 'manage_catalog');
-                      if (auth && context.mounted) _confirmDelete(context, provider, p);
-                    },
-                  ),
-                ],
-              )),
+                ),
+              ),
             ],
           ),
         ),
@@ -2108,68 +2659,107 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
-    final sortedCategories = sortByAlphabeticalName(provider.categories, (c) => c.name);
     int? newCategory = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultCat;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AppModalShell(
-            title: 'Asignar Categoría',
-            subtitle: 'Aplicá o quitá la categoría a los productos seleccionados',
-            icon: Icons.category_outlined,
-            accent: AppModalAccent.orange,
-            compact: true,
-            maxWidth: 460,
-            useAlertDialogWrapper: true,
-            onClose: () => Navigator.pop(ctx),
-            body: SearchableSelectField<int?>(
-              value: selected,
-              clearValue: -1,
-              showClearButton: false,
-              labelText: 'Elige la nueva categoría',
-              dialogTitle: 'Seleccionar Categoría',
-              searchHintText: 'Buscar categoría o rubro...',
-              prefixIcon: Icons.category_outlined,
-              border: const OutlineInputBorder(),
-              options: [
-                const SearchableSelectOption<int?>(
-                  value: -1,
-                  label: '— Quitar Categoría —',
-                  isResetOption: true,
-                ),
-                ...sortedCategories.map((c) {
-                  final rId = c.rubroId ?? c.rubro?.id;
-                  final rubroName = (rId != null
-                          ? provider.rubros.where((r) => r.id == rId).firstOrNull?.name
-                          : null) ??
-                      c.rubro?.name;
-                  final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
-                  return SearchableSelectOption<int?>(
-                    value: c.id,
-                    label: c.name,
-                    subtitle: hasRubro ? 'Rubro: $rubroName' : null,
-                    searchKeywords: hasRubro ? [rubroName] : const [],
-                  );
-                }),
-              ],
-              onChanged: (val) => setDialogState(() => selected = val),
-            ),
-            footerActions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
-                onPressed: () {
-                  if (selected == null) {
-                    SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
-                    return;
-                  }
-                  Navigator.pop(ctx, selected);
-                },
-                child: const Text('Asignar'),
-              ),
-            ],
-          ),
+          builder: (ctx, setDialogState) {
+            Future<void> createNewCategory({String? initialName}) async {
+              final createdId = await CatalogQuickCreateDialogs.showCreateCategory(
+                ctx,
+                initialName: initialName,
+                subtitle: 'Creá una categoría rápida para asignarla al lote',
+              );
+              if (createdId != null && ctx.mounted) {
+                setDialogState(() => selected = createdId);
+              }
+            }
+
+            return Consumer<CatalogProvider>(
+              builder: (_, liveProvider, __) {
+                final sortedCategories = sortByAlphabeticalName(
+                  liveProvider.categories,
+                  (c) => c.name,
+                );
+                return AppModalShell(
+                  title: 'Asignar Categoría',
+                  subtitle: 'Aplicá o quitá la categoría a los productos seleccionados',
+                  icon: Icons.category_outlined,
+                  accent: AppModalAccent.orange,
+                  compact: true,
+                  maxWidth: 480,
+                  useAlertDialogWrapper: true,
+                  onClose: () => Navigator.pop(ctx),
+                  body: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: SearchableSelectField<int?>(
+                          key: const ValueKey('bulk_category_select_field'),
+                          value: selected,
+                          clearValue: -1,
+                          showClearButton: false,
+                          labelText: 'Elige la nueva categoría',
+                          dialogTitle: 'Seleccionar Categoría',
+                          searchHintText: 'Buscar categoría o rubro...',
+                          prefixIcon: Icons.category_outlined,
+                          border: const OutlineInputBorder(),
+                          options: [
+                            const SearchableSelectOption<int?>(
+                              value: -1,
+                              label: '— Quitar Categoría —',
+                              isResetOption: true,
+                            ),
+                            ...sortedCategories.map((c) {
+                              final rId = c.rubroId ?? c.rubro?.id;
+                              final rubroName = (rId != null
+                                      ? liveProvider.rubros.where((r) => r.id == rId).firstOrNull?.name
+                                      : null) ??
+                                  c.rubro?.name;
+                              final hasRubro = rubroName != null && rubroName.trim().isNotEmpty;
+                              return SearchableSelectOption<int?>(
+                                value: c.id,
+                                label: c.name,
+                                subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                                searchKeywords: hasRubro ? [rubroName] : const [],
+                              );
+                            }),
+                          ],
+                          onChanged: (val) => setDialogState(() => selected = val),
+                          onCreateNew: (query) => createNewCategory(initialName: query),
+                          createLabelBuilder: (query) => 'Crear categoría "${query.trim()}"',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Crear nueva categoría',
+                        child: IconButton.filledTonal(
+                          key: const ValueKey('bulk_create_category_btn'),
+                          icon: const Icon(Icons.add),
+                          onPressed: () => createNewCategory(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  footerActions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
+                      onPressed: () {
+                        if (selected == null) {
+                          SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
+                          return;
+                        }
+                        Navigator.pop(ctx, selected);
+                      },
+                      child: const Text('Asignar'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         );
       },
     );
@@ -2214,11 +2804,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
     if (products.isEmpty) return;
 
-    bool hasQuoteProv = false;
+    QuoteProvider? quoteProv;
     try {
-      final quoteProv = Provider.of<QuoteProvider?>(context, listen: false);
+      quoteProv = Provider.of<QuoteProvider?>(context, listen: false);
       if (quoteProv != null) {
-        hasQuoteProv = true;
         quoteProv.clearCart();
         for (final p in products) {
           quoteProv.addToCart(p, quantity: 1.0);
@@ -2240,15 +2829,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     } catch (_) {}
 
-    if (clearSelection && mounted) {
-      setState(() => _selectedProducts.clear());
-    }
-
-    if (mounted && hasQuoteProv) {
+    if (mounted && quoteProv != null) {
+      final previousCreatedQuote = quoteProv.lastCreatedQuote;
       await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const QuoteScreen()),
       );
+      final emittedNewQuote = quoteProv.lastCreatedQuote != null &&
+          !identical(quoteProv.lastCreatedQuote, previousCreatedQuote);
+      if (clearSelection && emittedNewQuote && mounted) {
+        setState(() => _selectedProducts.clear());
+      }
     }
   }
 
@@ -2275,57 +2866,96 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
-    final sortedBrands = sortByAlphabeticalName(provider.brands, (b) => b.name);
     int? newBrand = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultBrand;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AppModalShell(
-            title: 'Asignar Marca en Lote',
-            subtitle: 'Aplicá o quitá la marca a los productos seleccionados',
-            icon: Icons.branding_watermark_outlined,
-            accent: AppModalAccent.indigo,
-            compact: true,
-            maxWidth: 460,
-            useAlertDialogWrapper: true,
-            onClose: () => Navigator.pop(ctx),
-            body: SearchableSelectField<int?>(
-              value: selected,
-              clearValue: -1,
-              showClearButton: false,
-              labelText: 'Elige la nueva marca',
-              dialogTitle: 'Seleccionar Marca',
-              searchHintText: 'Buscar marca...',
-              prefixIcon: Icons.branding_watermark_outlined,
-              border: const OutlineInputBorder(),
-              options: [
-                const SearchableSelectOption<int?>(
-                  value: -1,
-                  label: '— Quitar Marca —',
-                  isResetOption: true,
-                ),
-                ...sortedBrands.map(
-                  (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
-                ),
-              ],
-              onChanged: (val) => setDialogState(() => selected = val),
-            ),
-            footerActions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
-                onPressed: () {
-                  if (selected == null) {
-                    SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
-                    return;
-                  }
-                  Navigator.pop(ctx, selected);
-                },
-                child: const Text('Asignar'),
-              ),
-            ],
-          ),
+          builder: (ctx, setDialogState) {
+            Future<void> createNewBrand({String? initialName}) async {
+              final createdId = await CatalogQuickCreateDialogs.showCreateBrand(
+                ctx,
+                initialName: initialName,
+                subtitle: 'Creá una marca rápida para asignarla al lote',
+              );
+              if (createdId != null && ctx.mounted) {
+                setDialogState(() => selected = createdId);
+              }
+            }
+
+            return Consumer<CatalogProvider>(
+              builder: (_, liveProvider, __) {
+                final sortedBrands = sortByAlphabeticalName(
+                  liveProvider.brands,
+                  (b) => b.name,
+                );
+                return AppModalShell(
+                  title: 'Asignar Marca en Lote',
+                  subtitle: 'Aplicá o quitá la marca a los productos seleccionados',
+                  icon: Icons.branding_watermark_outlined,
+                  accent: AppModalAccent.indigo,
+                  compact: true,
+                  maxWidth: 480,
+                  useAlertDialogWrapper: true,
+                  onClose: () => Navigator.pop(ctx),
+                  body: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: SearchableSelectField<int?>(
+                          key: const ValueKey('bulk_brand_select_field'),
+                          value: selected,
+                          clearValue: -1,
+                          showClearButton: false,
+                          labelText: 'Elige la nueva marca',
+                          dialogTitle: 'Seleccionar Marca',
+                          searchHintText: 'Buscar marca...',
+                          prefixIcon: Icons.branding_watermark_outlined,
+                          border: const OutlineInputBorder(),
+                          options: [
+                            const SearchableSelectOption<int?>(
+                              value: -1,
+                              label: '— Quitar Marca —',
+                              isResetOption: true,
+                            ),
+                            ...sortedBrands.map(
+                              (b) => SearchableSelectOption<int?>(value: b.id, label: b.name),
+                            ),
+                          ],
+                          onChanged: (val) => setDialogState(() => selected = val),
+                          onCreateNew: (query) => createNewBrand(initialName: query),
+                          createLabelBuilder: (query) => 'Crear marca "${query.trim()}"',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Crear nueva marca',
+                        child: IconButton.filledTonal(
+                          key: const ValueKey('bulk_create_brand_btn'),
+                          icon: const Icon(Icons.add),
+                          onPressed: () => createNewBrand(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  footerActions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
+                      onPressed: () {
+                        if (selected == null) {
+                          SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
+                          return;
+                        }
+                        Navigator.pop(ctx, selected);
+                      },
+                      child: const Text('Asignar'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         );
       },
     );
@@ -2382,65 +3012,103 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     }
 
-    final sortedSuppliers = sortByAlphabeticalName(supplierProv.suppliers, (s) => s.name);
     int? newSupplier = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected = defaultSupplier;
         return StatefulBuilder(
-          builder: (ctx, setDialogState) => AppModalShell(
-            title: 'Asignar Proveedor',
-            subtitle: 'Asociá un proveedor a los productos seleccionados',
-            icon: Icons.local_shipping_outlined,
-            accent: AppModalAccent.indigo,
-            compact: true,
-            maxWidth: 460,
-            useAlertDialogWrapper: true,
-            onClose: () => Navigator.pop(ctx),
-            body: supplierProv.isLoading
-                ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
-                : SearchableSelectField<int?>(
-                    value: selected,
-                    clearValue: -1,
-                    showClearButton: false,
-                    labelText: 'Elige el nuevo proveedor',
-                    dialogTitle: 'Seleccionar Proveedor',
-                    searchHintText: 'Buscar proveedor o CUIT...',
-                    prefixIcon: Icons.local_shipping_outlined,
-                    border: const OutlineInputBorder(),
-                    options: [
-                      const SearchableSelectOption<int?>(
-                        value: -1,
-                        label: '— Quitar Proveedor —',
-                        isResetOption: true,
-                      ),
-                      ...sortedSuppliers.map((s) {
-                        final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
-                        return SearchableSelectOption<int?>(
-                          value: s.id,
-                          label: s.name,
-                          subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
-                          searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
-                        );
-                      }),
-                    ],
-                    onChanged: (val) => setDialogState(() => selected = val),
-                  ),
-            footerActions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
-                onPressed: () {
-                  if (selected == null) {
-                    SnackBarService.error(ctx, 'Selecciona un proveedor o "— Quitar Proveedor —"');
-                    return;
-                  }
-                  Navigator.pop(ctx, selected);
-                },
-                child: const Text('Asignar'),
-              ),
-            ],
-          ),
+          builder: (ctx, setDialogState) {
+            Future<void> createNewSupplier({String? initialQuery}) async {
+              final createdId = await CatalogQuickCreateDialogs.showCreateSupplier(
+                ctx,
+                initialQuery: initialQuery,
+              );
+              if (createdId != null && ctx.mounted) {
+                setDialogState(() => selected = createdId);
+              }
+            }
+
+            return Consumer<SupplierProvider>(
+              builder: (_, liveSupplierProv, __) {
+                final sortedSuppliers = sortByAlphabeticalName(
+                  liveSupplierProv.suppliers,
+                  (s) => s.name,
+                );
+                return AppModalShell(
+                  title: 'Asignar Proveedor',
+                  subtitle: 'Asociá un proveedor a los productos seleccionados',
+                  icon: Icons.local_shipping_outlined,
+                  accent: AppModalAccent.indigo,
+                  compact: true,
+                  maxWidth: 480,
+                  useAlertDialogWrapper: true,
+                  onClose: () => Navigator.pop(ctx),
+                  body: liveSupplierProv.isLoading
+                      ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: SearchableSelectField<int?>(
+                                key: const ValueKey('bulk_supplier_select_field'),
+                                value: selected,
+                                clearValue: -1,
+                                showClearButton: false,
+                                labelText: 'Elige el nuevo proveedor',
+                                dialogTitle: 'Seleccionar Proveedor',
+                                searchHintText: 'Buscar proveedor o CUIT...',
+                                prefixIcon: Icons.local_shipping_outlined,
+                                border: const OutlineInputBorder(),
+                                options: [
+                                  const SearchableSelectOption<int?>(
+                                    value: -1,
+                                    label: '— Quitar Proveedor —',
+                                    isResetOption: true,
+                                  ),
+                                  ...sortedSuppliers.map((s) {
+                                    final hasCuit = s.cuit != null && s.cuit!.trim().isNotEmpty;
+                                    return SearchableSelectOption<int?>(
+                                      value: s.id,
+                                      label: s.name,
+                                      subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                                      searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                                    );
+                                  }),
+                                ],
+                                onChanged: (val) => setDialogState(() => selected = val),
+                                onCreateNew: (query) => createNewSupplier(initialQuery: query),
+                                createLabelBuilder: (query) => 'Crear proveedor "${query.trim()}"',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Tooltip(
+                              message: 'Crear nuevo proveedor',
+                              child: IconButton.filledTonal(
+                                key: const ValueKey('bulk_create_supplier_btn'),
+                                icon: const Icon(Icons.add),
+                                onPressed: () => createNewSupplier(),
+                              ),
+                            ),
+                          ],
+                        ),
+                  footerActions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
+                      onPressed: () {
+                        if (selected == null) {
+                          SnackBarService.error(ctx, 'Selecciona un proveedor o "— Quitar Proveedor —"');
+                          return;
+                        }
+                        Navigator.pop(ctx, selected);
+                      },
+                      child: const Text('Asignar'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         );
       },
     );
@@ -2639,15 +3307,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (overlay == null) return;
 
     final sp = ctx.read<SettingsProvider?>();
-    final isHardwareStore = sp?.safeIsHardwareStore ?? false;
     final canSeeSupplier = sp?.features.suppliers ?? false;
     final canUseQuotes = sp?.features.quotes ?? false;
-    final canUseBatches = !isHardwareStore &&
-        (sp == null
-            ? true
-            : (sp.features.batchExpiration || sp.features.production));
-    final canUseProduction =
-        !isHardwareStore && (sp?.features.production ?? false);
+    final canUseBatches = sp == null
+        ? true
+        : (sp.features.batchExpiration || sp.features.production);
+    final canUseProduction = sp?.features.production ?? false;
     final isBulkContext =
         _selectedProducts.length > 1 && _selectedProducts.containsKey(p.id);
     final resolvedImgUrl =
@@ -2798,6 +3463,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   color: Colors.deepOrange,
                   label: 'Cambiar precio rápido',
                 ),
+                _buildContextMenuItem(
+                  value: 'quick_classify',
+                  icon: Icons.label_important_outline_rounded,
+                  color: Colors.indigo,
+                  label: canSeeSupplier
+                      ? 'Clasificación rápida (Cat. / Marca / Prov.)'
+                      : 'Clasificación rápida (Cat. / Marca)',
+                ),
                 if (!p.isService)
                   _buildContextMenuItem(
                     value: 'adjust_stock',
@@ -2857,6 +3530,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     color: Colors.teal.shade700,
                     label: 'Generar presupuesto',
                   ),
+                if (canSeeSupplier && p.supplier != null)
+                  _buildContextMenuItem(
+                    value: 'filter_by_supplier',
+                    icon: Icons.local_shipping_outlined,
+                    color: Colors.teal.shade800,
+                    label: 'Ver productos de este proveedor',
+                  ),
                 if (resolvedImgUrl != null)
                   _buildContextMenuItem(
                     value: 'view_image',
@@ -2911,14 +3591,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
           permissionKey: 'manage_catalog',
         );
         if (auth && mounted) {
-          await showDialog(
+          final updated = await showDialog<bool>(
             context: context,
             builder: (_) => BulkPriceUpdateDialog(
               provider: provider,
               targetProductIds: _selectedProducts.keys.toList(),
             ),
           );
-          if (mounted) setState(() => _selectedProducts.clear());
+          if (updated == true && mounted) {
+            setState(() => _selectedProducts.clear());
+          }
         }
         break;
       case 'bulk_quote':
@@ -2955,6 +3637,31 @@ class _CatalogScreenState extends State<CatalogScreen> {
           permissionKey: 'manage_catalog',
         );
         if (auth && mounted) await _showQuickPriceDialog(context, provider, p);
+        break;
+      case 'quick_classify':
+        final auth = await AdminPinDialog.verify(
+          context,
+          action: 'Clasificación Rápida',
+          permissionKey: 'manage_catalog',
+        );
+        if (auth && mounted) {
+          await showDialog<bool>(
+            context: context,
+            builder: (_) => _QuickProductClassificationDialog(
+              provider: provider,
+              product: p,
+            ),
+          );
+        }
+        break;
+      case 'filter_by_supplier':
+        if (p.supplier != null) {
+          setState(() => _selectedProducts.clear());
+          await provider.safeSetSupplierFilter(
+            p.supplier!.id,
+            supplierName: p.supplier!.name,
+          );
+        }
         break;
       case 'adjust_stock':
         final auth = await AdminPinDialog.verify(
@@ -3135,6 +3842,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   bool _costIsAuto = false;
   bool _priceIsAuto = false;
   bool _isSoldByWeight = false;
+  bool _userCustomizedUnit = false;
   bool _active = true;
   bool _isCombo = false;
   bool _isService = false;
@@ -3250,7 +3958,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _minStockCtrl = TextEditingController(
       text: (source?.minStock != null) ? source!.minStock!.toStringAsFixed(0) : '',
     );
-    _isSoldByWeight = source?.isSoldByWeight ?? false;
+    SettingsProvider? initialSettingsProv;
+    try {
+      initialSettingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final baseProfile = initialSettingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+
+    _userCustomizedUnit = source != null;
+    _isSoldByWeight = source?.isSoldByWeight ?? baseProfile.defaultSoldByWeight;
     _active = source?.active ?? true;
     _isCombo = source?.isCombo ?? false;
     _isService = source?.isService ?? false;
@@ -3263,7 +3979,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       _priceTiers = List<Map<String, dynamic>>.from(source!.priceTiers!);
       _expandPriceTiers = _priceTiers.isNotEmpty;
     }
-    _unitType = source?.unitType ?? 'un';
+    _unitType = source?.unitType ?? baseProfile.defaultUnitType;
     final rawIva = source?.ivaRate ?? 21.0;
     _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
     _categoryId = source?.category?.id;
@@ -4027,6 +4743,54 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     return (direct != null && direct.trim().isNotEmpty) ? direct : null;
   }
 
+  Rubro? _resolveCategoryRubro(Category? cat) {
+    if (cat == null) return null;
+    final rId = cat.rubroId ?? cat.rubro?.id;
+    if (rId != null) {
+      try {
+        final found =
+            widget.provider.safeRubros.where((r) => r.id == rId).firstOrNull;
+        if (found != null) return found;
+      } catch (_) {}
+    }
+    return cat.rubro;
+  }
+
+  BusinessVerticalProfile _resolveEffectiveFormProfile(
+    SettingsProvider? settingsProv,
+    List<Category> categories, {
+    int? categoryIdOverride,
+  }) {
+    final baseProfile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final effectiveCategoryId = categoryIdOverride ?? _categoryId;
+    if (!(settingsProv?.features.multiRubro ?? false) ||
+        effectiveCategoryId == null) {
+      return baseProfile;
+    }
+    final cat = categories.where((c) => c.id == effectiveCategoryId).firstOrNull;
+    final rubro = _resolveCategoryRubro(cat);
+    return baseProfile.forCategoryRubro(rubro);
+  }
+
+  void _applyCategoryDefaultUnitIfUntouched(
+    int? nextCategoryId,
+    List<Category> categories,
+  ) {
+    if (_isEditing || _isDuplicating || _userCustomizedUnit) return;
+    SettingsProvider? sp;
+    try {
+      sp = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final nextProfile = _resolveEffectiveFormProfile(
+      sp,
+      categories,
+      categoryIdOverride: nextCategoryId,
+    );
+    _unitType = nextProfile.defaultUnitType;
+    _isSoldByWeight = nextProfile.defaultSoldByWeight;
+  }
+
   Widget _buildCategorySelector(List<Category> categories) {
     final sortedCategories = sortByAlphabeticalName(categories, (c) => c.name);
     final hasSelection = sortedCategories.any((c) => c.id == _categoryId);
@@ -4070,8 +4834,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 );
               }),
             ],
-            onChanged: (val) => setState(() => _categoryId = val),
+            onChanged: (val) => setState(() {
+              _categoryId = val;
+              _applyCategoryDefaultUnitIfUntouched(val, categories);
+            }),
             onCreateNew: (query) => _showCreateCategoryQuickDialog(initialName: query),
+            createLabelBuilder: (query) => 'Crear categoría "${query.trim()}"',
           ),
         ),
         const SizedBox(width: 8),
@@ -4087,189 +4855,34 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Future<void> _showCreateCategoryQuickDialog({String? initialName}) async {
-    final nameCtrl = TextEditingController(text: initialName ?? '');
-    final settingsProv = context.read<SettingsProvider>();
-    final isPremium = settingsProv.features.multiRubro;
-    final provider = context.read<CatalogProvider>();
-
-    if (isPremium && provider.rubros.isEmpty) {
-      await provider.loadRubros();
-    }
-
-    if (!mounted) return;
-
-    final initialRubros = sortByAlphabeticalName(provider.rubros, (r) => r.name);
-    int? selectedRubroId =
-        initialRubros.isNotEmpty ? initialRubros.first.id : null;
-
-    final createdId = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          Future<void> openCreateRubro({String? suggestedName}) async {
-            final newRubroId = await RubrosManagerDialog.showQuickCreateDialog(
-              ctx,
-              initialName: suggestedName,
-            );
-            if (newRubroId != null && ctx.mounted) {
-              setDialogState(() {
-                selectedRubroId = newRubroId;
-              });
-            }
-          }
-
-          return AppModalShell(
-            title: 'Nueva Categoría',
-            subtitle: 'Creá una categoría rápida para este producto',
-            icon: Icons.label_outline,
-            accent: AppModalAccent.blue,
-            compact: true,
-            maxWidth: 440,
-            onClose: () => Navigator.pop(ctx),
-            body: Consumer<CatalogProvider>(
-              builder: (_, p, __) {
-                final sortedRubros =
-                    sortByAlphabeticalName(p.rubros, (r) => r.name);
-                if (isPremium &&
-                    sortedRubros.isNotEmpty &&
-                    !sortedRubros.any((r) => r.id == selectedRubroId)) {
-                  selectedRubroId = sortedRubros.first.id;
-                }
-
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.label_outline),
-                      ),
-                      autofocus: true,
-                    ),
-                    if (isPremium) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: SearchableSelectField<int?>(
-                              value: selectedRubroId,
-                              showClearButton: false,
-                              labelText: 'Rubro Padre',
-                              hintText: sortedRubros.isEmpty
-                                  ? 'Sin rubros creados aún'
-                                  : null,
-                              dialogTitle: 'Seleccionar Rubro Padre',
-                              searchHintText: 'Buscar rubro...',
-                              emptySearchText: 'No hay rubros registrados',
-                              prefixIcon: Icons.category_outlined,
-                              border: const OutlineInputBorder(),
-                              options: sortedRubros
-                                  .map((r) => SearchableSelectOption<int?>(
-                                        value: r.id,
-                                        label: r.name,
-                                      ))
-                                  .toList(),
-                              onChanged: (val) {
-                                setDialogState(() {
-                                  selectedRubroId = val;
-                                });
-                              },
-                              onCreateNew: (query) =>
-                                  openCreateRubro(suggestedName: query),
-                              createLabelBuilder: (query) =>
-                                  query.trim().isEmpty
-                                      ? 'Crear nuevo rubro'
-                                      : 'Crear rubro "${query.trim()}"',
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            tooltip: 'Crear nuevo rubro',
-                            onPressed: () => openCreateRubro(),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-            footerActions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar')),
-              Consumer<CatalogProvider>(
-                builder: (_, p, __) => FilledButton(
-                  onPressed: p.isLoading
-                      ? null
-                      : () async {
-                          if (nameCtrl.text.trim().isEmpty) return;
-                          final newId = await p.createCategory(
-                            nameCtrl.text.trim(),
-                            rubroId: isPremium ? selectedRubroId : null,
-                          );
-                          if (newId != null && ctx.mounted) {
-                            Navigator.pop(ctx, newId);
-                          }
-                        },
-                  child: const Text('Crear'),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+    final createdId = await CatalogQuickCreateDialogs.showCreateCategory(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una categoría rápida para este producto',
     );
     if (createdId != null && mounted) {
+      List<Category> currentCategories;
+      try {
+        currentCategories = context.read<CatalogProvider>().categories;
+      } catch (_) {
+        currentCategories = widget.provider.categories;
+      }
       setState(() {
         _categoryId = createdId;
+        _applyCategoryDefaultUnitIfUntouched(createdId, currentCategories);
       });
     }
   }
 
   Future<void> _showCreateBrandQuickDialog({String? initialName}) async {
-    final nameCtrl = TextEditingController(text: initialName ?? '');
-    final createdId = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => AppModalShell(
-        title: 'Nueva Marca',
-        subtitle: 'Creá una marca rápida para asignarla al producto',
-        icon: Icons.branding_watermark_outlined,
-        accent: AppModalAccent.blue,
-        compact: true,
-        maxWidth: 440,
-        onClose: () => Navigator.pop(ctx),
-        body: TextField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Nombre',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.branding_watermark_outlined),
-          ),
-          autofocus: true,
-        ),
-        footerActions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          Consumer<CatalogProvider>(
-            builder: (_, p, __) => FilledButton(
-              onPressed: p.isLoading
-                  ? null
-                  : () async {
-                      if (nameCtrl.text.trim().isEmpty) return;
-                      final newId = await p.createBrand(nameCtrl.text.trim());
-                      if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
-                    },
-              child: const Text('Crear'),
-            ),
-          ),
-        ],
-      ),
+    final createdId = await CatalogQuickCreateDialogs.showCreateBrand(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una marca rápida para asignarla al producto',
     );
-    if (createdId != null && mounted) setState(() => _brandId = createdId);
+    if (createdId != null && mounted) {
+      setState(() => _brandId = createdId);
+    }
   }
 
   Widget _buildBrandSelector(List<Brand> brands) {
@@ -4298,6 +4911,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             ],
             onChanged: (val) => setState(() => _brandId = val),
             onCreateNew: (query) => _showCreateBrandQuickDialog(initialName: query),
+            createLabelBuilder: (query) => 'Crear marca "${query.trim()}"',
           ),
         ),
         const SizedBox(width: 8),
@@ -4657,38 +5271,38 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
-  List<DropdownMenuItem<String>> _buildUnitDropdownItems(bool isHardwareStore) {
-    final items = <MapEntry<String, String>>[
-      const MapEntry('un', 'Unidades'),
-      const MapEntry('kg', 'Kilogramos'),
-      const MapEntry('g', 'Gramos'),
-      const MapEntry('lt', 'Litros'),
-    ];
-    const hardwareExtras = <MapEntry<String, String>>[
-      MapEntry('mt', 'Metros (mt)'),
-      MapEntry('m2', 'Metros² (m²)'),
-      MapEntry('m3', 'Metros³ (m³)'),
-      MapEntry('bolsa', 'Bolsa'),
-      MapEntry('rollo', 'Rollo'),
-      MapEntry('caja', 'Caja'),
-      MapEntry('par', 'Par'),
-    ];
+  static const Map<String, String> _unitDropdownLabels = {
+    'un': 'Unidades',
+    'kg': 'Kilogramos',
+    'g': 'Gramos',
+    'lt': 'Litros',
+    'mt': 'Metros (mt)',
+    'm2': 'Metros² (m²)',
+    'm3': 'Metros³ (m³)',
+    'bolsa': 'Bolsa',
+    'rollo': 'Rollo',
+    'caja': 'Caja',
+    'par': 'Par',
+    'docena': 'Docenas',
+  };
 
-    if (isHardwareStore) {
-      items.addAll(hardwareExtras);
-    } else {
-      for (final extra in hardwareExtras) {
-        if (extra.key == _unitType) {
-          items.add(extra);
-        }
-      }
-    }
+  List<DropdownMenuItem<String>> _buildUnitDropdownItems(
+    BusinessVerticalProfile profile,
+  ) {
+    final items = <MapEntry<String, String>>[
+      for (final key in profile.allowedUnitKeys)
+        MapEntry(key, _unitDropdownLabels[key] ?? Product.shortLabelFor(key)),
+    ];
 
     final normalizedCurrent = _unitType.trim();
     if (normalizedCurrent.isNotEmpty &&
         !items.any((entry) => entry.key == normalizedCurrent)) {
       items.add(
-        MapEntry(normalizedCurrent, Product.shortLabelFor(normalizedCurrent)),
+        MapEntry(
+          normalizedCurrent,
+          _unitDropdownLabels[normalizedCurrent] ??
+              Product.shortLabelFor(normalizedCurrent),
+        ),
       );
     }
 
@@ -4705,6 +5319,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   void _onUnitTypeChanged(String? val) {
     final nextUnit = (val == null || val.trim().isEmpty) ? 'un' : val.trim();
     setState(() {
+      _userCustomizedUnit = true;
       _unitType = nextUnit;
       // Unidades discretas (un, bolsa, rollo, caja, par) NO activan fraccionado por defecto;
       // unidades métricas/peso/líquido sí habilitan venta decimal/corte.
@@ -4712,10 +5327,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     });
   }
 
-  void _onFractionalSwitchChanged(bool v, bool isHardwareStore) {
+  void _onFractionalSwitchChanged(bool v, BusinessVerticalProfile profile) {
     setState(() {
+      _userCustomizedUnit = true;
       _isSoldByWeight = v;
-      if (!isHardwareStore) {
+      if (!profile.isHardwareStore) {
         if (v && Product.discreteUnitTypes.contains(_unitType)) {
           _unitType = 'kg';
         } else if (!v) {
@@ -4727,8 +5343,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Widget _buildUnitAndWeightSection({
     required bool isNarrow,
-    required bool isHardwareStore,
+    required BusinessVerticalProfile profile,
   }) {
+    final showFractionSwitch = profile.showFractionSwitchInForm || _isSoldByWeight;
     final unitDropdown = DropdownButtonFormField<String>(
       key: ValueKey('unit_type_${isNarrow ? 'narrow' : 'wide'}_$_unitType'),
       isExpanded: true,
@@ -4738,7 +5355,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         prefixIcon: Icon(Icons.square_foot),
         isDense: true,
       ),
-      items: _buildUnitDropdownItems(isHardwareStore),
+      items: _buildUnitDropdownItems(profile),
       onChanged: _onUnitTypeChanged,
     );
 
@@ -4747,13 +5364,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       dense: true,
       contentPadding: EdgeInsets.zero,
       title: Text(
-        isHardwareStore
-            ? (isNarrow ? 'Permite venta fraccionada / corte' : 'Permite fraccionar')
-            : (isNarrow ? 'Venta p/peso (balanza)' : 'Venta p/peso'),
+        isNarrow
+            ? profile.weightSwitchLabelNarrow
+            : profile.weightSwitchLabelWide,
         style: isNarrow ? null : const TextStyle(fontSize: 13),
       ),
       value: _isSoldByWeight,
-      onChanged: (v) => _onFractionalSwitchChanged(v, isHardwareStore),
+      onChanged: (v) => _onFractionalSwitchChanged(v, profile),
     );
 
     final activeSwitch = SwitchListTile(
@@ -4768,7 +5385,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
 
     final unitShort = Product.shortLabelFor(_unitType);
-    final Widget fractionalExplanationBanner = isHardwareStore
+    final Widget fractionalExplanationBanner = profile.showFractionalExplanationBanner
         ? Container(
             key: const ValueKey('product_fractional_explanation_banner'),
             margin: const EdgeInsets.only(top: 6),
@@ -4820,9 +5437,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           unitDropdown,
-          fractionSwitch,
+          if (showFractionSwitch) fractionSwitch,
           activeSwitch,
-          if (isHardwareStore) fractionalExplanationBanner,
+          if (profile.showFractionalExplanationBanner)
+            fractionalExplanationBanner,
         ],
       );
     }
@@ -4832,14 +5450,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       children: [
         Row(
           children: [
-            Expanded(flex: 4, child: unitDropdown),
-            const SizedBox(width: 10),
-            Expanded(flex: 4, child: fractionSwitch),
-            const SizedBox(width: 8),
-            Expanded(flex: 4, child: activeSwitch),
+            Expanded(flex: showFractionSwitch ? 4 : 6, child: unitDropdown),
+            if (showFractionSwitch) ...[
+              const SizedBox(width: 10),
+              Expanded(flex: 4, child: fractionSwitch),
+            ],
+            SizedBox(width: showFractionSwitch ? 8 : 12),
+            Expanded(flex: showFractionSwitch ? 4 : 6, child: activeSwitch),
           ],
         ),
-        if (isHardwareStore) fractionalExplanationBanner,
+        if (profile.showFractionalExplanationBanner) fractionalExplanationBanner,
       ],
     );
   }
@@ -4857,12 +5477,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     } catch (_) {}
     final canSeeSupplier = settingsProv?.features.suppliers ?? true;
     final isResponsableInscripto = settingsProv?.settings?.isResponsableInscripto ?? false;
-    final isHardwareStore = settingsProv?.safeIsHardwareStore ?? false;
-    final isNarrow = MediaQuery.of(context).size.width < 450;
-    
     final categories = provider.categories;
     final brands = provider.brands;
     final suppliers = supplierProv.suppliers;
+    final baseProfile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final formProfile = _resolveEffectiveFormProfile(settingsProv, categories);
+    final isNarrow = MediaQuery.of(context).size.width < 450;
     final isBusy = provider.isLoading || _isUploadingImage;
 
     final screenSize = MediaQuery.of(context).size;
@@ -5004,9 +5625,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  isHardwareStore
-                                      ? 'Artículo / Material'
-                                      : 'Producto Físico',
+                                  baseProfile.productTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5020,9 +5639,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  isHardwareStore
-                                      ? 'Servicio / Flete'
-                                      : 'Servicio / Honorario',
+                                  baseProfile.serviceTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5036,9 +5653,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  isHardwareStore
-                                      ? 'Kit / Fracción'
-                                      : 'Combo / Fracción',
+                                  baseProfile.comboTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5091,12 +5706,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             focusNode: _nameFocusNode,
                             decoration: InputDecoration(
                               labelText: _isService
-                                  ? (isHardwareStore
-                                      ? 'Nombre del Servicio / Flete *'
-                                      : 'Nombre del Servicio / Honorario *')
-                                  : (isHardwareStore
-                                      ? 'Nombre del Artículo / Material *'
-                                      : 'Nombre del Producto *'),
+                                  ? baseProfile.serviceNameFieldLabel
+                                  : baseProfile.productNameFieldLabel,
                               prefixIcon: const Icon(Icons.label_outline),
                               isDense: true,
                             ),
@@ -5123,9 +5734,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               decoration: InputDecoration(
                                 labelText: 'Código de Barras (EAN)',
                                 prefixIcon: const Icon(Icons.qr_code_scanner),
-                                helperText: isHardwareStore
-                                    ? 'Opcional en artículos a granel / corte'
-                                    : 'Dejar vacío si es pesable',
+                                helperText: baseProfile.barcodeHelperText,
                                 isDense: true,
                               ),
                             ),
@@ -5147,12 +5756,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       focusNode: _nameFocusNode,
                                       decoration: InputDecoration(
                                         labelText: _isService
-                                            ? (isHardwareStore
-                                                ? 'Nombre del Servicio / Flete *'
-                                                : 'Nombre del Servicio / Honorario *')
-                                            : (isHardwareStore
-                                                ? 'Nombre del Artículo / Material *'
-                                                : 'Nombre del Producto *'),
+                                            ? baseProfile.serviceNameFieldLabel
+                                            : baseProfile.productNameFieldLabel,
                                         prefixIcon: const Icon(Icons.label_outline),
                                         isDense: true,
                                       ),
@@ -5191,9 +5796,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                 prefixIcon: const Icon(Icons.qr_code_scanner),
                                                 helperText: _isService
                                                     ? 'No aplica en servicios'
-                                                    : (isHardwareStore
-                                                        ? 'Opcional en artículos a granel / corte'
-                                                        : 'Dejar vacío si es pesable'),
+                                                    : baseProfile.barcodeHelperText,
                                                 isDense: true,
                                               ),
                                             ),
@@ -5269,6 +5872,20 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                         ],
                                         onChanged: (val) =>
                                             setState(() => _supplierId = val),
+                                        onCreateNew: (query) async {
+                                          final createdId =
+                                              await CatalogQuickCreateDialogs
+                                                  .showCreateSupplier(
+                                            context,
+                                            initialQuery: query,
+                                          );
+                                          if (createdId != null && mounted) {
+                                            setState(
+                                                () => _supplierId = createdId);
+                                          }
+                                        },
+                                        createLabelBuilder: (query) =>
+                                            'Crear proveedor "${query.trim()}"',
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -5277,10 +5894,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       child: IconButton.filledTonal(
                                         icon: const Icon(Icons.add),
                                         onPressed: () async {
-                                          final createdId = await showDialog<int>(
-                                            context: context,
-                                            builder: (ctx) => const SupplierFormDialog(),
-                                          );
+                                          final createdId =
+                                              await CatalogQuickCreateDialogs
+                                                  .showCreateSupplier(context);
                                           if (createdId != null && mounted) {
                                             setState(() => _supplierId = createdId);
                                           }
@@ -5306,7 +5922,21 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: ProductHardwareAndSupplierFieldsSection(
-                              isHardwareStore: isHardwareStore,
+                              isHardwareStore: formProfile.isHardwareStore,
+                              profile: formProfile,
+                              showDimensionHelper: formProfile.canUseHardwareCalculator,
+                              productNameGetter: () => _nameCtrl.text.trim(),
+                              onApplyHardwareDimension: (specText, calcConfig) {
+                                setState(() {
+                                  _technicalSpecCtrl.text = specText;
+                                  _calcConfig = calcConfig;
+                                  _clearCalcConfig = false;
+                                  if (!_isSoldByWeight &&
+                                      (_unitType == 'm2' || _unitType == 'mt')) {
+                                    _isSoldByWeight = true;
+                                  }
+                                });
+                              },
                               isService: _isService,
                               isCombo: _isCombo,
                               isNarrow: isNarrow,
@@ -5543,14 +6173,16 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                         ),
                                         _buildUnitAndWeightSection(
                                           isNarrow: isNarrow,
-                                          isHardwareStore: isHardwareStore,
+                                          profile: formProfile,
                                         ),
-                                        if (isHardwareStore) ...[
+                                        if (formProfile.canUseHardwareCalculator) ...[
                                           const SizedBox(height: 10),
                                           ProductF7CalcConfigPanel(
                                             calcConfig: _calcConfig,
                                             productNameHint: _nameCtrl.text.trim(),
                                             productNameListenable: _nameCtrl,
+                                            technicalSpecHint: _technicalSpecCtrl.text.trim(),
+                                            technicalSpecListenable: _technicalSpecCtrl,
                                             onChanged: (nextConfig) {
                                               setState(() {
                                                 _calcConfig = nextConfig;
@@ -5566,12 +6198,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                             try {
                                               sp = ctx.watch<SettingsProvider?>();
                                             } catch (_) {}
-                                            final canUseBatches = !isHardwareStore &&
-                                                (sp == null
-                                                    ? true
-                                                    : (sp.features.batchExpiration || sp.features.production));
-                                            final canUseProduction = !isHardwareStore &&
-                                                (sp == null ? true : sp.features.production);
+                                            final canUseBatches = sp == null
+                                                ? true
+                                                : (sp.features.batchExpiration || sp.features.production);
+                                            final canUseProduction =
+                                                sp == null ? true : sp.features.production;
                                             final showExpBox = canUseBatches ||
                                                 _trackBatches ||
                                                 _expirationDate != null ||
@@ -8233,7 +8864,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (message != null) {
       SnackBarService.success(context, '¡Precios actualizados! $message');
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     } else {
       SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al actualizar precios.');
     }
@@ -8928,6 +9559,608 @@ class _QuickPriceEditDialogState extends State<_QuickPriceEditDialog> {
               : const Icon(Icons.check_rounded, size: 18),
           label: const Text('Guardar Precio'),
           onPressed: _saving ? null : _save,
+        ),
+      ],
+    );
+  }
+}
+
+/// Modal liviano y buscable para cambiar de proveedor al instante desde el banner del catálogo.
+class _QuickSupplierPickerDialog extends StatefulWidget {
+  final int? currentSupplierId;
+
+  const _QuickSupplierPickerDialog({this.currentSupplierId});
+
+  @override
+  State<_QuickSupplierPickerDialog> createState() =>
+      _QuickSupplierPickerDialogState();
+}
+
+class _QuickSupplierPickerDialogState
+    extends State<_QuickSupplierPickerDialog> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final supplierProv = context.watch<SupplierProvider>();
+    final sorted = sortByAlphabeticalName(
+      supplierProv.suppliers,
+      (s) => s.name,
+    );
+    final normQuery = normalizeSearchText(_query);
+    final filtered = normQuery.isEmpty
+        ? sorted
+        : sorted.where((s) {
+            final nameMatch = normalizeSearchText(s.name).contains(normQuery);
+            final cuitMatch = s.cuit != null &&
+                normalizeSearchText(s.cuit!).contains(normQuery);
+            return nameMatch || cuitMatch;
+          }).toList();
+
+    final maxListHeight =
+        math.min(340.0, MediaQuery.of(context).size.height * 0.48);
+
+    return AppModalShell(
+      title: 'Cambiar Proveedor',
+      subtitle: 'Elegí otro proveedor para filtrar el catálogo al instante',
+      icon: Icons.local_shipping_outlined,
+      accent: AppModalAccent.teal,
+      compact: true,
+      maxWidth: 440,
+      onClose: () => Navigator.of(context).pop(),
+      topBar: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceMuted,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: TextField(
+          key: const ValueKey('quick_supplier_switcher_search_field'),
+          controller: _searchCtrl,
+          autofocus: true,
+          onChanged: (v) => setState(() => _query = v),
+          decoration: InputDecoration(
+            hintText: 'Buscar proveedor o CUIT...',
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+            prefixIcon: const Icon(Icons.search, size: 19),
+            suffixIcon: _query.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 17),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      setState(() => _query = '');
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          ),
+        ),
+      ),
+      bodyPadding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      body: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxListHeight),
+        child: supplierProv.isLoading && sorted.isEmpty
+            ? const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  if (normQuery.isEmpty)
+                    ListTile(
+                      dense: true,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      tileColor: AppColors.surfaceMuted,
+                      leading: const Icon(Icons.filter_alt_off_outlined,
+                          size: 18, color: AppColors.textSecondary),
+                      title: const Text(
+                        '— Ver todos los proveedores —',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      onTap: () => Navigator.of(context).pop(-1),
+                    ),
+                  if (filtered.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text(
+                          'No hay proveedores que coincidan.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ...filtered.map((s) {
+                      final isSelected = s.id == widget.currentSupplierId;
+                      final hasCuit =
+                          s.cuit != null && s.cuit!.trim().isNotEmpty;
+                      return ListTile(
+                        dense: true,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tileColor: isSelected ? AppColors.primarySoft : null,
+                        title: Text(
+                          s.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: isSelected
+                                ? AppColors.primaryDark
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                        subtitle: hasCuit
+                            ? Text(
+                                'CUIT: ${s.cuit!.trim()}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Colors.blueGrey.shade600,
+                                ),
+                              )
+                            : null,
+                        trailing: isSelected
+                            ? const Icon(
+                                Icons.check_rounded,
+                                size: 18,
+                                color: AppColors.primaryDark,
+                              )
+                            : null,
+                        onTap: () => Navigator.of(context).pop(s.id),
+                      );
+                    }),
+                ],
+              ),
+      ),
+      footerLeading: TextButton.icon(
+        icon: const Icon(Icons.add, size: 17),
+        label: const Text('Nuevo Proveedor'),
+        onPressed: () async {
+          final createdId = await CatalogQuickCreateDialogs.showCreateSupplier(
+            context,
+            initialQuery: _query,
+          );
+          if (createdId != null && context.mounted) {
+            Navigator.of(context).pop(createdId);
+          }
+        },
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Mini-modal de clasificación rápida para 1 producto (Categoría, Marca, Proveedor y Ubicación)
+/// con buscador y alta rápida "+" inline sin necesidad de abrir la ficha completa.
+class _QuickProductClassificationDialog extends StatefulWidget {
+  final CatalogProvider provider;
+  final Product product;
+
+  const _QuickProductClassificationDialog({
+    required this.provider,
+    required this.product,
+  });
+
+  @override
+  State<_QuickProductClassificationDialog> createState() =>
+      _QuickProductClassificationDialogState();
+}
+
+class _QuickProductClassificationDialogState
+    extends State<_QuickProductClassificationDialog> {
+  late int? _categoryId;
+  late int? _brandId;
+  late int? _supplierId;
+  late final TextEditingController _storageLocationCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryId = widget.product.category?.id;
+    _brandId = widget.product.brand?.id;
+    _supplierId = widget.product.supplier?.id;
+    _storageLocationCtrl = TextEditingController(
+      text: widget.product.storageLocation ?? '',
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.provider.categories.isEmpty ||
+          widget.provider.brands.isEmpty) {
+        widget.provider.loadMetadata();
+      }
+      final canSeeSupplier =
+          context.read<SettingsProvider?>()?.features.suppliers ?? false;
+      if (canSeeSupplier) {
+        try {
+          final supProv = context.read<SupplierProvider?>();
+          if (supProv != null &&
+              supProv.suppliers.isEmpty &&
+              !supProv.isLoading) {
+            supProv.fetchSuppliers();
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _storageLocationCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createCategory({String? initialName}) async {
+    final createdId = await CatalogQuickCreateDialogs.showCreateCategory(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una categoría rápida para este producto',
+    );
+    if (createdId != null && mounted) {
+      setState(() => _categoryId = createdId);
+    }
+  }
+
+  Future<void> _createBrand({String? initialName}) async {
+    final createdId = await CatalogQuickCreateDialogs.showCreateBrand(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una marca rápida para este producto',
+    );
+    if (createdId != null && mounted) {
+      setState(() => _brandId = createdId);
+    }
+  }
+
+  Future<void> _createSupplier({String? initialQuery}) async {
+    final createdId = await CatalogQuickCreateDialogs.showCreateSupplier(
+      context,
+      initialQuery: initialQuery,
+    );
+    if (createdId != null && mounted) {
+      setState(() => _supplierId = createdId);
+    }
+  }
+
+  Future<void> _save({
+    required bool canSeeSupplier,
+    required bool showStorageLocation,
+  }) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+
+    final locText = _storageLocationCtrl.text.trim();
+    final payload = <String, dynamic>{
+      'category_id': _categoryId,
+      'brand_id': _brandId,
+      if (canSeeSupplier) 'supplier_id': _supplierId,
+      if (showStorageLocation)
+        'storage_location': locText.isEmpty ? null : locText,
+    };
+
+    final ok = await widget.provider.updateProduct(widget.product.id, payload);
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (ok) {
+      final updated = widget.provider.lastUpdatedProduct;
+      if (updated != null) {
+        try {
+          context.read<PosProvider?>()?.syncUpdatedCatalogProduct(updated);
+        } catch (_) {}
+        try {
+          context.read<OfferProvider?>()?.syncUpdatedProduct(updated);
+        } catch (_) {}
+      }
+      Navigator.of(context).pop(true);
+      SnackBarService.success(
+        context,
+        'Clasificación de "${widget.product.name}" actualizada.',
+      );
+    } else {
+      SnackBarService.error(
+        context,
+        widget.provider.errorMessage ?? 'No se pudo actualizar el producto.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    final catalogProv = context.watch<CatalogProvider>();
+    final sp = context.watch<SettingsProvider?>();
+    final profile = sp?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final showStorageLocation =
+        profile.showLocationColumnInCatalog && !p.isService;
+    SupplierProvider? supplierProv;
+    try {
+      supplierProv = context.watch<SupplierProvider?>();
+    } catch (_) {}
+    final canSeeSupplier =
+        (sp?.features.suppliers ?? false) && supplierProv != null;
+
+    final sortedCategories =
+        sortByAlphabeticalName(catalogProv.categories, (c) => c.name);
+    final sortedBrands =
+        sortByAlphabeticalName(catalogProv.brands, (b) => b.name);
+    final sortedSuppliers = sortByAlphabeticalName(
+      supplierProv?.suppliers ?? const <Supplier>[],
+      (s) => s.name,
+    );
+
+    final hasMatchingCat =
+        _categoryId != null && sortedCategories.any((c) => c.id == _categoryId);
+    final showFallbackCat =
+        !hasMatchingCat && _categoryId != null && p.category?.id == _categoryId;
+
+    final hasMatchingBrand =
+        _brandId != null && sortedBrands.any((b) => b.id == _brandId);
+    final showFallbackBrand =
+        !hasMatchingBrand && _brandId != null && p.brand?.id == _brandId;
+
+    final hasMatchingSup =
+        _supplierId != null && sortedSuppliers.any((s) => s.id == _supplierId);
+    final showFallbackSup =
+        !hasMatchingSup && _supplierId != null && p.supplier?.id == _supplierId;
+
+    return AppModalShell(
+      title: 'Clasificación Rápida',
+      subtitle: p.name,
+      icon: Icons.label_important_outline_rounded,
+      accent: AppModalAccent.indigo,
+      compact: true,
+      maxWidth: 480,
+      onClose: _saving ? null : () => Navigator.of(context).pop(),
+      bodyPadding: const EdgeInsets.all(18),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: SearchableSelectField<int?>(
+                  key: const ValueKey('quick_classify_category_field'),
+                  value: (hasMatchingCat || showFallbackCat) ? _categoryId : null,
+                  clearValue: null,
+                  isDense: true,
+                  enabled: !_saving,
+                  labelText: 'Categoría',
+                  dialogTitle: 'Seleccionar Categoría',
+                  searchHintText: 'Buscar categoría o rubro...',
+                  prefixIcon: Icons.category_outlined,
+                  border: const OutlineInputBorder(),
+                  options: [
+                    const SearchableSelectOption<int?>(
+                      value: null,
+                      label: '— Sin categoría —',
+                      isResetOption: true,
+                    ),
+                    if (showFallbackCat && p.category != null)
+                      SearchableSelectOption<int?>(
+                        value: p.category!.id,
+                        label: p.category!.name,
+                      ),
+                    ...sortedCategories.map((c) {
+                      final rId = c.rubroId ?? c.rubro?.id;
+                      final rubroName = (rId != null
+                              ? catalogProv.rubros
+                                  .where((r) => r.id == rId)
+                                  .firstOrNull
+                                  ?.name
+                              : null) ??
+                          c.rubro?.name;
+                      final hasRubro =
+                          rubroName != null && rubroName.trim().isNotEmpty;
+                      return SearchableSelectOption<int?>(
+                        value: c.id,
+                        label: c.name,
+                        subtitle: hasRubro ? 'Rubro: $rubroName' : null,
+                        searchKeywords: hasRubro ? [rubroName] : const [],
+                      );
+                    }),
+                  ],
+                  onChanged: (val) => setState(() => _categoryId = val),
+                  onCreateNew: (q) => _createCategory(initialName: q),
+                  createLabelBuilder: (q) => 'Crear categoría "${q.trim()}"',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Crear nueva categoría',
+                child: IconButton.filledTonal(
+                  key: const ValueKey('quick_classify_create_category_btn'),
+                  icon: const Icon(Icons.add),
+                  onPressed: _saving ? null : () => _createCategory(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: SearchableSelectField<int?>(
+                  key: const ValueKey('quick_classify_brand_field'),
+                  value: (hasMatchingBrand || showFallbackBrand) ? _brandId : null,
+                  clearValue: null,
+                  isDense: true,
+                  enabled: !_saving,
+                  labelText: 'Marca',
+                  dialogTitle: 'Seleccionar Marca',
+                  searchHintText: 'Buscar marca...',
+                  prefixIcon: Icons.branding_watermark_outlined,
+                  border: const OutlineInputBorder(),
+                  options: [
+                    const SearchableSelectOption<int?>(
+                      value: null,
+                      label: '— Sin marca —',
+                      isResetOption: true,
+                    ),
+                    if (showFallbackBrand && p.brand != null)
+                      SearchableSelectOption<int?>(
+                        value: p.brand!.id,
+                        label: p.brand!.name,
+                      ),
+                    ...sortedBrands.map(
+                      (b) => SearchableSelectOption<int?>(
+                        value: b.id,
+                        label: b.name,
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) => setState(() => _brandId = val),
+                  onCreateNew: (q) => _createBrand(initialName: q),
+                  createLabelBuilder: (q) => 'Crear marca "${q.trim()}"',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Crear nueva marca',
+                child: IconButton.filledTonal(
+                  key: const ValueKey('quick_classify_create_brand_btn'),
+                  icon: const Icon(Icons.add),
+                  onPressed: _saving ? null : () => _createBrand(),
+                ),
+              ),
+            ],
+          ),
+          if (canSeeSupplier) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: SearchableSelectField<int?>(
+                    key: const ValueKey('quick_classify_supplier_field'),
+                    value:
+                        (hasMatchingSup || showFallbackSup) ? _supplierId : null,
+                    clearValue: null,
+                    isDense: true,
+                    enabled: !_saving,
+                    labelText: 'Proveedor',
+                    dialogTitle: 'Seleccionar Proveedor',
+                    searchHintText: 'Buscar proveedor o CUIT...',
+                    prefixIcon: Icons.local_shipping_outlined,
+                    border: const OutlineInputBorder(),
+                    options: [
+                      const SearchableSelectOption<int?>(
+                        value: null,
+                        label: '— Sin proveedor —',
+                        isResetOption: true,
+                      ),
+                      if (showFallbackSup && p.supplier != null)
+                        SearchableSelectOption<int?>(
+                          value: p.supplier!.id,
+                          label: p.supplier!.name,
+                        ),
+                      ...sortedSuppliers.map((s) {
+                        final hasCuit =
+                            s.cuit != null && s.cuit!.trim().isNotEmpty;
+                        return SearchableSelectOption<int?>(
+                          value: s.id,
+                          label: s.name,
+                          subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                          searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                        );
+                      }),
+                    ],
+                    onChanged: (val) => setState(() => _supplierId = val),
+                    onCreateNew: (q) => _createSupplier(initialQuery: q),
+                    createLabelBuilder: (q) => 'Crear proveedor "${q.trim()}"',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Crear nuevo proveedor',
+                  child: IconButton.filledTonal(
+                    key: const ValueKey('quick_classify_create_supplier_btn'),
+                    icon: const Icon(Icons.add),
+                    onPressed: _saving ? null : () => _createSupplier(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (showStorageLocation) ...[
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('quick_classify_location_field'),
+              controller: _storageLocationCtrl,
+              enabled: !_saving,
+              decoration: const InputDecoration(
+                labelText: 'Ubicación en depósito / estantería',
+                hintText: 'Ej: Estante 2, Pasillo A, Galpón...',
+                prefixIcon: Icon(Icons.location_on_outlined, size: 19),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onSubmitted: (_) => _save(
+                canSeeSupplier: canSeeSupplier,
+                showStorageLocation: showStorageLocation,
+              ),
+            ),
+          ],
+        ],
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey('quick_classify_save_btn'),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.indigo),
+          onPressed: _saving
+              ? null
+              : () => _save(
+                    canSeeSupplier: canSeeSupplier,
+                    showStorageLocation: showStorageLocation,
+                  ),
+          icon: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.check_rounded, size: 18),
+          label: const Text('Guardar'),
         ),
       ],
     );

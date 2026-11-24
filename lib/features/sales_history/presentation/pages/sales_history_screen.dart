@@ -1301,12 +1301,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'has_discount': i.hasDiscount,
             'discount_label': i.discountLabel ?? '',
             'product_name': i.productName,
+            'custom_details': i.effectiveReceiptDetails(),
             'product': {
               'name': i.productName,
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
               'unit_type': i.unitType,
+              'technical_spec': i.technicalSpec,
+              'calc_config': i.calcConfig,
               'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
@@ -1378,6 +1381,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               costPrice: item.unitPrice,
               ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
+              unitType: item.unitType,
+              technicalSpec: item.technicalSpec,
+              calcConfig: item.calcConfig,
               isService: item.isService,
               stock: 0,
               internalCode: item.internalCode,
@@ -1385,6 +1391,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               active: true,
             ),
             quantity: item.quantity,
+            customDetails: item.customDetails,
             promotionalPrice:
                 item.regularPrice > item.unitPrice + 0.01 ? item.unitPrice : null,
             promotionalLabel: item.discountLabel,
@@ -1661,12 +1668,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'has_discount': i.hasDiscount,
             'discount_label': i.discountLabel ?? '',
             'product_name': i.productName,
+            'custom_details': i.effectiveReceiptDetails(),
             'product': {
               'name': i.productName,
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
               'unit_type': i.unitType,
+              'technical_spec': i.technicalSpec,
+              'calc_config': i.calcConfig,
               'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
@@ -1719,6 +1729,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               costPrice: item.unitPrice,
               ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
+              unitType: item.unitType,
+              technicalSpec: item.technicalSpec,
+              calcConfig: item.calcConfig,
               isService: item.isService,
               stock: 0,
               internalCode: item.internalCode,
@@ -1726,6 +1739,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               active: true,
             ),
             quantity: item.quantity,
+            customDetails: item.customDetails,
             promotionalPrice:
                 item.regularPrice > item.unitPrice + 0.01 ? item.unitPrice : null,
             promotionalLabel: item.discountLabel,
@@ -2155,10 +2169,10 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                                           style: textStyle.copyWith(fontWeight: FontWeight.w500),
                                         ),
                                       ),
-                                      if (item.customDetails != null &&
-                                          item.customDetails!.trim().isNotEmpty)
+                                      if (item.effectiveReceiptDetails() != null &&
+                                          item.effectiveReceiptDetails()!.isNotEmpty)
                                         Text(
-                                          item.customDetails!.trim(),
+                                          item.effectiveReceiptDetails()!,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(

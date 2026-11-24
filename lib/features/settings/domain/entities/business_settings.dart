@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../../core/config/business_vertical_profile.dart';
 import '../../../../core/utils/image_url_resolver.dart';
 
 class FeatureFlags extends Equatable {
@@ -104,7 +105,8 @@ class BusinessSettings extends Equatable {
   /// (`price_wholesale` / `price_card`).
   final bool ignoreProductFixedPrices;
   // [feature-flag] Tipo de negocio recibido desde la Licencia remota — solo para uso estético/visual de la UI
-  final String businessType;  // 'retail' | 'hardware_store'
+  final String businessType; // 'retail' | 'butcher' | 'hardware_store' | 'apparel' | 'tech' | 'general'
+  final List<String> secondaryBusinessTypes;
   // [feature-flags] Objeto estructurado de características habilitadas
   final FeatureFlags features;
   /// Master switch del modelo Multi-Tenant:
@@ -155,8 +157,14 @@ class BusinessSettings extends Equatable {
   bool get canUseBatchExpiration => features.batchExpiration || features.production;
   bool get canUseProduction => features.production;
 
-  /// Alias legado — mantenido para retrocompatibilidad durante la transición.
-  bool get isHardwareStore => businessType == 'hardware_store';
+  /// Alias legado — true si el rubro principal o alguno secundario es `hardware_store`.
+  bool get isHardwareStore =>
+      businessType == 'hardware_store' ||
+      secondaryBusinessTypes.contains('hardware_store');
+
+  /// Perfil visual y operativo unificado para el negocio activo.
+  BusinessVerticalProfile get verticalProfile =>
+      BusinessVerticalProfile.fromSettings(this);
 
   /// Indica si la Calculadora Rápida de Mostrador para Ferretería (Machimbre, Chapas, Pintura)
   /// está disponible. Requiere explícitamente rubro Ferretería (`hardware_store`),
@@ -295,6 +303,7 @@ class BusinessSettings extends Equatable {
     String? discountTierOnOffersMode,
     bool? ignoreProductFixedPrices,
     String? businessType,
+    List<String>? secondaryBusinessTypes,
     FeatureFlags? features,
     bool? enableAdvancedPriceTiers,
     bool? afipEnabled,
@@ -333,6 +342,8 @@ class BusinessSettings extends Equatable {
       discountTierOnOffersMode: discountTierOnOffersMode ?? this.discountTierOnOffersMode,
       ignoreProductFixedPrices: ignoreProductFixedPrices ?? this.ignoreProductFixedPrices,
       businessType: businessType ?? this.businessType,
+      secondaryBusinessTypes:
+          secondaryBusinessTypes ?? this.secondaryBusinessTypes,
       features: features ?? this.features,
       enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
       afipEnabled: afipEnabled ?? this.afipEnabled,
@@ -373,6 +384,7 @@ class BusinessSettings extends Equatable {
     this.discountTierOnOffersMode = 'best_price_wins',
     this.ignoreProductFixedPrices = true,
     this.businessType = 'retail',
+    this.secondaryBusinessTypes = const [],
     this.features = const FeatureFlags(),
     this.enableAdvancedPriceTiers = false,
     this.afipEnabled = false,
@@ -413,6 +425,7 @@ class BusinessSettings extends Equatable {
         discountTierOnOffersMode,
         ignoreProductFixedPrices,
         businessType,
+        secondaryBusinessTypes,
         features,
         enableAdvancedPriceTiers,
         afipEnabled,

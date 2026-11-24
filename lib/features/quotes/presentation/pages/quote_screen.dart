@@ -147,7 +147,10 @@ class _QuoteScreenState extends State<QuoteScreen> {
       }
     }
     if (event.logicalKey == LogicalKeyboardKey.f7) {
-      if (context.read<SettingsProvider>().canUseHardwareCalculator) {
+      final settingsProv = context.read<SettingsProvider>();
+      final rubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+          const [];
+      if (settingsProv.canUseHardwareCalculatorFor(rubros: rubros)) {
         _hideSearchHistoryPopover();
         _openHardwareCalculator();
         return true;
@@ -329,7 +332,15 @@ class _QuoteScreenState extends State<QuoteScreen> {
     Product? initialProduct,
     CartItem? replacingCartItem,
   }) async {
-    if (!context.read<SettingsProvider>().canUseHardwareCalculator) return;
+    final settingsProv = context.read<SettingsProvider>();
+    final rubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+        const [];
+    if (!settingsProv.canUseHardwareCalculatorFor(
+      product: initialProduct,
+      rubros: rubros,
+    )) {
+      return;
+    }
     final out = await PosHardwareCalculatorDialog.show(
       context,
       initialProduct: initialProduct,
@@ -476,90 +487,45 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   void _showWeightDialog(Product product) {
-    final ctrl = TextEditingController();
     final settingsProv = context.read<SettingsProvider>();
+    final rubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+        const [];
+    final businessUsesScale =
+        settingsProv.safeVerticalProfile.canUseScaleWeight;
+    final preferDiscreteUn = product.isDiscreteFractionalItem(
+      businessUsesScaleWeight: businessUsesScale,
+    );
     final isHardwareStore = settingsProv.safeIsHardwareStore;
-    final canUseCalc = settingsProv.canUseHardwareCalculator;
-    final isMetricOrHardware = isHardwareStore || product.isMetricOrLiquidUnit;
-    final unitShort = product.unitShortLabel;
-    showDialog(
+    final canUseCalc = settingsProv.canUseHardwareCalculatorFor(
+      product: product,
+      rubros: rubros,
+    );
+    final isMetricOrHardware = isHardwareStore ||
+        product.isMetricOrLiquidUnit ||
+        preferDiscreteUn ||
+        !businessUsesScale;
+    final unitShort = Product.resolveQuantityUnitLabel(
+      unitType: product.unitType,
+      isSoldByWeight: product.isSoldByWeight,
+      preferDiscreteUn: preferDiscreteUn,
+    );
+    showDialog<void>(
       context: context,
-      builder: (_) => ValueListenableBuilder<TextEditingValue>(
-        valueListenable: ctrl,
-        builder: (ctx, val, __) {
-          final valid = double.tryParse(val.text.replaceAll(',', '.')) != null &&
-              double.parse(val.text.replaceAll(',', '.')) > 0;
-          return AppModalShell(
-            title: isMetricOrHardware
-                ? 'Cantidad / Medida ($unitShort) - ${product.name}'
-                : 'Peso (Kg) - ${product.name}',
-            icon: isMetricOrHardware
-                ? Icons.straighten_rounded
-                : Icons.scale_rounded,
-            accent: isMetricOrHardware
-                ? AppModalAccent.teal
-                : AppModalAccent.amber,
-            compact: true,
-            maxWidth: 420,
-            useAlertDialogWrapper: true,
-            onClose: () => Navigator.pop(ctx),
-            bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-            body: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText:
-                        isMetricOrHardware ? 'Cantidad ($unitShort)' : 'Kg',
-                    suffixText:
-                        isMetricOrHardware ? unitShort.toUpperCase() : 'KG',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                if (canUseCalc) ...[
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _openHardwareCalculator(initialProduct: product);
-                    },
-                    icon: const Icon(Icons.calculate_outlined, size: 17),
-                    label: const Text('Abrir Calculadora F7'),
-                  ),
-                ],
-              ],
-            ),
-            footerActions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar')),
-              FilledButton(
-                onPressed: valid
-                    ? () {
-                        final qty =
-                            double.parse(ctrl.text.replaceAll(',', '.'));
-                        context
-                            .read<QuoteProvider>()
-                            .addToCart(product, quantity: qty);
-                        Navigator.pop(ctx);
-                        _searchCtrl.clear();
-                        setState(() {
-                          _searchQuery = '';
-                          _searchResults = [];
-                        });
-                        _searchFocus.requestFocus();
-                      }
-                    : null,
-                child: const Text('Agregar'),
-              ),
-            ],
-          );
+      builder: (ctx) => _QuoteFractionalQuantityDialog(
+        product: product,
+        unitShort: unitShort,
+        isMetricOrHardware: isMetricOrHardware,
+        canUseCalc: canUseCalc,
+        onConfirm: (qty) {
+          context.read<QuoteProvider>().addToCart(product, quantity: qty);
+          _searchCtrl.clear();
+          setState(() {
+            _searchQuery = '';
+            _searchResults = [];
+          });
+          _searchFocus.requestFocus();
         },
+        onOpenCalculator: () => _openHardwareCalculator(initialProduct: product),
       ),
     );
   }
@@ -812,7 +778,10 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   ),
                 ),
               ),
-              if (context.watch<SettingsProvider>().canUseHardwareCalculator) ...[
+              if (context.watch<SettingsProvider>().canUseHardwareCalculatorFor(
+                    rubros: context.watch<CatalogProvider?>()?.safeRubros ??
+                        const [],
+                  )) ...[
                 const SizedBox(width: 10),
                 Tooltip(
                   message:
@@ -1188,15 +1157,28 @@ class _QuoteScreenState extends State<QuoteScreen> {
     final tierLabel = provider.activePriceListLabel;
     final isBase = item.activeTier == PriceTier.base;
     final isFractional = (item.quantity - item.quantity.roundToDouble()).abs() > 0.001;
-    final isHardwareStore = context.watch<SettingsProvider>().safeIsHardwareStore;
-    final isMetricOrHardware =
-        isHardwareStore || item.product.isMetricOrLiquidUnit;
-    final unitShort = item.product.unitShortLabel;
+    final settingsProv = context.watch<SettingsProvider>();
+    final isHardwareStore = settingsProv.safeIsHardwareStore;
+    final businessUsesScale =
+        settingsProv.safeVerticalProfile.canUseScaleWeight;
+    final preferDiscreteUn = item.product.isDiscreteFractionalItem(
+      businessUsesScaleWeight: businessUsesScale,
+    );
+    final isMetricOrHardware = isHardwareStore ||
+        item.product.isMetricOrLiquidUnit ||
+        preferDiscreteUn ||
+        !businessUsesScale;
+    final unitShort = Product.resolveQuantityUnitLabel(
+      unitType: item.product.unitType,
+      isSoldByWeight: item.product.isSoldByWeight,
+      preferDiscreteUn: preferDiscreteUn,
+    );
     final qtyDisplay = item.product.isSoldByWeight
-        ? '${item.quantity.toQty()} ${isMetricOrHardware ? unitShort : 'kg'}'
+        ? '${item.quantity.toQty()} $unitShort'
         : (isFractional
-            ? '${item.quantity.toQty()}${isHardwareStore ? ' $unitShort' : ''}'
+            ? '${item.quantity.toQty()} $unitShort'
             : '${item.quantity.toInt()}');
+    final effectiveDetails = item.effectiveReceiptDetails();
     return ListTile(
       dense: true,
       title: Text(item.effectiveDisplayName,
@@ -1232,11 +1214,11 @@ class _QuoteScreenState extends State<QuoteScreen> {
               ],
             ],
           ),
-          if (item.customDetails != null && item.customDetails!.trim().isNotEmpty)
+          if (effectiveDetails != null && effectiveDetails.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                '📝 ${item.customDetails!.trim()}',
+                '📝 $effectiveDetails',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1266,7 +1248,11 @@ class _QuoteScreenState extends State<QuoteScreen> {
               ? item.quantity.toQty()
               : item.quantity.toInt().toString(),
         );
-        final canCalc = context.read<SettingsProvider>().canUseHardwareCalculator;
+        final canCalc = context.read<SettingsProvider>().canUseHardwareCalculatorFor(
+              product: item.product,
+              rubros: Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+                  const [],
+            );
         bool openCalc = false;
         await showDialog(
           context: context,
@@ -1497,6 +1483,109 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
           onPressed: () => Navigator.pop(context, true),
           icon: const Icon(Icons.description_rounded),
           label: const Text('Generar'),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuoteFractionalQuantityDialog extends StatefulWidget {
+  final Product product;
+  final String unitShort;
+  final bool isMetricOrHardware;
+  final bool canUseCalc;
+  final ValueChanged<double> onConfirm;
+  final VoidCallback onOpenCalculator;
+
+  const _QuoteFractionalQuantityDialog({
+    required this.product,
+    required this.unitShort,
+    required this.isMetricOrHardware,
+    required this.canUseCalc,
+    required this.onConfirm,
+    required this.onOpenCalculator,
+  });
+
+  @override
+  State<_QuoteFractionalQuantityDialog> createState() =>
+      _QuoteFractionalQuantityDialogState();
+}
+
+class _QuoteFractionalQuantityDialogState
+    extends State<_QuoteFractionalQuantityDialog> {
+  final TextEditingController _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = double.tryParse(_ctrl.text.trim().replaceAll(',', '.'));
+    final valid = parsed != null && parsed > 0;
+    return AppModalShell(
+      title: widget.isMetricOrHardware
+          ? 'Cantidad / Medida (${widget.unitShort}) - ${widget.product.name}'
+          : 'Peso (Kg) - ${widget.product.name}',
+      icon: widget.isMetricOrHardware
+          ? Icons.straighten_rounded
+          : Icons.scale_rounded,
+      accent: widget.isMetricOrHardware
+          ? AppModalAccent.teal
+          : AppModalAccent.amber,
+      compact: true,
+      maxWidth: 420,
+      useAlertDialogWrapper: true,
+      onClose: () => Navigator.pop(context),
+      bodyPadding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: widget.isMetricOrHardware
+                  ? 'Cantidad (${widget.unitShort})'
+                  : 'Kg',
+              suffixText: widget.isMetricOrHardware
+                  ? widget.unitShort.toUpperCase()
+                  : 'KG',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          if (widget.canUseCalc) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onOpenCalculator();
+              },
+              icon: const Icon(Icons.calculate_outlined, size: 17),
+              label: const Text('Abrir Calculadora F7'),
+            ),
+          ],
+        ],
+      ),
+      footerActions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: valid
+              ? () {
+                  Navigator.pop(context);
+                  widget.onConfirm(parsed);
+                }
+              : null,
+          child: const Text('Agregar'),
         ),
       ],
     );

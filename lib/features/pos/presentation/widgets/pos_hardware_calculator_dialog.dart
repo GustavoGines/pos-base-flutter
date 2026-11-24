@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -125,8 +126,11 @@ class _PosHardwareCalculatorDialogState
   bool _woodRoundToFullPack = false;
 
   // ── Controles Pestaña 2: Chapas / Techos ────────────────────────────────
+  bool _roofUseDirectM2 = false;
   final _roofWidthCtrl = TextEditingController(text: '6');
   final _roofSlopeLengthCtrl = TextEditingController(text: '4');
+  final _roofDirectM2Ctrl = TextEditingController(text: '24');
+  double _roofWastePct = 10.0;
   final _sheetNominalWidthMCtrl = TextEditingController(text: '1.10');
   final _sheetUsefulWidthMCtrl = TextEditingController(text: '1.00');
   final _sheetLengthMCtrl = TextEditingController(text: '4.50');
@@ -146,6 +150,8 @@ class _PosHardwareCalculatorDialogState
 
   bool _currentItemAdded = false;
   bool _isSavingQuote = false;
+  bool _missingWoodWidthWarning = false;
+  String? _detectedWoodThicknessLabel;
 
   HardwareCalcTab get _activeTab =>
       HardwareCalcTab.values[_tabController.index];
@@ -207,6 +213,7 @@ class _PosHardwareCalculatorDialogState
     _woodBoardsPerPackCtrl.dispose();
     _roofWidthCtrl.dispose();
     _roofSlopeLengthCtrl.dispose();
+    _roofDirectM2Ctrl.dispose();
     _sheetNominalWidthMCtrl.dispose();
     _sheetUsefulWidthMCtrl.dispose();
     _sheetLengthMCtrl.dispose();
@@ -228,8 +235,9 @@ class _PosHardwareCalculatorDialogState
     final prevQuery = _productSearchCtrl.text.trim();
     _hideSkuHistoryPopover();
     final reqId = ++_selectRequestSeq;
-    final config =
-        await HardwareCalculatorEngine.resolveConfigForProduct(product);
+    final autoRes =
+        await HardwareCalculatorEngine.resolveAutoDetectForProduct(product);
+    final config = autoRes.config;
     if (!mounted || reqId != _selectRequestSeq) return;
     _recordSkuHistory(
       term: prevQuery,
@@ -244,6 +252,8 @@ class _PosHardwareCalculatorDialogState
       _currentItemAdded = false;
 
       final type = config['type']?.toString() ?? 'wood';
+      _missingWoodWidthWarning = autoRes.missingWidthWarning && type == 'wood';
+      _detectedWoodThicknessLabel = autoRes.detectedThicknessLabel;
       if (type == 'roof') {
         _tabController.index = 1;
         _selectedProductInitialTab = HardwareCalcTab.roof;
@@ -792,6 +802,16 @@ class _PosHardwareCalculatorDialogState
   }
 
   RoofCalculationResult _computeRoof() {
+    if (_roofUseDirectM2) {
+      return HardwareCalculatorEngine.calculateRoofByArea(
+        targetAreaM2: _parseNum(_roofDirectM2Ctrl.text),
+        sheetNominalWidthM: _parseNum(_sheetNominalWidthMCtrl.text),
+        sheetUsefulWidthM: _parseNum(_sheetUsefulWidthMCtrl.text),
+        sheetLengthM: _parseNum(_sheetLengthMCtrl.text),
+        wastePercent: _roofWastePct,
+        pricingMode: _roofPricingMode,
+      );
+    }
     return HardwareCalculatorEngine.calculateRoof(
       roofWidthM: _parseNum(_roofWidthCtrl.text),
       roofSlopeLengthM: _parseNum(_roofSlopeLengthCtrl.text),
@@ -872,6 +892,12 @@ class _PosHardwareCalculatorDialogState
             complements: const [],
           );
         }
+        final roofSurplusText = r.surplusPerColumnM > 0.05
+            ? ' (sobra ${r.surplusPerColumnM.toQty()}m/hilada)'
+            : '';
+        final roofSecondarySubtitle = r.isAreaEstimate
+            ? 'Estimado p/ ${r.roofAreaM2.toQty()} m²${r.wastePercent > 0 ? " (+${r.wastePercent.toInt()}%)" : ""} · cubre ${r.usefulAreaCoveredM2.toQty()} m² útiles · ${r.totalLinearMeters.toQty()} ml'
+            : '${r.columnsAcrossWidth} ${r.columnsAcrossWidth == 1 ? "hilada" : "hiladas"} × ${r.rowsAlongSlope} ${r.rowsAlongSlope == 1 ? "tramo" : "tramos"} · cubre ${r.coveredSlopeLengthM.toQty()}m p/ ${r.roofSlopeLengthM.toQty()}m$roofSurplusText · ${r.totalLinearMeters.toQty()} ml';
         return (
           isValid: true,
           error: null,
@@ -879,8 +905,7 @@ class _PosHardwareCalculatorDialogState
           billingUnit: r.billingUnitLabel,
           primaryHeadline:
               '${r.totalSheetsNeeded} ${r.totalSheetsNeeded == 1 ? "Chapa" : "Chapas"} de ${_fmtInput(_parseNum(_sheetLengthMCtrl.text))}m',
-          secondarySubtitle:
-              '${r.columnsAcrossWidth} hiladas × ${r.rowsAlongSlope} ${r.rowsAlongSlope == 1 ? "tramo" : "tramos"} · ${r.totalLinearMeters.toQty()} ml totales',
+          secondarySubtitle: roofSecondarySubtitle,
           customDetailsNote: r.customDetailsNote,
           complements: r.complements,
         );
@@ -1512,6 +1537,11 @@ class _PosHardwareCalculatorDialogState
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final modalMaxWidth =
+        math.min(1000.0, math.max(320.0, screenSize.width - 32));
+    final modalMaxHeight =
+        math.min(900.0, math.max(460.0, screenSize.height - 16));
     final summary = _activeSummary();
     final prod = _selectedProduct;
     final unitPrice = (prod != null && summary.isValid)
@@ -1526,13 +1556,14 @@ class _PosHardwareCalculatorDialogState
       surfaceTintColor: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 720),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SizedBox(
+        width: modalMaxWidth,
+        height: modalMaxHeight,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           children: [
-            _buildHeader(),
+            _buildHeader(screenSize.height),
             _buildProductSelectorAndTierBar(),
             _buildTabBar(),
             if (_selectedProduct != null &&
@@ -1582,13 +1613,14 @@ class _PosHardwareCalculatorDialogState
     );
   }
 
-  Widget _buildHeader() {
-    return const AppModalHeader(
+  Widget _buildHeader(double screenHeight) {
+    return AppModalHeader(
       title: 'Calculadora Rápida de Mostrador Ferretero (F7)',
       subtitle:
           'Calculá al instante tablas, paquetes, chapas o litros para consulta rápida, carrito o presupuesto',
       icon: Icons.straighten_rounded,
       accent: AppModalAccent.teal,
+      compact: true,
     );
   }
 
@@ -1609,6 +1641,10 @@ class _PosHardwareCalculatorDialogState
     return ChoiceChip(
       label: label,
       selected: selected,
+      showCheckmark: false,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       selectedColor: AppColors.tealSoft,
       checkmarkColor: AppColors.tealDark,
       backgroundColor: Colors.white,
@@ -1655,7 +1691,7 @@ class _PosHardwareCalculatorDialogState
         tierItems.any((i) => i.value == currentTierKey) ? currentTierKey : 'base';
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
@@ -1670,7 +1706,7 @@ class _PosHardwareCalculatorDialogState
                 child: _selectedProduct != null
                     ? Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF0FDF4),
                           borderRadius: BorderRadius.circular(10),
@@ -1945,16 +1981,46 @@ class _PosHardwareCalculatorDialogState
             const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
         tabs: const [
           Tab(
-            icon: Icon(Icons.carpenter_rounded, size: 19),
-            text: '🪵 Machimbre / Maderas',
+            height: 40,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.carpenter_rounded, size: 18),
+                  SizedBox(width: 7),
+                  Text('🪵 Machimbre / Maderas'),
+                ],
+              ),
+            ),
           ),
           Tab(
-            icon: Icon(Icons.roofing_rounded, size: 19),
-            text: '🏠 Chapas / Techos',
+            height: 40,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.roofing_rounded, size: 18),
+                  SizedBox(width: 7),
+                  Text('🏠 Chapas / Techos'),
+                ],
+              ),
+            ),
           ),
           Tab(
-            icon: Icon(Icons.format_paint_rounded, size: 19),
-            text: '🎨 Pintura / Membrana',
+            height: 40,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.format_paint_rounded, size: 18),
+                  SizedBox(width: 7),
+                  Text('🎨 Pintura / Membrana'),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -1965,7 +2031,7 @@ class _PosHardwareCalculatorDialogState
   Widget _buildWoodTab() {
     final res = _computeWood();
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2081,29 +2147,86 @@ class _PosHardwareCalculatorDialogState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (_missingWoodWidthWarning) ...[
+                        Container(
+                          key: const ValueKey('pos_f7_missing_width_warning'),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber.shade400),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.warning_amber_rounded,
+                                  size: 16, color: Colors.amber.shade900),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Se detectó ${_detectedWoodThicknessLabel ?? "el espesor"} y el largo, pero falta el ancho de la tabla. Confirmá las pulgadas (4", 6", 8", etc.) antes de calcular.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.amber.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const Text(
-                        'Pulgada (diferencia Ancho Nominal vs. Útil con encastre):',
+                        'Pulgada (Ancho Nominal vs. Útil con encastre):',
                         style: TextStyle(
                             fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: 5,
+                        runSpacing: 4,
                         children: [
                           ...HardwareCalculatorEngine.woodInchPresets.map((p) {
                             final selected = _woodInchPreset == p.key;
-                            return _tealChoiceChip(
+                            return ChoiceChip(
+                              key: ValueKey('pos_f7_wood_inch_${p.key}'),
                               label: Text('${p.key}"',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
                               selected: selected,
+                              showCheckmark: false,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              selectedColor: AppColors.tealSoft,
+                              checkmarkColor: AppColors.tealDark,
+                              backgroundColor: Colors.white,
+                              side: BorderSide(
+                                color: selected
+                                    ? const Color(0xFF14B8A6)
+                                    : AppColors.borderStrong,
+                              ),
+                              labelStyle: TextStyle(
+                                color: selected
+                                    ? AppColors.tealDark
+                                    : AppColors.textPrimary,
+                                fontWeight: selected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
                               onSelected: (_) => setState(() {
                                 _woodInchPreset = p.key;
                                 _woodNominalWidthCmCtrl.text =
                                     _fmtInput(p.nominalWidthM * 100);
                                 _woodUsefulWidthCmCtrl.text =
                                     _fmtInput(p.usefulWidthM * 100);
+                                _missingWoodWidthWarning = false;
                                 _skuConfigDirty = true;
                               }),
                             );
@@ -2111,12 +2234,14 @@ class _PosHardwareCalculatorDialogState
                           _tealChoiceChip(
                             label: const Text('Manual'),
                             selected: _woodInchPreset == 'custom',
-                            onSelected: (_) =>
-                                setState(() => _woodInchPreset = 'custom'),
+                            onSelected: (_) => setState(() {
+                              _woodInchPreset = 'custom';
+                              _missingWoodWidthWarning = false;
+                            }),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
@@ -2124,8 +2249,10 @@ class _PosHardwareCalculatorDialogState
                               controller: _woodUsefulWidthCmCtrl,
                               label: 'Ancho ÚTIL (cubre)',
                               suffix: 'cm',
-                              onChanged: (_) =>
-                                  setState(() => _woodInchPreset = 'custom'),
+                              onChanged: (_) => setState(() {
+                                _woodInchPreset = 'custom';
+                                _missingWoodWidthWarning = false;
+                              }),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2134,8 +2261,10 @@ class _PosHardwareCalculatorDialogState
                               controller: _woodNominalWidthCmCtrl,
                               label: 'Ancho NOMINAL',
                               suffix: 'cm',
-                              onChanged: (_) =>
-                                  setState(() => _woodInchPreset = 'custom'),
+                              onChanged: (_) => setState(() {
+                                _woodInchPreset = 'custom';
+                                _missingWoodWidthWarning = false;
+                              }),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2151,9 +2280,14 @@ class _PosHardwareCalculatorDialogState
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 5,
+                        runSpacing: 4,
                         children: ['2.00', '2.40', '3.00', '3.60', '4.00', '4.20']
                             .map((l) => ActionChip(
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 0),
                                   label: Text('${l}m',
                                       style: const TextStyle(fontSize: 11)),
                                   onPressed: () => setState(() {
@@ -2163,16 +2297,16 @@ class _PosHardwareCalculatorDialogState
                                 ))
                             .toList(),
                       ),
-                      const Divider(height: 16),
+                      const Divider(height: 10),
                       const Text(
                         '¿Cómo está cargado el precio en tu catálogo?',
                         style: TextStyle(
                             fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: 5,
+                        runSpacing: 4,
                         children: [
                           _modeChip(
                             label: 'Por Tabla (u.)',
@@ -2204,7 +2338,7 @@ class _PosHardwareCalculatorDialogState
                         ],
                       ),
                       if (_woodPricingMode == WoodPricingMode.perM2) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
@@ -2257,7 +2391,7 @@ class _PosHardwareCalculatorDialogState
                         ),
                       ],
                       if (_woodPricingMode == WoodPricingMode.perPack) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             SizedBox(
@@ -2296,7 +2430,7 @@ class _PosHardwareCalculatorDialogState
             ],
           ),
           if (res.isValid && res.complements.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _buildComplementsBar(res.complements),
           ],
         ],
@@ -2308,7 +2442,7 @@ class _PosHardwareCalculatorDialogState
   Widget _buildRoofTab() {
     final res = _computeRoof();
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2324,28 +2458,141 @@ class _PosHardwareCalculatorDialogState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _numField(
-                        controller: _roofWidthCtrl,
-                        label: 'Ancho del Techo (perpendicular a la caída)',
-                        suffix: 'm',
-                        marksSkuConfigDirty: false,
-                      ),
-                      const SizedBox(height: 10),
-                      _numField(
-                        controller: _roofSlopeLengthCtrl,
-                        label: 'Largo de la Caída / Agua (pendiente)',
-                        suffix: 'm',
-                        marksSkuConfigDirty: false,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Superficie geométrica del techo: ${(_parseNum(_roofWidthCtrl.text) * _parseNum(_roofSlopeLengthCtrl.text)).toQty()} m²',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.teal.shade800,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: SegmentedButton<bool>(
+                          key: const ValueKey('roof_input_mode_segmented'),
+                          style: _tealSegmentedStyle,
+                          segments: const [
+                            ButtonSegment(
+                              value: false,
+                              label: Text('Ancho × Caída',
+                                  style: TextStyle(fontSize: 12)),
+                              icon: Icon(Icons.grid_on_rounded, size: 16),
+                            ),
+                            ButtonSegment(
+                              value: true,
+                              label: Text('m² Directos',
+                                  style: TextStyle(fontSize: 12)),
+                              icon: Icon(Icons.square_foot_rounded, size: 16),
+                            ),
+                          ],
+                          selected: {_roofUseDirectM2},
+                          onSelectionChanged: (s) => setState(() {
+                            final nextDirect = s.first;
+                            if (nextDirect && !_roofUseDirectM2) {
+                              final currentArea =
+                                  _parseNum(_roofWidthCtrl.text) *
+                                      _parseNum(_roofSlopeLengthCtrl.text);
+                              if (currentArea > 0) {
+                                _roofDirectM2Ctrl.text = _fmtInput(currentArea);
+                              }
+                            }
+                            _roofUseDirectM2 = nextDirect;
+                          }),
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      if (!_roofUseDirectM2) ...[
+                        _numField(
+                          controller: _roofWidthCtrl,
+                          label: 'Ancho del Techo (perpendicular a la caída)',
+                          suffix: 'm',
+                          marksSkuConfigDirty: false,
+                        ),
+                        const SizedBox(height: 10),
+                        _numField(
+                          controller: _roofSlopeLengthCtrl,
+                          label: 'Largo de la Caída / Agua (pendiente)',
+                          suffix: 'm',
+                          marksSkuConfigDirty: false,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Superficie geométrica del techo: ${(_parseNum(_roofWidthCtrl.text) * _parseNum(_roofSlopeLengthCtrl.text)).toQty()} m²',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.teal.shade800,
+                          ),
+                        ),
+                        if (res.isValid && res.rowsAlongSlope > 1) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.shade300),
+                            ),
+                            child: Text(
+                              'La caída (${res.roofSlopeLengthM.toQty()}m) supera el largo de la chapa (${_fmtInput(_parseNum(_sheetLengthMCtrl.text))}m): requiere ${res.rowsAlongSlope} tramos por hilada (${res.surplusPerColumnM > 0.05 ? "cubre ${res.coveredSlopeLengthM.toQty()}m, recorte ${res.surplusPerColumnM.toQty()}m/hilada" : "medida exacta"}).',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.amber.shade900,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        _numField(
+                          fieldKey: const ValueKey('roof_direct_m2_field'),
+                          controller: _roofDirectM2Ctrl,
+                          label: 'Superficie total del techo',
+                          suffix: 'm²',
+                          marksSkuConfigDirty: false,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Margen por cortes / solapes:',
+                          style: TextStyle(
+                              fontSize: 11.5, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [0.0, 5.0, 10.0, 15.0].map((pct) {
+                            final selected = (_roofWastePct - pct).abs() < 0.1;
+                            return _tealChoiceChip(
+                              label: Text(
+                                pct == 0 ? '0% (Exacto)' : '+${pct.toInt()}%',
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              selected: selected,
+                              onSelected: (_) =>
+                                  setState(() => _roofWastePct = pct),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber.shade300),
+                          ),
+                          child: Text(
+                            'Cálculo orientativo por superficie. En chapas, el largo de la caída puede requerir más unidades por cortes o solapes; confirmá Ancho × Caída antes de entregar.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.amber.shade900,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2395,6 +2642,7 @@ class _PosHardwareCalculatorDialogState
                               controller: _sheetLongOverlapCmCtrl,
                               label: 'Solape Longitudinal',
                               suffix: 'cm',
+                              enabled: !_roofUseDirectM2,
                             ),
                           ),
                         ],
@@ -2402,6 +2650,7 @@ class _PosHardwareCalculatorDialogState
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 5,
+                        runSpacing: 4,
                         children: [
                           '2.00',
                           '2.50',
@@ -2413,7 +2662,11 @@ class _PosHardwareCalculatorDialogState
                           '6.00'
                         ]
                             .map((l) => ActionChip(
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 0),
                                   label: Text('${l}m',
                                       style: const TextStyle(fontSize: 11)),
                                   onPressed: () => setState(() {
@@ -2423,13 +2676,13 @@ class _PosHardwareCalculatorDialogState
                                 ))
                             .toList(),
                       ),
-                      const Divider(height: 16),
+                      const Divider(height: 10),
                       const Text(
                         '¿Cómo está cargado el precio en tu catálogo?',
                         style: TextStyle(
                             fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Wrap(
                         spacing: 6,
                         children: [
@@ -2462,7 +2715,7 @@ class _PosHardwareCalculatorDialogState
             ],
           ),
           if (res.isValid && res.complements.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _buildComplementsBar(res.complements),
           ],
         ],
@@ -2474,7 +2727,7 @@ class _PosHardwareCalculatorDialogState
   Widget _buildPaintTab() {
     final res = _computePaint();
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2597,10 +2850,13 @@ class _PosHardwareCalculatorDialogState
                       ),
                       const SizedBox(height: 6),
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: 5,
+                        runSpacing: 4,
                         children: [
                           ActionChip(
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             label: const Text('Látex (10 m²/L x mano)',
                                 style: TextStyle(fontSize: 11.5)),
                             onPressed: () => setState(() {
@@ -2611,6 +2867,9 @@ class _PosHardwareCalculatorDialogState
                             }),
                           ),
                           ActionChip(
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             label: const Text('Sintético (12 m²/L x mano)',
                                 style: TextStyle(fontSize: 11.5)),
                             onPressed: () => setState(() {
@@ -2621,6 +2880,9 @@ class _PosHardwareCalculatorDialogState
                             }),
                           ),
                           ActionChip(
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             label: const Text(
                                 'Membrana Líquida (1 m²/Kg final)',
                                 style: TextStyle(fontSize: 11.5)),
@@ -2634,7 +2896,7 @@ class _PosHardwareCalculatorDialogState
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
                           Expanded(
@@ -2659,9 +2921,14 @@ class _PosHardwareCalculatorDialogState
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 5,
+                        runSpacing: 4,
                         children: ['1', '4', '10', '20']
                             .map((cap) => ActionChip(
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 0),
                                   label: Text('$cap L/Kg',
                                       style: const TextStyle(fontSize: 11)),
                                   onPressed: () => setState(() {
@@ -2671,7 +2938,7 @@ class _PosHardwareCalculatorDialogState
                                 ))
                             .toList(),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
@@ -2707,7 +2974,7 @@ class _PosHardwareCalculatorDialogState
             ],
           ),
           if (res.isValid && res.complements.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _buildComplementsBar(res.complements),
           ],
         ],
@@ -2717,7 +2984,7 @@ class _PosHardwareCalculatorDialogState
 
   Widget _buildComplementsBar(List<ComplementSuggestion> complements) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFBEB),
         borderRadius: BorderRadius.circular(10),
@@ -2759,10 +3026,14 @@ class _PosHardwareCalculatorDialogState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '${c.title}: ',
-                            style: const TextStyle(
-                                fontSize: 11.5, color: Color(0xFF475569)),
+                          Flexible(
+                            child: Text(
+                              '${c.title}: ',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 11.5, color: Color(0xFF475569)),
+                            ),
                           ),
                           Text(
                             c.quantityLabel,
@@ -2788,6 +3059,21 @@ class _PosHardwareCalculatorDialogState
     );
   }
 
+  String _singularUnitLabel(String unitLabel) {
+    switch (unitLabel) {
+      case 'chapas':
+        return 'chapa';
+      case 'tablas':
+        return 'tabla';
+      case 'paquetes':
+        return 'paquete';
+      case 'envases':
+        return 'envase';
+      default:
+        return unitLabel;
+    }
+  }
+
   Widget _buildLiveResultAndActionsFooter({
     required ({
       bool isValid,
@@ -2806,7 +3092,7 @@ class _PosHardwareCalculatorDialogState
         context.watch<SettingsProvider>().settings?.features.quotes ?? true;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+      padding: const EdgeInsets.fromLTRB(16, 7, 16, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
@@ -2823,7 +3109,7 @@ class _PosHardwareCalculatorDialogState
         children: [
           // Panel de Resultado Gigante en Vivo
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: summary.isValid
                   ? const Color(0xFFF0FDFA)
@@ -2863,12 +3149,16 @@ class _PosHardwareCalculatorDialogState
                           ),
                           if (summary.isValid) ...[
                             const SizedBox(width: 8),
-                            Text(
-                              'Facturación: ${summary.billingQty.toQty()} ${summary.billingUnit}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF0F766E),
+                            Flexible(
+                              child: Text(
+                                'Facturación: ${summary.billingQty.toQty()} ${summary.billingUnit}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0F766E),
+                                ),
                               ),
                             ),
                           ],
@@ -2878,7 +3168,7 @@ class _PosHardwareCalculatorDialogState
                       Text(
                         summary.primaryHeadline,
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 18.5,
                           fontWeight: FontWeight.w900,
                           color: summary.isValid
                               ? const Color(0xFF0F172A)
@@ -2910,7 +3200,7 @@ class _PosHardwareCalculatorDialogState
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'Unitario: \$${unitPrice!.toCurrency()} / ${summary.billingUnit}',
+                          'Unitario: \$${unitPrice!.toCurrency()} / ${_singularUnitLabel(summary.billingUnit)}',
                           style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF64748B),
@@ -2950,7 +3240,7 @@ class _PosHardwareCalculatorDialogState
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           // Botones de Acción para los 2 escenarios de mostrador
           SizedBox(
             width: double.infinity,
@@ -3003,7 +3293,7 @@ class _PosHardwareCalculatorDialogState
                             borderRadius: BorderRadius.circular(10),
                           ),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                              horizontal: 14, vertical: 10),
                         ),
                       ),
                     FilledButton.icon(
@@ -3027,7 +3317,7 @@ class _PosHardwareCalculatorDialogState
                           borderRadius: BorderRadius.circular(10),
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 13),
+                            horizontal: 16, vertical: 10),
                       ),
                     ),
                   ],
@@ -3050,19 +3340,24 @@ class _PosHardwareCalculatorDialogState
       title: title,
       icon: icon,
       accent: accent,
+      padding: const EdgeInsets.all(12),
       child: child,
     );
   }
 
   Widget _numField({
+    Key? fieldKey,
     required TextEditingController controller,
     required String label,
     required String suffix,
     bool marksSkuConfigDirty = true,
+    bool enabled = true,
     ValueChanged<String>? onChanged,
   }) {
     return TextField(
+      key: fieldKey,
       controller: controller,
+      enabled: enabled,
       maxLength: 10,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
@@ -3080,7 +3375,7 @@ class _PosHardwareCalculatorDialogState
         counterText: '',
         isDense: true,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );

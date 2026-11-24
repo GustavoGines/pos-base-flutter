@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../core/config/app_config.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
@@ -4741,7 +4742,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Presets Rentas / ATP Formosa:',
+                      'Presets Rentas Formosa (DGR):',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
                     ),
                     const SizedBox(height: 6),
@@ -4750,7 +4751,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       runSpacing: 4,
                       children: [
                         _buildDefaultIibbPresetChip('1.5', '1.5% (Conv. Multilateral)'),
-                        _buildDefaultIibbPresetChip('3.0', '3.0% (Inscripto Local FSA)'),
+                        _buildDefaultIibbPresetChip('3.0', '3.0% (Inscripto Local DGR FSA)'),
                         _buildDefaultIibbPresetChip('6.0', '6.0% (No Inscripto / Riesgo)'),
                       ],
                     ),
@@ -6015,7 +6016,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
             lastSync: settings?.lastLicenseCheck,
             manageUrl: manageUrl,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 28),
+          _buildSectionTitle('Rubro Comercial Licenciado'),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              Chip(
+                avatar: const Icon(Icons.storefront_rounded,
+                    size: 16, color: Color(0xFF0F766E)),
+                label: Text(
+                  BusinessVerticalProfile.fromType(settings?.businessType)
+                      .displayLabel,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                ),
+                backgroundColor: const Color(0xFFF0FDFA),
+                side: const BorderSide(color: Color(0xFF99F6E4)),
+              ),
+              ...(settings?.secondaryBusinessTypes ?? const [])
+                  .where((t) => t != settings?.businessType)
+                  .map(
+                    (sec) => Chip(
+                      label: Text(
+                        'Adicional: ${BusinessVerticalProfile.fromType(sec).shortLabel}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF334155)),
+                      ),
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+            ],
+          ),
+          const SizedBox(height: 28),
           _buildSectionTitle('Módulos Adicionales'),
           const SizedBox(height: 16),
           Wrap(
@@ -6247,8 +6283,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Icon(Icons.print_rounded, color: Color(0xFF00796B))),
           title: const Text('Periféricos de esta Terminal',
               style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text(
-              'Impresora térmica (80mm/58mm/A4), cajón de dinero RJ-11, balanza serie y Posnet Point.'),
+          subtitle: Text(
+            provider.safeVerticalProfile.canUseScaleWeight
+                ? 'Impresora térmica (80mm/58mm/A4), cajón de dinero RJ-11, balanza serie y Posnet Point.'
+                : 'Impresora térmica (80mm/58mm/A4), cajón de dinero RJ-11 y Posnet Mercado Pago Point.',
+          ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showTerminalPeripheralsDialog(context, initialTab: 1),
         ),

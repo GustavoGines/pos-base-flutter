@@ -813,5 +813,78 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets(
+        'SettingsScreen renderiza Rubro Comercial Licenciado (Polirrubro Mixto), Forzar Sincronización y Presets Rentas Formosa (DGR)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final formosaSettings = FakeAdversarialSettingsProvider(
+        settings: const BusinessSettings(
+          companyName: 'Autoservicio y Corralón San Martín',
+          address: 'Av. 25 de Mayo 850, Formosa',
+          taxId: '30-71234567-9',
+          businessType: 'retail',
+          secondaryBusinessTypes: ['hardware_store'],
+          licensePlanType: 'premium',
+          licenseStatus: 'LIC-FORMOSA-2026',
+          isLifetime: true,
+          isIibbPerceptionAgent: false,
+          defaultIibbPerceptionRate: 0.0,
+          features: FeatureFlags(
+            fastPos: true,
+            multiplePrices: true,
+            multiRubro: true,
+            arcaAfip: true,
+            quotes: true,
+            logistics: true,
+            batchExpiration: true,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(createHarnessApp(settingsProv: formosaSettings));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 1. Pestaña Suscripción: Rubro Comercial Licenciado (principal + adicional) y Forzar Sincronización
+      expect(find.text('Rubro Comercial Licenciado'), findsOneWidget);
+      expect(
+        find.text('🛒 Minimercado / Kiosco / Almacén'),
+        findsOneWidget,
+      );
+      expect(find.text('Adicional: Ferretería'), findsOneWidget);
+      expect(find.text('FORZAR SINCRONIZACIÓN'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // 2. Pestaña General: Presets Rentas Formosa (DGR) al activar Agente de Percepción IIBB
+      await navigateToTab(tester, 'General', isCompact: false);
+      final iibbSwitch = find.byKey(
+        const ValueKey('switch_iibb_perception_agent'),
+      );
+      await tester.ensureVisible(iibbSwitch);
+      await tester.pump();
+      await tester.tap(iibbSwitch);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      final dgrLabel = find.text('Presets Rentas Formosa (DGR):');
+      await tester.ensureVisible(dgrLabel);
+      await tester.pump();
+      expect(dgrLabel, findsOneWidget);
+
+      final chipFormosaLocal = find.text('3.0% (Inscripto Local DGR FSA)');
+      expect(chipFormosaLocal, findsOneWidget);
+      await tester.tap(chipFormosaLocal);
+      await tester.pump();
+
+      final rateField = tester.widget<TextFormField>(
+        find.byKey(const ValueKey('field_default_iibb_rate')),
+      );
+      expect(rateField.controller?.text, '3.0');
+      expect(tester.takeException(), isNull);
+    });
   });
 }

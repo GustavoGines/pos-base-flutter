@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../../../../core/config/business_vertical_profile.dart';
 import '../../../../core/utils/image_url_resolver.dart';
 import '../../domain/entities/business_settings.dart';
 
@@ -28,6 +29,7 @@ class BusinessSettingsModel extends BusinessSettings {
     super.discountTierOnOffersMode,
     super.ignoreProductFixedPrices,
     super.businessType,
+    super.secondaryBusinessTypes,
     super.features,
     super.enableAdvancedPriceTiers,
     super.afipEnabled,
@@ -74,16 +76,23 @@ class BusinessSettingsModel extends BusinessSettings {
         .trim()
         .toLowerCase();
     final isPremiumPlan = rawPlan == 'pro' || rawPlan == 'premium';
-    final isHardwareStore =
-        (json['license_business_type'] ?? 'retail').toString().trim().toLowerCase() ==
-            'hardware_store';
+    final businessTypeStr =
+        (json['license_business_type'] ?? 'retail').toString().trim();
+    final secondaryBusinessTypes = _parseStringList(
+      json['license_secondary_business_types'] ??
+          json['secondary_business_types'],
+    );
     final hasProduction =
         featuresMap['production'] == true || featuresMap['production'] == 1;
     final hasBatchExpiration = featuresMap.containsKey('batch_expiration')
         ? (featuresMap['batch_expiration'] == true ||
             featuresMap['batch_expiration'] == 1 ||
             hasProduction)
-        : (!isHardwareStore || hasProduction);
+        : (BusinessVerticalProfile.isNativeBatchVertical(
+              businessTypeStr,
+              secondaryBusinessTypes,
+            ) ||
+            hasProduction);
 
     final featureFlags = FeatureFlags(
       fastPos: featuresMap['fast_pos'] == true || featuresMap['fast_pos'] == 1,
@@ -177,7 +186,8 @@ class BusinessSettingsModel extends BusinessSettings {
           : (json['ignore_product_fixed_prices'] == '1' ||
               json['ignore_product_fixed_prices'] == true ||
               json['ignore_product_fixed_prices'] == 1),
-      businessType: json['license_business_type'] ?? 'retail',
+      businessType: businessTypeStr.isNotEmpty ? businessTypeStr : 'retail',
+      secondaryBusinessTypes: secondaryBusinessTypes,
       features: featureFlags,
       enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
           json['enable_advanced_price_tiers'] == true,
@@ -219,6 +229,29 @@ class BusinessSettingsModel extends BusinessSettings {
       return s;
     }
     return 'best_price_wins';
+  }
+
+  static List<String> _parseStringList(dynamic raw) {
+    if (raw == null) return const [];
+    try {
+      List<dynamic> list;
+      if (raw is String && raw.trim().isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is! List) return const [];
+        list = decoded;
+      } else if (raw is List) {
+        list = raw;
+      } else {
+        return const [];
+      }
+      return list
+          .map((e) => e.toString().trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// Parsea el campo custom_price_tiers de forma segura (acepta JSON string o lista directa)

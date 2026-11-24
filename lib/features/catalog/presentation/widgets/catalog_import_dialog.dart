@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
@@ -277,6 +278,9 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
         _selectedSupplierId != null && suppliers.any((s) => s.id == _selectedSupplierId);
     final effectiveSupplierValue =
         hasMatchingSupplier ? _selectedSupplierId : (_selectedSupplierId != null && widget.initialSupplierName != null ? _selectedSupplierId : null);
+    final importColumnsHint = (settingsProv?.safeVerticalProfile ??
+            BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail))
+        .excelImportColumnsHint;
 
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
@@ -306,9 +310,10 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Text(
-                'Columnas opcionales compatibles: cod_proveedor, medida, ubicacion, unidad (mt/m2/m3/bolsa/rollo/caja/par/kg/lt), presentacion_compra y factor_conversion.',
-                style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+              child: Text(
+                importColumnsHint,
+                style: const TextStyle(
+                    fontSize: 11.5, color: AppColors.textSecondary),
               ),
             ),
             const SizedBox(height: 12),

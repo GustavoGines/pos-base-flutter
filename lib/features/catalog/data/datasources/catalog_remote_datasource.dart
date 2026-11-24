@@ -40,8 +40,8 @@ abstract class CatalogRemoteDataSource {
   Future<List<CategoryModel>> fetchCategories();
   // Rubro CRUD
   Future<List<RubroModel>> fetchRubros();
-  Future<RubroModel> createRubro(String name, {String? description});
-  Future<RubroModel> updateRubro(int id, String name, {String? description});
+  Future<RubroModel> createRubro(String name, {String? description, String? verticalType});
+  Future<RubroModel> updateRubro(int id, String name, {String? description, String? verticalType});
   Future<void> deleteRubro(int id);
   // Brand CRUD
   Future<List<BrandModel>> fetchBrands();
@@ -372,12 +372,16 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<RubroModel> createRubro(String name, {String? description}) async {
+  Future<RubroModel> createRubro(String name, {String? description, String? verticalType}) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/catalog/rubros'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'name': name, if (description != null) 'description': description}),
+        body: json.encode({
+          'name': name,
+          if (description != null) 'description': description,
+          if (verticalType != null) 'vertical_type': verticalType,
+        }),
       );
       if (response.statusCode == 201) {
         return RubroModel.fromJson(json.decode(response.body));
@@ -391,12 +395,16 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<RubroModel> updateRubro(int id, String name, {String? description}) async {
+  Future<RubroModel> updateRubro(int id, String name, {String? description, String? verticalType}) async {
     try {
       final response = await client.put(
         Uri.parse('$baseUrl/catalog/rubros/$id'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'name': name, if (description != null) 'description': description}),
+        body: json.encode({
+          'name': name,
+          if (description != null) 'description': description,
+          'vertical_type': verticalType,
+        }),
       );
       if (response.statusCode == 200) {
         return RubroModel.fromJson(json.decode(response.body));

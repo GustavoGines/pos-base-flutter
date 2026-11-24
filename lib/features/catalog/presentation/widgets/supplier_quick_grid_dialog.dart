@@ -1,10 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/searchable_select_field.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
@@ -13,8 +17,13 @@ import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_di
 import 'package:frontend_desktop/features/catalog/domain/entities/brand.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/apparel_variant_helper_dialog.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/catalog_quick_create_dialogs.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/hardware_dimension_helper_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
+import 'package:frontend_desktop/features/pos/domain/services/hardware_calculator_engine.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -31,10 +40,17 @@ class _QuickGridRowModel {
   final TextEditingController storageLocationCtrl = TextEditingController();
   final TextEditingController barcodeCtrl = TextEditingController();
 
-  String unitType = 'un';
-  bool isSoldByWeight = false;
+  String unitType;
+  bool isSoldByWeight;
+  bool userCustomizedUnit = false;
   bool manualPriceOverride = false;
+  Map<String, dynamic>? calcConfig;
   String? errorText;
+
+  _QuickGridRowModel({
+    this.unitType = 'un',
+    this.isSoldByWeight = false,
+  });
 
   bool get hasAnyInput =>
       supplierSkuCtrl.text.trim().isNotEmpty ||
@@ -44,6 +60,8 @@ class _QuickGridRowModel {
       priceCtrl.text.trim().isNotEmpty ||
       storageLocationCtrl.text.trim().isNotEmpty ||
       barcodeCtrl.text.trim().isNotEmpty;
+
+  bool get isCompletelyEmpty => !hasAnyInput;
 
   void dispose() {
     supplierSkuCtrl.dispose();
@@ -96,10 +114,76 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
     super.initState();
     _supplierId =
         widget.initialSupplierId ?? widget.provider.safeFilterSupplierId;
+    SettingsProvider? initialSettingsProv;
+    try {
+      initialSettingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final initialProfile = _resolveEffectiveProfile(
+      initialSettingsProv,
+      widget.provider.categories,
+    );
     for (int i = 0; i < 5; i++) {
-      _rows.add(_QuickGridRowModel());
+      _rows.add(_createEmptyRow(initialProfile));
     }
     _loadInitialDefaults();
+  }
+
+  Rubro? _resolveCategoryRubro(Category? cat) {
+    if (cat == null) return null;
+    final rId = cat.rubroId ?? cat.rubro?.id;
+    if (rId != null) {
+      try {
+        final found =
+            widget.provider.safeRubros.where((r) => r.id == rId).firstOrNull;
+        if (found != null) return found;
+      } catch (_) {}
+    }
+    return cat.rubro;
+  }
+
+  BusinessVerticalProfile _resolveEffectiveProfile(
+    SettingsProvider? settingsProv,
+    List<Category> categories, {
+    int? categoryIdOverride,
+  }) {
+    final baseProfile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final effectiveCategoryId = categoryIdOverride ?? _categoryId;
+    if (!(settingsProv?.features.multiRubro ?? false) ||
+        effectiveCategoryId == null) {
+      return baseProfile;
+    }
+    final cat = categories.where((c) => c.id == effectiveCategoryId).firstOrNull;
+    final rubro = _resolveCategoryRubro(cat);
+    return baseProfile.forCategoryRubro(rubro);
+  }
+
+  _QuickGridRowModel _createEmptyRow([BusinessVerticalProfile? profile]) {
+    return _QuickGridRowModel(
+      unitType: profile?.defaultUnitType ?? 'un',
+      isSoldByWeight: profile?.defaultSoldByWeight ?? false,
+    );
+  }
+
+  void _applyCategoryDefaultUnitToEmptyRows(
+    int? nextCategoryId,
+    List<Category> categories,
+  ) {
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final nextProfile = _resolveEffectiveProfile(
+      settingsProv,
+      categories,
+      categoryIdOverride: nextCategoryId,
+    );
+    for (final row in _rows) {
+      if (row.isCompletelyEmpty && !row.userCustomizedUnit) {
+        row.unitType = nextProfile.defaultUnitType;
+        row.isSoldByWeight = nextProfile.defaultSoldByWeight;
+      }
+    }
   }
 
   Future<void> _loadInitialDefaults() async {
@@ -161,9 +245,17 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
   }
 
   void _addRows(int count) {
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final profile = _resolveEffectiveProfile(
+      settingsProv,
+      widget.provider.categories,
+    );
     setState(() {
       for (int i = 0; i < count; i++) {
-        _rows.add(_QuickGridRowModel());
+        _rows.add(_createEmptyRow(profile));
       }
     });
   }
@@ -175,23 +267,15 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
     setState(() {});
   }
 
-  List<String> _unitOptionsForMode(bool isHardwareStore) {
-    if (isHardwareStore) {
-      return const [
-        'un',
-        'mt',
-        'm2',
-        'm3',
-        'bolsa',
-        'rollo',
-        'caja',
-        'par',
-        'kg',
-        'g',
-        'lt',
-      ];
+  List<String> _unitOptionsForMode(
+    BusinessVerticalProfile profile, [
+    String? currentUnit,
+  ]) {
+    final normalized = (currentUnit ?? '').trim();
+    if (normalized.isEmpty || profile.allowedUnitKeys.contains(normalized)) {
+      return profile.allowedUnitKeys;
     }
-    return const ['un', 'kg', 'g', 'lt'];
+    return [...profile.allowedUnitKeys, normalized];
   }
 
   Future<void> _submitBatch() async {
@@ -233,6 +317,15 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
       return;
     }
 
+    SettingsProvider? submitSettingsProv;
+    try {
+      submitSettingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final effectiveProfile = _resolveEffectiveProfile(
+      submitSettingsProv,
+      widget.provider.categories,
+    );
+
     int createdCount = 0;
     final Set<_QuickGridRowModel> succeededRows = {};
 
@@ -244,6 +337,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
       });
 
       for (final row in activeRows) {
+        final nameText = row.nameCtrl.text.trim();
         final skuText = row.supplierSkuCtrl.text.trim();
         final specText = row.technicalSpecCtrl.text.trim();
         final locText = row.storageLocationCtrl.text.trim();
@@ -251,9 +345,16 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
         final stockParsed =
             double.tryParse(row.stockCtrl.text.trim().replaceAll(',', '.')) ??
                 0.0;
+        final resolvedCalcConfig = row.calcConfig ??
+            (effectiveProfile.canUseHardwareCalculator
+                ? HardwareCalculatorEngine.tryInferExplicitConfig(
+                    name: nameText,
+                    technicalSpec: specText.isEmpty ? null : specText,
+                  )
+                : null);
 
         final payload = <String, dynamic>{
-          'name': row.nameCtrl.text.trim(),
+          'name': nameText,
           'barcode': barcodeText,
           'supplier_sku': skuText.isEmpty ? null : skuText,
           'technical_spec': specText.isEmpty ? null : specText,
@@ -271,6 +372,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
           'category_id': _categoryId,
           'brand_id': _brandId,
           'supplier_id': _supplierId,
+          if (resolvedCalcConfig != null) 'calc_config': resolvedCalcConfig,
         };
 
         final ok = await widget.provider.createProduct(payload);
@@ -357,13 +459,94 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
         row.dispose();
       }
       if (_rows.isEmpty) {
-        _rows.add(_QuickGridRowModel());
+        _rows.add(_createEmptyRow(effectiveProfile));
       }
     });
 
     SnackBarService.warning(
       context,
       'Se guardaron $createdCount productos. Corregí las filas con error y reintentá.',
+    );
+  }
+
+  // Anchos calibrados para aprovechar 100% del modal sin scroll horizontal en pantallas desktop,
+  // manteniendo scroll horizontal automático de respaldo en viewports angostos (< 1080px).
+  static const double _minGridTableWidth = 1080.0;
+  static const double _wIndex = 24.0;
+  static const double _wSku = 94.0;
+  static const double _wUnit = 76.0;
+  static const double _wFrac = 40.0;
+  static const double _wCost = 88.0;
+  static const double _wPrice = 94.0;
+  static const double _wStock = 60.0;
+  static const double _wEan = 102.0;
+  static const double _wDelete = 32.0;
+  static const int _flexName = 5;
+  static const int _flexSpec = 2;
+  static const int _flexLocation = 2;
+
+  Future<void> _createSupplierQuick({String? initialQuery}) async {
+    if (_isSaving) return;
+    final createdId = await CatalogQuickCreateDialogs.showCreateSupplier(
+      context,
+      initialQuery: initialQuery,
+    );
+    if (createdId != null && mounted) {
+      setState(() => _supplierId = createdId);
+    }
+  }
+
+  Future<void> _createCategoryQuick({String? initialName}) async {
+    if (_isSaving) return;
+    final createdId = await CatalogQuickCreateDialogs.showCreateCategory(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una categoría rápida para este lote',
+    );
+    if (createdId != null && mounted) {
+      List<Category> currentCategories;
+      try {
+        currentCategories = context.read<CatalogProvider>().categories;
+      } catch (_) {
+        currentCategories = widget.provider.categories;
+      }
+      setState(() {
+        _categoryId = createdId;
+        _applyCategoryDefaultUnitToEmptyRows(createdId, currentCategories);
+      });
+    }
+  }
+
+  Future<void> _createBrandQuick({String? initialName}) async {
+    if (_isSaving) return;
+    final createdId = await CatalogQuickCreateDialogs.showCreateBrand(
+      context,
+      initialName: initialName,
+      subtitle: 'Creá una marca rápida para este lote',
+    );
+    if (createdId != null && mounted) {
+      setState(() => _brandId = createdId);
+    }
+  }
+
+  Widget _buildQuickAddInlineButton({
+    required Key key,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 36,
+        height: 40,
+        child: IconButton.filledTonal(
+          key: key,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+          icon: const Icon(Icons.add, size: 18),
+          onPressed: _isSaving ? null : onPressed,
+        ),
+      ),
     );
   }
 
@@ -380,165 +563,253 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
 
     final hasSup =
         _supplierId != null && sortedSuppliers.any((s) => s.id == _supplierId);
-    final supValue = hasSup
-        ? _supplierId
-        : (_supplierId != null && widget.initialSupplierName != null
-            ? _supplierId
-            : null);
+    final showFallbackInitialSupplier =
+        !hasSup && _supplierId != null && widget.initialSupplierName != null;
+    final supValue =
+        (hasSup || showFallbackInitialSupplier) ? _supplierId : null;
+    final catValue =
+        sortedCategories.any((c) => c.id == _categoryId) ? _categoryId : null;
+    final brandValue =
+        sortedBrands.any((b) => b.id == _brandId) ? _brandId : null;
+
+    Widget buildSupplierControl() => Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: SearchableSelectField<int?>(
+                key: const ValueKey('quick_grid_supplier_dropdown'),
+                value: supValue,
+                clearValue: null,
+                isDense: true,
+                enabled: !_isSaving,
+                labelText: 'Proveedor del lote',
+                dialogTitle: 'Seleccionar Proveedor',
+                searchHintText: 'Buscar proveedor o CUIT...',
+                prefixIcon: Icons.local_shipping_outlined,
+                border: const OutlineInputBorder(),
+                options: [
+                  const SearchableSelectOption<int?>(
+                    value: null,
+                    label: '— Sin proveedor —',
+                    isResetOption: true,
+                  ),
+                  if (showFallbackInitialSupplier)
+                    SearchableSelectOption<int?>(
+                      value: _supplierId,
+                      label: widget.initialSupplierName!,
+                    ),
+                  ...sortedSuppliers.map((s) {
+                    final hasCuit =
+                        s.cuit != null && s.cuit!.trim().isNotEmpty;
+                    return SearchableSelectOption<int?>(
+                      value: s.id,
+                      label: s.name,
+                      subtitle: hasCuit ? 'CUIT: ${s.cuit!.trim()}' : null,
+                      searchKeywords: hasCuit ? [s.cuit!.trim()] : const [],
+                    );
+                  }),
+                ],
+                onChanged: (val) => setState(() => _supplierId = val),
+                onCreateNew: (query) =>
+                    _createSupplierQuick(initialQuery: query),
+                createLabelBuilder: (query) =>
+                    'Crear proveedor "${query.trim()}"',
+              ),
+            ),
+            const SizedBox(width: 6),
+            _buildQuickAddInlineButton(
+              key: const ValueKey('quick_grid_create_supplier_btn'),
+              tooltip: 'Crear nuevo proveedor',
+              onPressed: () => _createSupplierQuick(),
+            ),
+          ],
+        );
+
+    Widget buildCategoryControl() => Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: SearchableSelectField<int?>(
+                key: const ValueKey('quick_grid_category_dropdown'),
+                value: catValue,
+                clearValue: null,
+                isDense: true,
+                enabled: !_isSaving,
+                labelText: 'Categoría por defecto',
+                dialogTitle: 'Seleccionar Categoría',
+                searchHintText: 'Buscar categoría...',
+                prefixIcon: Icons.category_outlined,
+                border: const OutlineInputBorder(),
+                options: [
+                  const SearchableSelectOption<int?>(
+                    value: null,
+                    label: '— Sin categoría —',
+                    isResetOption: true,
+                  ),
+                  ...sortedCategories.map(
+                    (c) => SearchableSelectOption<int?>(
+                      value: c.id,
+                      label: c.name,
+                    ),
+                  ),
+                ],
+                onChanged: (val) => setState(() {
+                  _categoryId = val;
+                  _applyCategoryDefaultUnitToEmptyRows(val, categories);
+                }),
+                onCreateNew: (query) =>
+                    _createCategoryQuick(initialName: query),
+                createLabelBuilder: (query) =>
+                    'Crear categoría "${query.trim()}"',
+              ),
+            ),
+            const SizedBox(width: 6),
+            _buildQuickAddInlineButton(
+              key: const ValueKey('quick_grid_create_category_btn'),
+              tooltip: 'Crear nueva categoría',
+              onPressed: () => _createCategoryQuick(),
+            ),
+          ],
+        );
+
+    Widget buildBrandControl() => Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: SearchableSelectField<int?>(
+                key: const ValueKey('quick_grid_brand_dropdown'),
+                value: brandValue,
+                clearValue: null,
+                isDense: true,
+                enabled: !_isSaving,
+                labelText: 'Marca por defecto',
+                dialogTitle: 'Seleccionar Marca',
+                searchHintText: 'Buscar marca...',
+                prefixIcon: Icons.branding_watermark_outlined,
+                border: const OutlineInputBorder(),
+                options: [
+                  const SearchableSelectOption<int?>(
+                    value: null,
+                    label: '— Sin marca —',
+                    isResetOption: true,
+                  ),
+                  ...sortedBrands.map(
+                    (b) => SearchableSelectOption<int?>(
+                      value: b.id,
+                      label: b.name,
+                    ),
+                  ),
+                ],
+                onChanged: (val) => setState(() => _brandId = val),
+                onCreateNew: (query) => _createBrandQuick(initialName: query),
+                createLabelBuilder: (query) => 'Crear marca "${query.trim()}"',
+              ),
+            ),
+            const SizedBox(width: 6),
+            _buildQuickAddInlineButton(
+              key: const ValueKey('quick_grid_create_brand_btn'),
+              tooltip: 'Crear nueva marca',
+              onPressed: () => _createBrandQuick(),
+            ),
+          ],
+        );
+
+    Widget buildMarginControl() => TextFormField(
+          key: const ValueKey('quick_grid_default_margin_field'),
+          controller: _marginCtrl,
+          enabled: !_isSaving,
+          decoration: const InputDecoration(
+            labelText: 'Margen sug.',
+            suffixText: '%',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => _recalculateAllAutoPrices(),
+        );
+
+    Widget buildIvaControl() => DropdownButtonFormField<double>(
+          isExpanded: true,
+          initialValue: _ivaRate,
+          decoration: const InputDecoration(
+            labelText: 'IVA lote',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: const [
+            DropdownMenuItem(value: 21.0, child: Text('21%')),
+            DropdownMenuItem(value: 10.5, child: Text('10.5%')),
+            DropdownMenuItem(value: 27.0, child: Text('27%')),
+            DropdownMenuItem(value: 0.0, child: Text('0%')),
+          ],
+          onChanged: _isSaving
+              ? null
+              : (val) => setState(() => _ivaRate = val ?? 21.0),
+        );
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          if (canSeeSupplier)
-            SizedBox(
-              width: 240,
-              child: DropdownButtonFormField<int?>(
-                key: const ValueKey('quick_grid_supplier_dropdown'),
-                isExpanded: true,
-                initialValue: supValue,
-                decoration: const InputDecoration(
-                  labelText: 'Proveedor del lote',
-                  prefixIcon: Icon(Icons.local_shipping_outlined, size: 18),
-                  isDense: true,
-                ),
-                items: [
-                  const DropdownMenuItem<int?>(
-                    value: null,
-                    child: Text('— Sin proveedor —'),
-                  ),
-                  if (!hasSup &&
-                      _supplierId != null &&
-                      widget.initialSupplierName != null)
-                    DropdownMenuItem<int?>(
-                      value: _supplierId,
-                      child: Text(widget.initialSupplierName!),
-                    ),
-                  ...sortedSuppliers.map(
-                    (s) => DropdownMenuItem<int?>(
-                      value: s.id,
-                      child: Text(s.name, overflow: TextOverflow.ellipsis),
-                    ),
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 980) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (canSeeSupplier) ...[
+                  Expanded(flex: 3, child: buildSupplierControl()),
+                  const SizedBox(width: 10),
                 ],
-                onChanged: _isSaving
-                    ? null
-                    : (val) => setState(() => _supplierId = val),
-              ),
-            ),
-          SizedBox(
-            width: 190,
-            child: DropdownButtonFormField<int?>(
-              key: const ValueKey('quick_grid_category_dropdown'),
-              isExpanded: true,
-              initialValue: sortedCategories.any((c) => c.id == _categoryId)
-                  ? _categoryId
-                  : null,
-              decoration: const InputDecoration(
-                labelText: 'Categoría por defecto',
-                prefixIcon: Icon(Icons.category_outlined, size: 18),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('— Sin categoría —'),
-                ),
-                ...sortedCategories.map(
-                  (c) => DropdownMenuItem<int?>(
-                    value: c.id,
-                    child: Text(c.name, overflow: TextOverflow.ellipsis),
-                  ),
-                ),
-              ],
-              onChanged:
-                  _isSaving ? null : (val) => setState(() => _categoryId = val),
-            ),
-          ),
-          SizedBox(
-            width: 180,
-            child: DropdownButtonFormField<int?>(
-              key: const ValueKey('quick_grid_brand_dropdown'),
-              isExpanded: true,
-              initialValue:
-                  sortedBrands.any((b) => b.id == _brandId) ? _brandId : null,
-              decoration: const InputDecoration(
-                labelText: 'Marca por defecto',
-                prefixIcon: Icon(Icons.branding_watermark_outlined, size: 18),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('— Sin marca —'),
-                ),
-                ...sortedBrands.map(
-                  (b) => DropdownMenuItem<int?>(
-                    value: b.id,
-                    child: Text(b.name, overflow: TextOverflow.ellipsis),
-                  ),
-                ),
-              ],
-              onChanged:
-                  _isSaving ? null : (val) => setState(() => _brandId = val),
-            ),
-          ),
-          SizedBox(
-            width: 145,
-            child: TextFormField(
-              key: const ValueKey('quick_grid_default_margin_field'),
-              controller: _marginCtrl,
-              enabled: !_isSaving,
-              decoration: const InputDecoration(
-                labelText: '% Margen sug.',
-                suffixText: '%',
-                prefixIcon: Icon(Icons.percent, size: 17),
-                isDense: true,
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => _recalculateAllAutoPrices(),
-            ),
-          ),
-          if (isResponsableInscripto)
-            SizedBox(
-              width: 120,
-              child: DropdownButtonFormField<double>(
-                isExpanded: true,
-                initialValue: _ivaRate,
-                decoration: const InputDecoration(
-                  labelText: 'IVA lote',
-                  isDense: true,
-                ),
-                items: const [
-                  DropdownMenuItem(value: 21.0, child: Text('21%')),
-                  DropdownMenuItem(value: 10.5, child: Text('10.5%')),
-                  DropdownMenuItem(value: 27.0, child: Text('27%')),
-                  DropdownMenuItem(value: 0.0, child: Text('0%')),
+                Expanded(flex: 2, child: buildCategoryControl()),
+                const SizedBox(width: 10),
+                Expanded(flex: 2, child: buildBrandControl()),
+                const SizedBox(width: 10),
+                SizedBox(width: 118, child: buildMarginControl()),
+                if (isResponsableInscripto) ...[
+                  const SizedBox(width: 10),
+                  SizedBox(width: 102, child: buildIvaControl()),
                 ],
-                onChanged: _isSaving
-                    ? null
-                    : (val) => setState(() => _ivaRate = val ?? 21.0),
-              ),
-            ),
-        ],
+              ],
+            );
+          }
+
+          return Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (canSeeSupplier)
+                SizedBox(width: 260, child: buildSupplierControl()),
+              SizedBox(width: 230, child: buildCategoryControl()),
+              SizedBox(width: 220, child: buildBrandControl()),
+              SizedBox(width: 124, child: buildMarginControl()),
+              if (isResponsableInscripto)
+                SizedBox(width: 104, child: buildIvaControl()),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildGridHeader() {
+  Widget _buildGridHeader(BusinessVerticalProfile profile) {
     const headerStyle = TextStyle(
       fontSize: 11.5,
       fontWeight: FontWeight.w800,
       color: Color(0xFFF8FAFC),
     );
+    Widget hText(String label, {TextAlign align = TextAlign.left}) => Text(
+          label,
+          style: headerStyle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: align,
+        );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
       decoration: const BoxDecoration(
@@ -547,28 +818,48 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
           bottom: BorderSide(color: Color(0xFF334155)),
         ),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          SizedBox(width: 28, child: Text('#', style: headerStyle)),
-          SizedBox(width: 105, child: Text('Cód. Prov.', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 215, child: Text('Nombre *', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 125, child: Text('Medida / Espec.', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 92, child: Text('Unidad', style: headerStyle)),
-          SizedBox(width: 48, child: Center(child: Text('Fracc.', style: headerStyle))),
-          SizedBox(width: 8),
-          SizedBox(width: 100, child: Text('Costo (\$)', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 108, child: Text('PVP Venta *', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 72, child: Text('Stock', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 115, child: Text('Ubicación', style: headerStyle)),
-          SizedBox(width: 8),
-          SizedBox(width: 115, child: Text('EAN (Opc.)', style: headerStyle)),
-          SizedBox(width: 34),
+          SizedBox(width: _wIndex, child: hText('#')),
+          const SizedBox(width: 4),
+          SizedBox(width: _wSku, child: hText('Cód. Prov.')),
+          const SizedBox(width: 6),
+          Expanded(flex: _flexName, child: hText('Nombre *')),
+          const SizedBox(width: 6),
+          Expanded(flex: _flexSpec, child: hText(profile.quickGridSpecHeader)),
+          const SizedBox(width: 6),
+          SizedBox(width: _wUnit, child: hText('Unidad')),
+          const SizedBox(width: 4),
+          if (profile.showQuickGridFracColumn) ...[
+            SizedBox(
+              width: _wFrac,
+              child: Tooltip(
+                message: profile.quickGridFracTooltip,
+                child: Center(
+                  child: hText(
+                    profile.quickGridFracHeader,
+                    align: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ] else
+            const SizedBox(width: 2),
+          SizedBox(width: _wCost, child: hText('Costo (\$)')),
+          const SizedBox(width: 6),
+          SizedBox(width: _wPrice, child: hText('PVP Venta *')),
+          const SizedBox(width: 6),
+          SizedBox(width: _wStock, child: hText('Stock')),
+          const SizedBox(width: 6),
+          Expanded(
+            flex: _flexLocation,
+            child: hText(profile.quickGridLocationHeader),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(width: _wEan, child: hText('EAN (Opc.)')),
+          const SizedBox(width: 4),
+          const SizedBox(width: _wDelete),
         ],
       ),
     );
@@ -577,8 +868,9 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
   Widget _buildGridRow(
     _QuickGridRowModel row,
     int index,
-    List<String> unitOptions,
+    BusinessVerticalProfile profile,
   ) {
+    final unitOptions = _unitOptionsForMode(profile, row.unitType);
     final hasError = row.errorText != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -596,7 +888,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
           Row(
             children: [
               SizedBox(
-                width: 28,
+                width: _wIndex,
                 child: Text(
                   '${index + 1}',
                   style: TextStyle(
@@ -606,25 +898,26 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                   ),
                 ),
               ),
+              const SizedBox(width: 4),
               SizedBox(
-                width: 105,
+                width: _wSku,
                 child: TextField(
                   key: ValueKey('quick_grid_sku_$index'),
                   controller: row.supplierSkuCtrl,
                   enabled: !_isSaving,
                   style: const TextStyle(fontSize: 12.5),
                   decoration: const InputDecoration(
-                    hintText: 'SKU Prov.',
+                    hintText: 'Cód. / SKU',
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8),
                     border: OutlineInputBorder(),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 215,
+              const SizedBox(width: 6),
+              Expanded(
+                flex: _flexName,
                 child: TextField(
                   key: ValueKey('quick_grid_name_$index'),
                   controller: row.nameCtrl,
@@ -644,72 +937,168 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                   },
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 125,
+              const SizedBox(width: 6),
+              Expanded(
+                flex: _flexSpec,
                 child: TextField(
                   key: ValueKey('quick_grid_spec_$index'),
                   controller: row.technicalSpecCtrl,
                   enabled: !_isSaving,
                   style: const TextStyle(fontSize: 12.5),
-                  decoration: const InputDecoration(
-                    hintText: '1/2" / 2.5mm',
+                  onChanged: (_) => row.calcConfig = null,
+                  decoration: InputDecoration(
+                    hintText: profile.quickGridSpecHint,
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    border: OutlineInputBorder(),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: profile.canUseHardwareCalculator
+                        ? IconButton(
+                            key: ValueKey('quick_grid_dim_helper_$index'),
+                            tooltip: 'Armar medida Madera / Chapa (F7)',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 26,
+                              maxWidth: 28,
+                              minHeight: 26,
+                            ),
+                            icon: const Icon(
+                              Icons.straighten_rounded,
+                              size: 16,
+                              color: Color(0xFF0F766E),
+                            ),
+                            onPressed: _isSaving
+                                ? null
+                                : () async {
+                                    final selection =
+                                        await HardwareDimensionHelperDialog
+                                            .show(
+                                      context,
+                                      initialName: row.nameCtrl.text.trim(),
+                                      initialSpec:
+                                          row.technicalSpecCtrl.text.trim(),
+                                      initialConfig: row.calcConfig,
+                                    );
+                                    if (selection == null || !mounted) return;
+                                    setState(() {
+                                      row.technicalSpecCtrl.text =
+                                          selection.specText;
+                                      row.calcConfig = selection.calcConfig;
+                                    });
+                                  },
+                          )
+                        : (profile.isApparel
+                            ? IconButton(
+                                key: ValueKey('quick_grid_apparel_helper_$index'),
+                                tooltip: 'Asistente rápido de Talle y Color',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 26,
+                                  maxWidth: 28,
+                                  minHeight: 26,
+                                ),
+                                icon: const Icon(
+                                  Icons.checkroom_rounded,
+                                  size: 16,
+                                  color: Color(0xFF4F46E5),
+                                ),
+                                onPressed: _isSaving
+                                    ? null
+                                    : () async {
+                                        final selected =
+                                            await ApparelVariantHelperDialog.show(
+                                          context,
+                                          initialValue:
+                                              row.technicalSpecCtrl.text.trim(),
+                                        );
+                                        if (selected == null || !mounted) return;
+                                        setState(() {
+                                          row.technicalSpecCtrl.text = selected;
+                                          row.calcConfig = null;
+                                        });
+                                      },
+                              )
+                            : null),
+                    suffixIconConstraints: (profile.canUseHardwareCalculator ||
+                            profile.isApparel)
+                        ? const BoxConstraints(
+                            minWidth: 26,
+                            maxWidth: 28,
+                            minHeight: 26,
+                          )
+                        : null,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                width: 92,
-                child: DropdownButtonFormField<String>(
+                width: _wUnit,
+                child: KeyedSubtree(
                   key: ValueKey('quick_grid_unit_$index'),
-                  isExpanded: true,
-                  initialValue: unitOptions.contains(row.unitType)
-                      ? row.unitType
-                      : unitOptions.first,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black87),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                    border: OutlineInputBorder(),
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('quick_grid_unit_dd_${index}_${row.unitType}'),
+                    isExpanded: true,
+                    initialValue: unitOptions.contains(row.unitType)
+                        ? row.unitType
+                        : unitOptions.first,
+                    style: const TextStyle(fontSize: 12.5, color: Colors.black87),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: unitOptions
+                        .map(
+                          (u) => DropdownMenuItem<String>(
+                            value: u,
+                            child: Text(
+                              Product.shortLabelFor(u),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _isSaving
+                        ? null
+                        : (val) {
+                            if (val == null) return;
+                            setState(() {
+                              row.userCustomizedUnit = true;
+                              row.unitType = val;
+                              row.isSoldByWeight =
+                                  !Product.discreteUnitTypes.contains(val);
+                            });
+                          },
                   ),
-                  items: unitOptions
-                      .map(
-                        (u) => DropdownMenuItem<String>(
-                          value: u,
-                          child: Text(Product.shortLabelFor(u)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _isSaving
-                      ? null
-                      : (val) {
-                          if (val == null) return;
-                          setState(() {
-                            row.unitType = val;
-                            row.isSoldByWeight =
-                                !Product.discreteUnitTypes.contains(val);
-                          });
-                        },
                 ),
               ),
-              SizedBox(
-                width: 48,
-                child: Checkbox(
-                  value: row.isSoldByWeight,
-                  visualDensity: VisualDensity.compact,
-                  onChanged: _isSaving
-                      ? null
-                      : (v) => setState(() => row.isSoldByWeight = v ?? false),
+              const SizedBox(width: 4),
+              if (profile.showQuickGridFracColumn) ...[
+                SizedBox(
+                  width: _wFrac,
+                  child: Tooltip(
+                    message: profile.quickGridFracTooltip,
+                    child: Center(
+                      child: Checkbox(
+                        value: row.isSoldByWeight,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: _isSaving
+                            ? null
+                            : (v) => setState(() {
+                                  row.userCustomizedUnit = true;
+                                  row.isSoldByWeight = v ?? false;
+                                }),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 6),
+              ] else
+                const SizedBox(width: 2),
               SizedBox(
-                width: 100,
+                width: _wCost,
                 child: TextField(
                   key: ValueKey('quick_grid_cost_$index'),
                   controller: row.costCtrl,
@@ -722,15 +1111,15 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                     hintText: '0',
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8),
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (_) => _recalculateRowPriceFromCost(row),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                width: 108,
+                width: _wPrice,
                 child: TextField(
                   key: ValueKey('quick_grid_price_$index'),
                   controller: row.priceCtrl,
@@ -746,7 +1135,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                     hintText: '0 *',
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8),
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (val) {
@@ -757,9 +1146,9 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                   },
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                width: 72,
+                width: _wStock,
                 child: TextField(
                   key: ValueKey('quick_grid_stock_$index'),
                   controller: row.stockCtrl,
@@ -771,31 +1160,31 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                     hintText: '0',
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8),
                     border: OutlineInputBorder(),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 115,
+              const SizedBox(width: 6),
+              Expanded(
+                flex: _flexLocation,
                 child: TextField(
                   key: ValueKey('quick_grid_location_$index'),
                   controller: row.storageLocationCtrl,
                   enabled: !_isSaving,
                   style: const TextStyle(fontSize: 12.5),
-                  decoration: const InputDecoration(
-                    hintText: 'Estante / Gav.',
+                  decoration: InputDecoration(
+                    hintText: profile.quickGridLocationHint,
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    border: OutlineInputBorder(),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                width: 115,
+                width: _wEan,
                 child: TextField(
                   key: ValueKey('quick_grid_barcode_$index'),
                   controller: row.barcodeCtrl,
@@ -805,14 +1194,19 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                     hintText: 'EAN opc.',
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        EdgeInsets.symmetric(horizontal: 7, vertical: 8),
                     border: OutlineInputBorder(),
                   ),
                 ),
               ),
+              const SizedBox(width: 4),
               SizedBox(
-                width: 34,
+                width: _wDelete,
                 child: IconButton(
+                  key: ValueKey('quick_grid_delete_row_$index'),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: _wDelete, minHeight: 32),
                   icon: Icon(
                     Icons.delete_outline,
                     size: 18,
@@ -821,15 +1215,16 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                         : Colors.grey.shade300,
                   ),
                   tooltip: 'Quitar fila',
-                  onPressed:
-                      (_isSaving || _rows.length <= 1) ? null : () => _removeRow(index),
+                  onPressed: (_isSaving || _rows.length <= 1)
+                      ? null
+                      : () => _removeRow(index),
                 ),
               ),
             ],
           ),
           if (hasError)
             Padding(
-              padding: const EdgeInsets.only(left: 28, top: 4),
+              padding: const EdgeInsets.only(left: _wIndex + 4, top: 4),
               child: Text(
                 row.errorText!,
                 style: TextStyle(
@@ -856,20 +1251,20 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
       supplierProv = context.watch<SupplierProvider?>();
     } catch (_) {}
 
-    final isHardwareStore = settingsProv?.safeIsHardwareStore ?? false;
     final canSeeSupplier =
         (settingsProv?.features.suppliers ?? true) && supplierProv != null;
     final isResponsableInscripto =
         settingsProv?.settings?.isResponsableInscripto ?? false;
-    final unitOptions = _unitOptionsForMode(isHardwareStore);
+    final effectiveProfile =
+        _resolveEffectiveProfile(settingsProv, catalogProv.categories);
 
     return AppModalShell(
       title: 'Carga Rápida en Grilla por Proveedor',
       subtitle: 'Alta rápida de catálogo (no registra factura ni deuda en Cuenta Corriente) • Cálculo automático de PVP',
       icon: Icons.grid_on_rounded,
       accent: AppModalAccent.indigo,
-      maxWidth: 1240,
-      maxHeight: 820,
+      maxWidth: 1560,
+      maxHeight: 860,
       expandBody: true,
       onClose: _isSaving ? null : () => Navigator.of(context).pop(),
       bodyPadding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
@@ -891,32 +1286,41 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
                 borderRadius: BorderRadius.circular(10),
               ),
               clipBehavior: Clip.antiAlias,
-              child: Scrollbar(
-                controller: _horizontalScrollCtrl,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _horizontalScrollCtrl,
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: 1280,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildGridHeader(),
-                        Expanded(
-                          child: ListView.builder(
-                            itemCount: _rows.length,
-                            itemBuilder: (_, index) => _buildGridRow(
-                              _rows[index],
-                              index,
-                              unitOptions,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final tableWidth =
+                      math.max(_minGridTableWidth, constraints.maxWidth);
+                  final needsHorizontalScroll =
+                      tableWidth > constraints.maxWidth + 0.5;
+                  return Scrollbar(
+                    controller: _horizontalScrollCtrl,
+                    thumbVisibility: needsHorizontalScroll,
+                    child: SingleChildScrollView(
+                      key: const ValueKey('quick_grid_horizontal_scroll'),
+                      controller: _horizontalScrollCtrl,
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: tableWidth,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildGridHeader(effectiveProfile),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: _rows.length,
+                                itemBuilder: (_, index) => _buildGridRow(
+                                  _rows[index],
+                                  index,
+                                  effectiveProfile,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),

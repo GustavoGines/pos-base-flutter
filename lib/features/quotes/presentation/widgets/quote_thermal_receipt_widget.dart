@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:barcode/barcode.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 
@@ -354,8 +355,16 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
 
   Widget _buildItemRow(QuoteItem item, double factor) {
     final isWeight = item.product?.isSoldByWeight == true;
+    final businessUsesScale =
+        businessSettings?.verticalProfile.canUseScaleWeight ?? true;
     final unitSuffix = item.product != null
-        ? item.product!.effectiveReceiptUnitSuffix
+        ? Product.resolveReceiptUnitSuffix(
+            unitType: item.product!.unitType,
+            isSoldByWeight: item.product!.isSoldByWeight,
+            preferDiscreteUn: item.product!.isDiscreteFractionalItem(
+              businessUsesScaleWeight: businessUsesScale,
+            ),
+          )
         : (isWeight ? 'kg' : 'un');
     final cantStr = isWeight
         ? '${item.quantity.toQty()} $unitSuffix'
@@ -366,6 +375,11 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
     final rawCode = item.product?.internalCode.trim() ?? '';
     final codePrefix = rawCode.isNotEmpty ? '[$rawCode] ' : '';
     final name = '$codePrefix${item.productName}'.toUpperCase();
+    final effectiveDetails = Product.resolveEffectiveReceiptDetails(
+      displayName: item.productName,
+      technicalSpec: item.product?.technicalSpec,
+      customDetails: item.customDetails,
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3.0),
@@ -383,11 +397,10 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
               color: Colors.black,
             ),
           ),
-          if (item.customDetails != null &&
-              item.customDetails!.trim().isNotEmpty) ...[
+          if (effectiveDetails != null && effectiveDetails.isNotEmpty) ...[
             const SizedBox(height: 1),
             Text(
-              '  * ${item.customDetails!.trim()}',
+              '  * $effectiveDetails',
               softWrap: true,
               style: TextStyle(
                 fontFamily: 'monospace',

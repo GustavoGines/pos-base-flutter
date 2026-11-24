@@ -533,7 +533,7 @@ void main() {
       expect(fakeRepo.lastIds, [101]);
     });
 
-    testWidgets('Tapping "Generar Presupuesto" clears bulk selection and processes quote items', (tester) async {
+    testWidgets('Tapping "Generar Presupuesto" preserves bulk selection until a quote is actually emitted', (tester) async {
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -565,8 +565,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // Selection is cleared
-      expect(find.text('Lote (1)'), findsNothing);
+      // Sin emisión de presupuesto, la selección permanece intacta
+      expect(find.text('Lote (1)'), findsOneWidget);
     });
   });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -9,6 +10,8 @@ import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
@@ -923,13 +926,32 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     final currentDiscInput = _parseDouble(_discountPctController.text);
 
     final settingsProv = context.watch<SettingsProvider?>();
-    final isHardwareStore = settingsProv?.safeIsHardwareStore == true;
+    final rubros =
+        Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+            const [];
+    final profile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final isHardwareStore = profile.isHardwareStore;
     final canRecalcHardware = widget.onOpenHardwareCalculator != null &&
         !_isTempOrUnregistered &&
-        (settingsProv?.canUseHardwareCalculator == true);
+        (settingsProv?.canUseHardwareCalculatorFor(
+              product: widget.item.product,
+              rubros: rubros,
+            ) ??
+            false);
+    final preferDiscrete = widget.item.product.isDiscreteFractionalItem(
+      businessUsesScaleWeight: profile.canUseScaleWeight,
+    );
     final isHardwareFractional = _isSoldByWeight &&
-        (isHardwareStore || widget.item.product.isMetricOrLiquidUnit);
-    final unitShortLabel = widget.item.product.unitShortLabel;
+        (isHardwareStore ||
+            widget.item.product.isMetricOrLiquidUnit ||
+            preferDiscrete ||
+            !profile.canUseScaleWeight);
+    final unitShortLabel = Product.resolveQuantityUnitLabel(
+      unitType: widget.item.product.unitType,
+      isSoldByWeight: _isSoldByWeight,
+      preferDiscreteUn: preferDiscrete,
+    );
     final unitSuffixUpper = isHardwareFractional
         ? unitShortLabel.toUpperCase()
         : (_isSoldByWeight ? 'KG' : 'UN');
@@ -1096,7 +1118,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                 ),
                               ),
                             ],
-                            if (_isSoldByWeight && !isHardwareStore) ...[
+                            if (_isSoldByWeight && profile.canUseScaleWeight) ...[
                               const SizedBox(width: 6),
                               Consumer<LocalTerminalProvider>(
                                 builder: (ctx, localTerminal, _) {

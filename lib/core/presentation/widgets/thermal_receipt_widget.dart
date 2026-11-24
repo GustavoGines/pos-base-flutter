@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 
@@ -253,6 +255,13 @@ class ThermalReceiptWidget extends StatelessWidget {
     final padding = paperWidth.innerPadding;
     final factor = paperWidth.fontSizeFactor;
     final isFiscal = electronicInvoice != null;
+    bool canUseScaleWeight = businessSettings?.verticalProfile.canUseScaleWeight ?? true;
+    try {
+      final sp = Provider.of<SettingsProvider?>(context, listen: false);
+      if (sp != null) {
+        canUseScaleWeight = sp.safeVerticalProfile.canUseScaleWeight;
+      }
+    } catch (_) {}
     final date = _resolveEffectiveDate();
     final formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(date);
 
@@ -385,7 +394,7 @@ class ThermalReceiptWidget extends StatelessWidget {
           _buildDivider(),
 
           // ── 5. Detalle de Ítems Vendidos ──
-          ..._buildItemsList(factor),
+          ..._buildItemsList(factor, canUseScaleWeight: canUseScaleWeight),
 
           const SizedBox(height: 2),
           _buildDivider(thickness: 1.5),
@@ -412,7 +421,10 @@ class ThermalReceiptWidget extends StatelessWidget {
           // ── 8. Sección Opcional de Remito / Orden de Retiro ──
           if (deliveryNote != null) ...[
             const SizedBox(height: 12),
-            _buildDeliveryNoteSection(factor),
+            _buildDeliveryNoteSection(
+              factor,
+              canUseScaleWeight: canUseScaleWeight,
+            ),
           ],
         ],
       ),
@@ -758,7 +770,10 @@ class ThermalReceiptWidget extends StatelessWidget {
   // DETALLE DE ÍTEMS CON PROTECCIÓN DEFENSIVA OVERFLOW
   // ─────────────────────────────────────────────────────────────────────────
 
-  List<Widget> _buildItemsList(double factor) {
+  List<Widget> _buildItemsList(
+    double factor, {
+    bool canUseScaleWeight = true,
+  }) {
     final widgets = <Widget>[];
     final isFiscal = electronicInvoice != null;
     final letter = electronicInvoice?['voucher_letter']?.toString().toUpperCase() ?? 'B';
@@ -767,6 +782,8 @@ class ThermalReceiptWidget extends StatelessWidget {
     for (final rawItem in items) {
       String name = 'PRODUCTO';
       String? customDetails;
+      String? technicalSpec;
+      bool hasCalcConfig = false;
       double quantity = 1.0;
       double unitPrice = 0.0;
       double subtotal = 0.0;
@@ -776,15 +793,22 @@ class ThermalReceiptWidget extends StatelessWidget {
       String discountTag = '';
       double regularPrice = 0.0;
       double itemSavings = 0.0;
+      bool preferDiscreteUn = false;
 
       if (rawItem is CartItem) {
         name = rawItem.effectiveDisplayName;
         customDetails = rawItem.customDetails?.trim();
+        technicalSpec = rawItem.product.technicalSpec?.trim();
+        hasCalcConfig = rawItem.product.calcConfig != null &&
+            rawItem.product.calcConfig!.isNotEmpty;
         quantity = rawItem.quantity;
         unitPrice = rawItem.unitPrice;
         subtotal = rawItem.subtotal;
         isSoldByWeight = rawItem.product.isSoldByWeight;
         rawUnitType = rawItem.product.unitType;
+        preferDiscreteUn = rawItem.product.isDiscreteFractionalItem(
+          businessUsesScaleWeight: canUseScaleWeight,
+        );
         ivaRate = rawItem.product.ivaRate;
         regularPrice = rawItem.effectiveRegularUnitPrice;
         itemSavings = rawItem.discountSavings;
@@ -806,6 +830,10 @@ class ThermalReceiptWidget extends StatelessWidget {
                 rawItem['name']?.toString() ??
                 'PRODUCTO');
         customDetails = rawItem['custom_details']?.toString().trim();
+        technicalSpec =
+            (rawItem['technical_spec'] ?? prod['technical_spec'])?.toString().trim();
+        final rawCalcCfg = rawItem['calc_config'] ?? prod['calc_config'];
+        hasCalcConfig = rawCalcCfg is Map && rawCalcCfg.isNotEmpty;
         quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
         unitPrice = double.tryParse(
                 rawItem['unit_price']?.toString() ?? rawItem['price']?.toString() ?? '0') ??
@@ -815,6 +843,10 @@ class ThermalReceiptWidget extends StatelessWidget {
         isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
             prod['is_sold_by_weight'] == true;
         rawUnitType = (rawItem['unit_type'] ?? prod['unit_type'])?.toString();
+        final normUnit = (rawUnitType ?? '').trim().toLowerCase();
+        preferDiscreteUn = isSoldByWeight &&
+            (normUnit.isEmpty || normUnit == 'un') &&
+            (hasCalcConfig || !canUseScaleWeight);
         ivaRate = double.tryParse(
                 (rawItem['iva_rate'] ??
                         prod['iva_rate'] ??
@@ -847,6 +879,12 @@ class ThermalReceiptWidget extends StatelessWidget {
       final unitSuffix = Product.resolveReceiptUnitSuffix(
         unitType: rawUnitType,
         isSoldByWeight: isSoldByWeight,
+        preferDiscreteUn: preferDiscreteUn,
+      );
+      final effectiveDetails = Product.resolveEffectiveReceiptDetails(
+        displayName: name,
+        technicalSpec: technicalSpec,
+        customDetails: customDetails,
       );
       final qtyStr = isSoldByWeight
           ? '${quantity.toQty()} $unitSuffix'
@@ -875,10 +913,10 @@ class ThermalReceiptWidget extends StatelessWidget {
                   color: Colors.black,
                 ),
               ),
-              if (customDetails != null && customDetails.isNotEmpty) ...[
+              if (effectiveDetails != null && effectiveDetails.isNotEmpty) ...[
                 const SizedBox(height: 1),
                 Text(
-                  '* $customDetails',
+                  '* $effectiveDetails',
                   softWrap: true,
                   style: TextStyle(
                     fontFamily: 'monospace',
@@ -1224,7 +1262,10 @@ class ThermalReceiptWidget extends StatelessWidget {
   // REMITO / ORDEN DE RETIRO
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildDeliveryNoteSection(double factor) {
+  Widget _buildDeliveryNoteSection(
+    double factor, {
+    bool canUseScaleWeight = true,
+  }) {
     final note = deliveryNote!;
     final noteId = note['id']?.toString() ?? '';
     final status = (note['status'] ?? 'pending').toString().toLowerCase();
@@ -1306,7 +1347,11 @@ class ThermalReceiptWidget extends StatelessWidget {
             isBold: true),
         _buildDivider(),
         for (final rawItem in items) ...[
-          _buildDeliveryItemRow(rawItem, factor),
+          _buildDeliveryItemRow(
+            rawItem,
+            factor,
+            canUseScaleWeight: canUseScaleWeight,
+          ),
         ],
         const SizedBox(height: 12),
         _buildCenterText('FIRMA DESPACHANTE:',
@@ -1324,19 +1369,32 @@ class ThermalReceiptWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildDeliveryItemRow(dynamic rawItem, double factor) {
+  Widget _buildDeliveryItemRow(
+    dynamic rawItem,
+    double factor, {
+    bool canUseScaleWeight = true,
+  }) {
     String name = 'PRODUCTO';
     String? customDetails;
+    String? technicalSpec;
+    bool hasCalcConfig = false;
     double quantity = 1.0;
     bool isSoldByWeight = false;
     String? rawUnitType;
+    bool preferDiscreteUn = false;
 
     if (rawItem is CartItem) {
       name = rawItem.effectiveDisplayName;
       customDetails = rawItem.customDetails?.trim();
+      technicalSpec = rawItem.product.technicalSpec?.trim();
+      hasCalcConfig = rawItem.product.calcConfig != null &&
+          rawItem.product.calcConfig!.isNotEmpty;
       quantity = rawItem.quantity;
       isSoldByWeight = rawItem.product.isSoldByWeight;
       rawUnitType = rawItem.product.unitType;
+      preferDiscreteUn = rawItem.product.isDiscreteFractionalItem(
+        businessUsesScaleWeight: canUseScaleWeight,
+      );
     } else if (rawItem is Map<String, dynamic>) {
       final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
       final customDesc = rawItem['custom_description']?.toString().trim();
@@ -1347,15 +1405,29 @@ class ThermalReceiptWidget extends StatelessWidget {
               rawItem['name']?.toString() ??
               'PRODUCTO');
       customDetails = rawItem['custom_details']?.toString().trim();
+      technicalSpec =
+          (rawItem['technical_spec'] ?? prod['technical_spec'])?.toString().trim();
+      final rawCalcCfg = rawItem['calc_config'] ?? prod['calc_config'];
+      hasCalcConfig = rawCalcCfg is Map && rawCalcCfg.isNotEmpty;
       quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
       isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
           prod['is_sold_by_weight'] == true;
       rawUnitType = (rawItem['unit_type'] ?? prod['unit_type'])?.toString();
+      final normUnit = (rawUnitType ?? '').trim().toLowerCase();
+      preferDiscreteUn = isSoldByWeight &&
+          (normUnit.isEmpty || normUnit == 'un') &&
+          (hasCalcConfig || !canUseScaleWeight);
     }
 
     final unitSuffix = Product.resolveReceiptUnitSuffix(
       unitType: rawUnitType,
       isSoldByWeight: isSoldByWeight,
+      preferDiscreteUn: preferDiscreteUn,
+    );
+    final effectiveDetails = Product.resolveEffectiveReceiptDetails(
+      displayName: name,
+      technicalSpec: technicalSpec,
+      customDetails: customDetails,
     );
     final qtyStr = isSoldByWeight
         ? '${quantity.toQty()} $unitSuffix'
@@ -1392,11 +1464,11 @@ class ThermalReceiptWidget extends StatelessWidget {
               ),
             ],
           ),
-          if (customDetails != null && customDetails.isNotEmpty)
+          if (effectiveDetails != null && effectiveDetails.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 4, top: 1),
               child: Text(
-                '* $customDetails',
+                '* $effectiveDetails',
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 9.0 * factor,
