@@ -6801,11 +6801,20 @@ class _PosScreenState extends State<PosScreen> {
 
     // Cálculo elástico del espacio horizontal real descontando chips fijos activos
     final innerWidth = (panelWidth - 32.0).clamp(300.0, 4000.0);
+    final isCombinedWeightAndFrac =
+        quickProfile.canUseScaleWeight && quickProfile.canUseFractionalCut;
+    final weightChipLabel = isCombinedWeightAndFrac
+        ? '⚖️ Peso / Fracc.'
+        : (quickProfile.canUseFractionalCut
+            ? '📏 Fraccionables'
+            : '⚖️ Por Peso');
     final systemChipsWidth = 68.0 + // 'Todos'
         (hasPinned ? 102.0 : 0.0) +
         (hasTopSellers ? 130.0 : 0.0) +
         (hasOffers ? 100.0 : 0.0) +
-        (supportsWeightFilter ? 105.0 : 0.0); // '⚖️ Por Peso' / '📏 Fraccionables'
+        (supportsWeightFilter
+            ? (isCombinedWeightAndFrac ? 126.0 : 105.0)
+            : 0.0);
 
     final maxWithoutMore = ((innerWidth - systemChipsWidth) / 125.0).floor().clamp(1, 8);
     final int maxDirectCategories = allCategories.length <= maxWithoutMore
@@ -6879,9 +6888,7 @@ class _PosScreenState extends State<PosScreen> {
                     _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
                   if (supportsWeightFilter)
                     _buildFilterChip(
-                      quickProfile.canUseFractionalCut
-                          ? '📏 Fraccionables'
-                          : '⚖️ Por Peso',
+                      weightChipLabel,
                       'weight',
                       _quickAccessFilter,
                     ),

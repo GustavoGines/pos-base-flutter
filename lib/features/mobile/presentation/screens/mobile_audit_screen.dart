@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/utils/product_share_helper.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_image_preview_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -341,11 +342,45 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final technicalSpecCtrl =
         TextEditingController(text: productToEdit?.technicalSpec ?? '');
 
-    final canUseBatches = (settingsProv == null
-            ? true
-            : (settingsProv.features.batchExpiration ||
-                settingsProv.features.production)) ||
-        vencimientoCtrl.text.trim().isNotEmpty;
+    BusinessVerticalProfile resolveEffectiveProfile(
+      CatalogProvider catalogProv,
+      int? catId,
+    ) {
+      if (catId == null) return profile;
+      final cat =
+          catalogProv.categories.where((c) => c.id == catId).firstOrNull;
+      Rubro? itemRubro = cat?.rubro;
+      final rId = cat?.rubroId ?? cat?.rubro?.id;
+      if (rId != null) {
+        itemRubro =
+            catalogProv.safeRubros.where((r) => r.id == rId).firstOrNull ??
+                itemRubro;
+      }
+      final hasExplicitVertical = itemRubro?.verticalType != null &&
+          BusinessVerticalProfile.allVerticalCodes
+              .contains(itemRubro!.verticalType!.trim().toLowerCase());
+      if (!(settingsProv?.features.multiRubro ?? false) &&
+          !hasExplicitVertical) {
+        return profile;
+      }
+      return profile.forCategoryRubro(itemRubro);
+    }
+
+    final storeHasNativeBatch = settingsProv == null
+        ? true
+        : BusinessVerticalProfile.isNativeBatchVertical(
+            profile.primaryType,
+            profile.secondaryTypes,
+          );
+
+    bool resolveCanUseBatches(BusinessVerticalProfile effectiveProfile) {
+      if (settingsProv == null) return true;
+      return effectiveProfile.canUseBatchExpiration(
+        featureBatchExpiration: settingsProv.features.batchExpiration,
+        featureProduction: settingsProv.features.production,
+        storeHasNativeBatchVertical: storeHasNativeBatch,
+      );
+    }
 
     bool isSaving = false;
     String? selectedImagePath;
@@ -418,6 +453,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             final catalogProv = context.read<CatalogProvider>();
+            final effectiveProfile =
+                resolveEffectiveProfile(catalogProv, selectedCategoryId);
+            final canUseBatches = resolveCanUseBatches(effectiveProfile);
 
             Future<bool> ensureCameraPermission() async {
               if (!Platform.isAndroid) return true;
@@ -872,8 +910,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     TextField(
                       controller: technicalSpecCtrl,
                       decoration: InputDecoration(
-                        labelText: profile.specFieldLabel,
-                        hintText: profile.specFieldHint,
+                        labelText: effectiveProfile.specFieldLabel,
+                        hintText: effectiveProfile.specFieldHint,
                         isDense: true,
                         border: const OutlineInputBorder(),
                       ),
@@ -1071,8 +1109,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                 'docena': 'Docenas',
                               };
                               final keys = <String>[
-                                ...profile.allowedUnitKeys,
-                                if (!profile.allowedUnitKeys.contains(unitType))
+                                ...effectiveProfile.allowedUnitKeys,
+                                if (!effectiveProfile.allowedUnitKeys
+                                    .contains(unitType))
                                   unitType,
                               ];
                               return keys
@@ -1089,7 +1128,12 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             }(),
                             onChanged: (val) {
                               if (val != null) {
-                                setStateDialog(() => unitType = val);
+                                setStateDialog(() {
+                                  unitType = val;
+                                  if (effectiveProfile.isTech && val != 'mt') {
+                                    isSoldByWeight = false;
+                                  }
+                                });
                               }
                             },
                           ),
@@ -1104,10 +1148,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         decoration: const InputDecoration(labelText: 'Días para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
                       ),
                     ],
-                    if (profile.showFractionSwitchInForm || isSoldByWeight) ...[
+                    if (effectiveProfile.showFractionSwitchForUnit(unitType)) ...[
                       const SizedBox(height: 12),
                       SwitchListTile(
-                        title: Text(profile.weightSwitchLabelNarrow),
+                        title: Text(effectiveProfile.weightSwitchLabelNarrow),
                         value: isSoldByWeight,
                         onChanged: (val) => setStateDialog(() => isSoldByWeight = val),
                         contentPadding: EdgeInsets.zero,
@@ -1176,7 +1220,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             if (minStock != null) {
                               payload['min_stock'] = minStock;
                             }
-                            if (vencimientoDias != null) {
+                            if (canUseBatches && vencimientoDias != null) {
                               payload['vencimiento_dias'] = vencimientoDias;
                             }
 

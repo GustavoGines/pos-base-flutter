@@ -11,6 +11,7 @@ import '../../../features/pos/domain/entities/cart_item.dart';
 import '../../../features/settings/domain/entities/business_settings.dart';
 import '../../../features/quotes/data/quote_repository.dart';
 import '../../../features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/logistics/services/delivery_note_pdf_service.dart';
 
 /// Tipo de conexión con la impresora térmica
 enum PrinterConnectionType {
@@ -1972,21 +1973,32 @@ class ReceiptPrinterService {
         final item = (note['items'] as List).firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
         if (item == null) continue;
 
-        final productName = _cleanText((item['product']?['name'] ?? 'Producto').toUpperCase());
+        final pres = DeliveryNotePdfService.resolveItemPresentation(
+          Map<String, dynamic>.from(item as Map),
+          sale: note['sale'] is Map
+              ? Map<String, dynamic>.from(note['sale'] as Map)
+              : null,
+          businessSettings: settings,
+          asciiOnly: true,
+        );
+        final productName = _cleanText(pres.displayName.toUpperCase());
         final purchased = double.parse(item['quantity_purchased'].toString());
         final deliveredBefore = double.parse(item['quantity_delivered'].toString());
         final deliveredNow = (deliveredData['delivered_now'] as num).toDouble();
-        
-        final remaining = isReprint 
+
+        final remaining = isReprint
             ? purchased - deliveredNow // Si es reimpresión, deliveredNow ya contiene todo lo entregado
             : purchased - (deliveredBefore + deliveredNow);
 
         final actionLabel = isReprint ? 'Entregado' : 'Entregando';
 
         b += gen.text(productName, styles: const PosStyles(bold: true));
+        if (pres.details != null && pres.details!.isNotEmpty) {
+          b += gen.text(_cleanText(pres.details!));
+        }
         b += gen.row([
-          PosColumn(text: '$actionLabel: ${deliveredNow.toQty()}', width: 6),
-          PosColumn(text: 'Saldo: ${remaining.toQty()}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(text: '$actionLabel: ${deliveredNow.toQty()} ${pres.unitLabel}', width: 6),
+          PosColumn(text: 'Saldo: ${remaining.toQty()} ${pres.unitLabel}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
         b += gen.feed(1);
       }

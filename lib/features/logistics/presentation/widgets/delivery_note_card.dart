@@ -418,7 +418,12 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             final item =
                 items.firstWhere((i) => i['id'] == d['id'], orElse: () => null);
             if (item == null) return [const TicketLine.space()];
-            final name = (item['product']?['name'] ?? 'Producto').toUpperCase();
+            final pres = DeliveryNotePdfService.resolveItemPresentation(
+              Map<String, dynamic>.from(item as Map),
+              sale: Map<String, dynamic>.from(sale),
+              businessSettings: settings,
+            );
+            final name = pres.displayName.toUpperCase();
             final purchased =
                 double.parse(item['quantity_purchased'].toString());
             final deliveredBefore =
@@ -430,8 +435,9 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             final actionLabel = isReprint ? 'Entregado' : 'Entregando';
             return [
               TicketLine(name, isBold: true),
+              if (pres.details != null) TicketLine(pres.details!),
               TicketLine(
-                  '$actionLabel: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
+                  '$actionLabel: ${deliveredNow.toQty()} ${pres.unitLabel} | Saldo: ${remaining.toQty()} ${pres.unitLabel}'),
               const TicketLine.space(),
             ];
           }),

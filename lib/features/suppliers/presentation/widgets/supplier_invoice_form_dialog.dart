@@ -15,7 +15,9 @@ import '../../../../core/utils/snack_bar_service.dart';
 
 import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
+import '../../../../core/config/business_vertical_profile.dart';
 import '../../../catalog/domain/entities/product.dart';
+import '../../../catalog/domain/entities/rubro.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -577,8 +579,46 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     return true;
   }
 
+  bool _canUseBatchesForProduct(Product product) {
+    try {
+      final s = context.read<SettingsProvider?>();
+      if (s == null) return true;
+      final baseProfile = s.safeVerticalProfile;
+      Rubro? itemRubro = product.category?.rubro;
+      final rId = product.category?.rubroId ?? product.category?.rubro?.id;
+      if (rId != null) {
+        try {
+          final catProv = context.read<CatalogProvider?>();
+          if (catProv != null) {
+            itemRubro = catProv.safeRubros
+                    .where((r) => r.id == rId)
+                    .firstOrNull ??
+                itemRubro;
+          }
+        } catch (_) {}
+      }
+      final hasExplicitVertical = itemRubro?.verticalType != null &&
+          BusinessVerticalProfile.allVerticalCodes
+              .contains(itemRubro!.verticalType!.trim().toLowerCase());
+      final itemProfile = (s.features.multiRubro || hasExplicitVertical)
+          ? baseProfile.forCategoryRubro(itemRubro)
+          : baseProfile;
+      final storeHasNativeBatch =
+          BusinessVerticalProfile.isNativeBatchVertical(
+        baseProfile.primaryType,
+        baseProfile.secondaryTypes,
+      );
+      return itemProfile.canUseBatchExpiration(
+        featureBatchExpiration: s.features.batchExpiration,
+        featureProduction: s.features.production,
+        storeHasNativeBatchVertical: storeHasNativeBatch,
+      );
+    } catch (_) {}
+    return _canUseBatches;
+  }
+
   void _addProduct(Product product) {
-    final canUseBatches = _canUseBatches;
+    final canUseBatches = _canUseBatchesForProduct(product);
     final existingIndex = _items.indexWhere((i) => i.product.id == product.id);
     if (existingIndex >= 0) {
       setState(() {
@@ -1299,23 +1339,23 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       setState(() => _isLoading = true);
 
       try {
-        final canUseBatches = _canUseBatches;
-        final itemsData = _items
-            .map((i) => {
-                  'product_id': i.product.id,
-                  'quantity': i.quantity,
-                  'unit_cost': i.newCost,
-                  'subtotal': double.parse((i.quantity * i.newCost).toStringAsFixed(2)),
-                  'update_price': i.updatePrice,
-                  'new_selling_price': i.updatePrice ? i.manualPrice : null,
-                  if (canUseBatches && i.batchId != null) 'batch_id': i.batchId,
-                  if (canUseBatches && i.batchCodeCtrl.text.trim().isNotEmpty)
-                    'batch_code': i.batchCodeCtrl.text.trim(),
-                  if (canUseBatches && i.expirationDate != null)
-                    'expiration_date':
-                        DateFormat('yyyy-MM-dd').format(i.expirationDate!),
-                })
-            .toList();
+        final itemsData = _items.map((i) {
+          final itemCanUseBatches = _canUseBatchesForProduct(i.product);
+          return {
+            'product_id': i.product.id,
+            'quantity': i.quantity,
+            'unit_cost': i.newCost,
+            'subtotal': double.parse((i.quantity * i.newCost).toStringAsFixed(2)),
+            'update_price': i.updatePrice,
+            'new_selling_price': i.updatePrice ? i.manualPrice : null,
+            if (itemCanUseBatches && i.batchId != null) 'batch_id': i.batchId,
+            if (itemCanUseBatches && i.batchCodeCtrl.text.trim().isNotEmpty)
+              'batch_code': i.batchCodeCtrl.text.trim(),
+            if (itemCanUseBatches && i.expirationDate != null)
+              'expiration_date':
+                  DateFormat('yyyy-MM-dd').format(i.expirationDate!),
+          };
+        }).toList();
 
         final data = <String, dynamic>{
           'type': _type,
@@ -2678,7 +2718,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
-          if (_canUseBatches && !item.product.isCombo && !item.product.isService) ...[
+          if (_canUseBatchesForProduct(item.product) &&
+              !item.product.isCombo &&
+              !item.product.isService) ...[
             if (!item.showLotFields)
               Padding(
                 padding: const EdgeInsets.only(top: 4),

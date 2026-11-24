@@ -387,5 +387,175 @@ void main() {
         expect(remitoBytes, isNotEmpty);
       }
     });
+
+    test('resolveItemPresentation & generatePdf handle Corralon units (m3, mt, un.), specs, and ASCII ESC/POS', () async {
+      final hardwareSettings = {'business_type': 'hardware_store'};
+      final sale = {
+        'id': 901,
+        'items': [
+          {
+            'product_id': 10,
+            'unit_type': 'm3',
+            'is_sold_by_weight': true,
+            'custom_details': 'Descarga frente a obra',
+          },
+          {
+            'product_id': 11,
+            'unit_type': 'mt',
+            'is_sold_by_weight': true,
+            'custom_details': 'Caño PVC 110mm - Tira 4m',
+          },
+          {
+            'product_id': 12,
+            'unit_type': 'un',
+            'is_sold_by_weight': true,
+            'custom_details': '',
+          },
+        ],
+      };
+
+      final arenaItem = {
+        'id': 1,
+        'product_id': 10,
+        'unit_type': 'm3',
+        'quantity_purchased': 3.5,
+        'quantity_delivered': 1.0,
+        'product': {
+          'id': 10,
+          'name': 'Arena Lavada',
+          'internal_code': 'AR-001',
+          'unit_type': 'm3',
+          'is_sold_by_weight': true,
+          'technical_spec': 'Camionada 6 m³',
+        },
+      };
+      final presArena = DeliveryNotePdfService.resolveItemPresentation(
+        arenaItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+      );
+      expect(presArena.unitLabel, 'm³');
+      expect(presArena.receiptUnitSuffix, 'm³');
+      expect(presArena.allowDecimals, isTrue);
+      expect(presArena.details, 'Camionada 6 m³ - Descarga frente a obra');
+
+      final presArenaAscii = DeliveryNotePdfService.resolveItemPresentation(
+        arenaItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+        asciiOnly: true,
+      );
+      expect(presArenaAscii.unitLabel, 'm3');
+      expect(presArenaAscii.details, 'Camionada 6 m3 - Descarga frente a obra');
+
+      final canoItem = {
+        'id': 2,
+        'product_id': 11,
+        'unit_type': 'mt',
+        'quantity_purchased': 12.5,
+        'quantity_delivered': 0.0,
+        'product': {
+          'id': 11,
+          'name': 'Caño PVC 110mm',
+          'internal_code': 'CA-110',
+          'unit_type': 'mt',
+          'is_sold_by_weight': true,
+          'technical_spec': 'Caño PVC 110mm',
+        },
+      };
+      final presCano = DeliveryNotePdfService.resolveItemPresentation(
+        canoItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+      );
+      expect(presCano.unitLabel, 'mt');
+      expect(presCano.details, 'Caño PVC 110mm - Tira 4m');
+      expect(presCano.allowDecimals, isTrue);
+
+      final maderaItem = {
+        'id': 3,
+        'product_id': 12,
+        'unit_type': 'un',
+        'quantity_purchased': 4.0,
+        'quantity_delivered': 0.0,
+        'product': {
+          'id': 12,
+          'name': 'Tabla Lapacho',
+          'internal_code': 'MAD-01',
+          'unit_type': 'un',
+          'is_sold_by_weight': true,
+          'calc_config': {'mode': 'linear_m', 'length_m': 4.0},
+          'technical_spec': '1" × 6" × 4.00m',
+        },
+      };
+      final presMadera = DeliveryNotePdfService.resolveItemPresentation(
+        maderaItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+      );
+      expect(presMadera.unitLabel, 'un.');
+      expect(presMadera.allowDecimals, isTrue);
+
+      final presMaderaAscii = DeliveryNotePdfService.resolveItemPresentation(
+        maderaItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+        asciiOnly: true,
+      );
+      expect(presMaderaAscii.unitLabel, 'un');
+      expect(presMaderaAscii.details, '1" x 6" x 4.00m');
+
+      final bolsaItem = {
+        'id': 4,
+        'product_id': 13,
+        'unit_type': 'bolsa',
+        'quantity_purchased': 10.0,
+        'quantity_delivered': 2.0,
+        'product': {
+          'id': 13,
+          'name': 'Cemento Loma Negra 50kg',
+          'internal_code': 'CEM-50',
+          'unit_type': 'bolsa',
+          'is_sold_by_weight': false,
+        },
+      };
+      final presBolsa = DeliveryNotePdfService.resolveItemPresentation(
+        bolsaItem,
+        sale: sale,
+        businessSettings: hardwareSettings,
+      );
+      expect(presBolsa.unitLabel, 'bolsa');
+      expect(presBolsa.allowDecimals, isFalse);
+
+      final note = {
+        'id': 99,
+        'status': 'partial',
+        'created_at': '2026-11-24T12:00:00Z',
+        'sale': {
+          ...sale,
+          'customer': {'name': 'Obra Formosa SRL', 'document_number': '30711223344'},
+        },
+        'items': [arenaItem, canoItem, maderaItem, bolsaItem],
+      };
+
+      for (final size in ['a4', 'letter']) {
+        final dispatchPdf = await DeliveryNotePdfService.generatePdf(
+          note: note,
+          deliveredNow: const {1: 1.5, 2: 4.5},
+          businessName: 'Corralón Norte',
+          paperSize: size,
+          businessSettings: hardwareSettings,
+        );
+        expect(dispatchPdf.length, greaterThan(1000));
+
+        final pendingPdf = await DeliveryNotePdfService.generatePdf(
+          note: note,
+          businessName: 'Corralón Norte',
+          paperSize: size,
+          businessSettings: hardwareSettings,
+        );
+        expect(pendingPdf.length, greaterThan(1000));
+      }
+    });
   });
 }
