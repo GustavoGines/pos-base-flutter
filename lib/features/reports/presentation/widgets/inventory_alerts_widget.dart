@@ -21,7 +21,7 @@ import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 
 /// Widget autónomo de alertas semafóricas de stock.
 /// Se monta en la GlobalAppBar y despliega un OverlayPortal no bloqueante
@@ -1777,6 +1777,53 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   }
 
   Widget _buildFooter() {
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.watch<SettingsProvider?>();
+    } catch (_) {}
+    final settings = settingsProv?.settings;
+    if (settings != null && !settings.features.predictiveAlerts) {
+      return InkWell(
+        key: const ValueKey('inventory_alerts_predictive_pro_footer'),
+        onTap: () {
+          _hideOverlay();
+          PlanUpgradeDialog.show(
+            context,
+            featureName: 'Alertas Predictivas con IA',
+            description:
+                'Calculá automáticamente cuántos días de cobertura te quedan según tu ritmo real de ventas y anticipáte a quiebres de stock con el Plan Premium.',
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF5F3FF), Color(0xFFEFF6FF)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome_rounded, size: 16, color: Color(0xFF6D28D9)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '🧠 Activá Alertas Predictivas con IA (PRO) 🔒',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4C1D95),
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 18, color: Colors.indigo.shade700),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -1815,12 +1862,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () async {
-            final url = Uri.parse(
-                'https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20para%20activar%20las%20Alertas%20Predictivas');
-            if (await canLaunchUrl(url)) {
-              await launchUrl(url, mode: LaunchMode.externalApplication);
-            }
+          onTap: () {
+            _hideOverlay();
+            PlanUpgradeDialog.show(
+              context,
+              featureName: 'Alertas Predictivas con IA',
+              description:
+                  'Calculá automáticamente cuántos días de cobertura te quedan según tu ritmo real de ventas y anticipáte a quiebres de stock con el Plan Premium.',
+            );
           },
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1841,15 +1890,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Desbloquear Alertas Predictivas',
+                        '🧠 Activá Alertas Predictivas con IA (PRO) 🔒',
                         style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 13),
+                            fontSize: 12.5),
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Anticipáte a los quiebres de stock — Plan Premium',
+                        'Anticipáte a los quiebres según tu ritmo de ventas',
                         style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                     ],

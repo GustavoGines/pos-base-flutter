@@ -6440,11 +6440,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final navCtx = AppConfig.navigatorKey.currentContext!;
                 navCtx.read<PosProvider>().clearCart();
                 try {
-                  navCtx.read<CashMovementProvider>().fetchMovements(
-                        refresh: true,
-                        all: false,
-                        cashShiftId: newShiftId,
-                      );
+                  if (settingsProvider.features.expenses) {
+                    navCtx.read<CashMovementProvider>().fetchMovements(
+                          refresh: true,
+                          all: false,
+                          cashShiftId: newShiftId,
+                        );
+                  }
                 } catch (_) {}
                 try {
                   navCtx.read<SalesHistoryProvider>().loadSales(

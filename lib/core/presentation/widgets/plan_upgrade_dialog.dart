@@ -29,7 +29,8 @@ class PlanUpgradeDialog extends StatelessWidget {
   });
 
   // ───── Contacto de soporte ─────────────────────────────────────────────────
-  static const _whatsappNumber = '543704787285'; // +54 370 478-7285 (Argentina)
+  static const _whatsappNumber = '5493704367202'; // +54 9 3704 36-7202 (Argentina)
+  static const _whatsappDisplay = '+54 9 3704 36-7202';
   static const _whatsappPrefilledMsg =
       '¡Hola! Necesito ampliar mi licencia de Caja4U. '
       'Quiero acceder a más funciones de mi plan actual.';
@@ -146,6 +147,15 @@ class PlanUpgradeDialog extends StatelessWidget {
                 elevation: 0,
                 shadowColor: Colors.transparent,
               ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'WhatsApp Soporte: $_whatsappDisplay',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
             ),
           ),
 

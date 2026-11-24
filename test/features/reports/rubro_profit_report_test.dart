@@ -717,7 +717,7 @@ void main() {
   });
 
   group('ReportsScreen Tab Integration Tests', () {
-    testWidgets('ReportsScreen tab bar omits Por Rubro tab when multi_rubro is disabled', (tester) async {
+    testWidgets('ReportsScreen tab bar shows Por Rubro locked with PRO badge when multi_rubro is disabled', (tester) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -758,7 +758,12 @@ void main() {
       expect(find.text('Por Categoría'), findsOneWidget);
       expect(find.text('Por Marcas'), findsOneWidget);
       expect(find.text('Ranking y Acceso Rápido POS'), findsOneWidget);
-      expect(find.text('Por Rubro'), findsNothing);
+      expect(find.text('Por Rubro'), findsOneWidget);
+
+      await tester.tap(find.text('Por Rubro'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reportes por Rubro (Multi-Rubro)'), findsOneWidget);
+      expect(find.byType(RubroProfitReportView), findsNothing);
     });
 
     testWidgets('ReportsScreen tab bar displays Por Rubro tab when multi_rubro is enabled', (tester) async {

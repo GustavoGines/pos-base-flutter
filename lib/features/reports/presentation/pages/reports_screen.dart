@@ -7,6 +7,8 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/premium_showcase_card.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -57,16 +59,9 @@ class _ReportsScreenState extends State<ReportsScreen>
     dynamic features, {
     required bool isResponsableInscripto,
   }) {
-    // 1 base: Reportes Generales (unifica Categoría, Marcas, Rubros y Ranking POS)
-    int count = 1;
-    if (features.advancedReports) {
-      count += 1; // Balance Mensual
-      if (features.expenses) count += 1; // Análisis de Gastos
-      if (features.currentAccounts) count += 1; // Consumo Interno
-    }
-    // Libro IVA Ventas: habilitado tanto en Plan Básico como PRO si el comercio es Responsable Inscripto
-    if (isResponsableInscripto) count += 1;
-    return count;
+    // 4 pestañas siempre visibles en vitrina: Reportes Generales, Balance Mensual, Análisis de Gastos, Consumo Interno
+    // + 1 pestaña IVA / Impositivo si el comercio es Responsable Inscripto
+    return isResponsableInscripto ? 5 : 4;
   }
 
   @override
@@ -111,13 +106,45 @@ class _ReportsScreenState extends State<ReportsScreen>
     }
   }
 
+  Widget _buildReportTab({
+    required IconData icon,
+    required String label,
+    bool isLocked = false,
+  }) {
+    if (!isLocked) {
+      return Tab(icon: Icon(icon, size: 18), text: label);
+    }
+    return Tab(
+      icon: Icon(
+        Icons.lock_outline_rounded,
+        size: 18,
+        color: Colors.amber.shade800,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 5),
+          const _ProPillBadge(label: 'PRO'),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settingsProv = context.watch<SettingsProvider>();
     final features = settingsProv.features;
     final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
     final hasAdvancedReports = features.advancedReports;
-    final hasCurrentAccounts = features.currentAccounts;
+    final hasExpenses = hasAdvancedReports && features.expenses;
+    final hasInternalConsumption = hasAdvancedReports && features.currentAccounts;
     final hasMultiRubro = features.multiRubro;
 
     return Scaffold(
@@ -130,12 +157,15 @@ class _ReportsScreenState extends State<ReportsScreen>
             children: [
               // ── Tab Bar ─────────────────────────────────────────────────────
               Container(
+                width: double.infinity,
                 color: Colors.white,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TabBar(
                       controller: _tabController,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.center,
                       labelColor: Colors.indigo.shade800,
                       unselectedLabelColor: Colors.blueGrey,
                       indicatorColor: Colors.indigo.shade700,
@@ -144,15 +174,23 @@ class _ReportsScreenState extends State<ReportsScreen>
                       tabs: [
                         // 1° Operativo y Catálogo (Por Categoría, Por Marcas, Por Rubro y Ranking POS)
                         const Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: 'Reportes Generales'),
-                        // 2°, 3°, 4° Gestión Financiera Mensual (Plan PRO / Reportes Avanzados)
-                        if (hasAdvancedReports) ...[
-                          const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
-                          if (features.expenses)
-                            const Tab(icon: Icon(Icons.pie_chart, size: 18), text: 'Análisis de Gastos'),
-                          if (hasCurrentAccounts)
-                            const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
-                        ],
-                        // Cierre Fiscal / Contable ARCA-AFIP (Plan Básico y PRO cuando es Responsable Inscripto)
+                        // 2°, 3°, 4° Gestión Financiera Mensual (siempre visibles en vitrina)
+                        _buildReportTab(
+                          icon: Icons.calendar_month,
+                          label: 'Balance Mensual',
+                          isLocked: !hasAdvancedReports,
+                        ),
+                        _buildReportTab(
+                          icon: Icons.pie_chart,
+                          label: 'Análisis de Gastos',
+                          isLocked: !hasExpenses,
+                        ),
+                        _buildReportTab(
+                          icon: Icons.inventory_2,
+                          label: 'Consumo Interno',
+                          isLocked: !hasInternalConsumption,
+                        ),
+                        // Cierre Fiscal / Contable ARCA-AFIP (Responsable Inscripto)
                         if (isResponsableInscripto)
                           const Tab(icon: Icon(Icons.account_balance_outlined, size: 18), text: '🏛️ IVA / Impositivo'),
                       ],
@@ -166,6 +204,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                             provider: provider,
                             isBrand: provider.generalViewMode == 'brand',
                             hasMultiRubro: hasMultiRubro,
+                            hasAdvancedReports: hasAdvancedReports,
                             onDateTap: () => _selectDateRange(context),
                             onRefresh: () {
                               if (isRubroSubView) {
@@ -197,15 +236,53 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 : _DashboardContent(
                                     provider: provider,
                                     isBrand: provider.generalViewMode == 'brand',
+                                    hasAdvancedReports: hasAdvancedReports,
                                   )),
-                    // Tabs Financieras PRO (Balance Mensual, Análisis de Gastos, Consumo Interno)
-                    if (hasAdvancedReports)
-                      _MonthlyBalanceTab(provider: provider),
-                    if (hasAdvancedReports && features.expenses)
-                      const ExpenseAnalysisTab(),
-                    if (hasAdvancedReports && hasCurrentAccounts)
-                      const InternalConsumptionReportView(),
-                    // Tab Contable Fiscal (Plan Básico y PRO para Responsable Inscripto: Posición Mensual, Libro IVA Ventas y Compras)
+                    // Tab 2: Balance Mensual
+                    hasAdvancedReports
+                        ? _MonthlyBalanceTab(provider: provider)
+                        : const PremiumShowcaseCard(
+                            icon: Icons.calendar_month_rounded,
+                            title: 'Balance Mensual y Rentabilidad',
+                            subtitle:
+                                'Visualizá el resultado real mes a mes cruzando facturación, costos, gastos operativos y márgenes netos.',
+                            highlights: [
+                              'Estado de resultados mensual con evolución histórica',
+                              'Cruce automático entre ventas, mercadería y egresos de caja',
+                              'Exportación ejecutiva a Excel y PDF para gerencia o contador',
+                            ],
+                          ),
+                    // Tab 3: Análisis de Gastos
+                    hasExpenses
+                        ? const ExpenseAnalysisTab()
+                        : const PremiumShowcaseCard(
+                            icon: Icons.pie_chart_rounded,
+                            title: 'Análisis Inteligente de Gastos',
+                            subtitle:
+                                'Clasificá egresos por categoría, medio de pago y sucursal para detectar fugas de dinero al instante.',
+                            highlights: [
+                              'Distribución porcentual por categoría de gasto (alquiler, servicios, sueldos)',
+                              'Filtros por caja, cuenta del dueño y pagos a proveedores',
+                              'Reportes descargables en Excel y PDF',
+                            ],
+                            accentColor: Color(0xFF0284C7),
+                          ),
+                    // Tab 4: Consumo Interno
+                    hasInternalConsumption
+                        ? const InternalConsumptionReportView()
+                        : const PremiumShowcaseCard(
+                            icon: Icons.inventory_2_rounded,
+                            title: 'Control de Consumo Interno',
+                            subtitle:
+                                'Registrá y auditá retiros de mercadería del personal o uso interno sin distorsionar la rentabilidad de tus ventas.',
+                            highlights: [
+                              'Cuentas internas separadas del cierre de caja comercial',
+                              'Detalle por colaborador, fecha y costo real de reposición',
+                              'Cierre limpio de inventario y stock auditado',
+                            ],
+                            accentColor: Color(0xFF0D9488),
+                          ),
+                    // Tab 5: Contable Fiscal (Responsable Inscripto)
                     if (isResponsableInscripto) const VatManagementTab(),
                   ],
                 ),
@@ -224,6 +301,7 @@ class _FiltersBar extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
   final bool hasMultiRubro;
+  final bool hasAdvancedReports;
   final VoidCallback onDateTap;
   final VoidCallback onRefresh;
 
@@ -231,19 +309,23 @@ class _FiltersBar extends StatelessWidget {
     required this.provider,
     this.isBrand = false,
     this.hasMultiRubro = false,
+    this.hasAdvancedReports = true,
     required this.onDateTap,
     required this.onRefresh,
   });
 
   Widget _buildModeSegment({
+    required BuildContext context,
     required String mode,
     required IconData icon,
     required String label,
     required Color activeColor,
+    bool isLocked = false,
+    VoidCallback? onLockedTap,
   }) {
-    final selected = provider.generalViewMode == mode;
+    final selected = !isLocked && provider.generalViewMode == mode;
     return InkWell(
-      onTap: () => provider.setGeneralViewMode(mode),
+      onTap: isLocked ? onLockedTap : () => provider.setGeneralViewMode(mode),
       borderRadius: BorderRadius.circular(8),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
@@ -256,9 +338,11 @@ class _FiltersBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon,
+              isLocked ? Icons.lock_outline_rounded : icon,
               size: 15,
-              color: selected ? Colors.white : Colors.blueGrey.shade700,
+              color: isLocked
+                  ? Colors.amber.shade800
+                  : (selected ? Colors.white : Colors.blueGrey.shade700),
             ),
             const SizedBox(width: 6),
             Text(
@@ -266,9 +350,15 @@ class _FiltersBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: selected ? FontWeight.bold : FontWeight.w600,
-                color: selected ? Colors.white : Colors.blueGrey.shade700,
+                color: isLocked
+                    ? Colors.blueGrey.shade700
+                    : (selected ? Colors.white : Colors.blueGrey.shade700),
               ),
             ),
+            if (isLocked) ...[
+              const SizedBox(width: 6),
+              const _ProPillBadge(label: 'PRO'),
+            ],
           ],
         ),
       ),
@@ -304,25 +394,35 @@ class _FiltersBar extends StatelessWidget {
                 spacing: 4,
                 children: [
                   _buildModeSegment(
+                    context: context,
                     mode: 'category',
                     icon: Icons.bar_chart_rounded,
                     label: 'Por Categoría',
                     activeColor: Colors.indigo.shade700,
                   ),
                   _buildModeSegment(
+                    context: context,
                     mode: 'brand',
                     icon: Icons.branding_watermark_outlined,
                     label: 'Por Marcas',
                     activeColor: Colors.indigo.shade700,
                   ),
-                  if (hasMultiRubro)
-                    _buildModeSegment(
-                      mode: 'rubro',
-                      icon: Icons.account_tree_outlined,
-                      label: 'Por Rubro',
-                      activeColor: Colors.indigo.shade700,
-                    ),
                   _buildModeSegment(
+                    context: context,
+                    mode: 'rubro',
+                    icon: Icons.account_tree_outlined,
+                    label: 'Por Rubro',
+                    activeColor: Colors.indigo.shade700,
+                    isLocked: !hasMultiRubro,
+                    onLockedTap: () => PlanUpgradeDialog.show(
+                      context,
+                      featureName: 'Reportes por Rubro (Multi-Rubro)',
+                      description:
+                          'Compará la facturación y rentabilidad agrupada por cada rubro de tu comercio con el Plan Premium.',
+                    ),
+                  ),
+                  _buildModeSegment(
+                    context: context,
                     mode: 'ranking',
                     icon: Icons.local_fire_department_rounded,
                     label: 'Ranking y Acceso Rápido POS',
@@ -370,36 +470,85 @@ class _FiltersBar extends StatelessWidget {
                   ),
                 ),
                 if (provider.generalViewMode != 'ranking') ...[
-                  FilledButton.icon(
-                    onPressed: provider.isExporting
-                        ? null
-                        : () => isRubroMode
-                            ? provider.exportRubroToExcel()
-                            : provider.exportToExcel(isBrand: isBrand),
-                    icon: provider.isExporting
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.file_download, size: 15),
-                    label: const Text('Exportar Excel'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.green.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  if (hasAdvancedReports) ...[
+                    FilledButton.icon(
+                      onPressed: provider.isExporting
+                          ? null
+                          : () => isRubroMode
+                              ? provider.exportRubroToExcel()
+                              : provider.exportToExcel(isBrand: isBrand),
+                      icon: provider.isExporting
+                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.file_download, size: 15),
+                      label: const Text('Exportar Excel'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
                     ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: provider.isExportingPdf
-                        ? null
-                        : () => isRubroMode
-                            ? provider.exportRubroToPdf()
-                            : provider.exportToPdf(isBrand: isBrand),
-                    icon: provider.isExportingPdf
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.picture_as_pdf, size: 15),
-                    label: const Text('Generar PDF'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.red.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    FilledButton.icon(
+                      onPressed: provider.isExportingPdf
+                          ? null
+                          : () => isRubroMode
+                              ? provider.exportRubroToPdf()
+                              : provider.exportToPdf(isBrand: isBrand),
+                      icon: provider.isExportingPdf
+                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.picture_as_pdf, size: 15),
+                      label: const Text('Generar PDF'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    OutlinedButton.icon(
+                      onPressed: () => PlanUpgradeDialog.show(
+                        context,
+                        featureName: 'Exportación a Excel y PDF Gerencial',
+                        description:
+                            'Descargá tus reportes generales, balances y estadísticas en Excel y PDF listos para analizar o enviar a tu contador con el Plan Premium.',
+                      ),
+                      icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Exportar Excel'),
+                          SizedBox(width: 6),
+                          _ProPillBadge(label: 'PRO'),
+                        ],
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey.shade700,
+                        side: BorderSide(color: Colors.amber.shade300),
+                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.45),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => PlanUpgradeDialog.show(
+                        context,
+                        featureName: 'Exportación a Excel y PDF Gerencial',
+                        description:
+                            'Descargá tus reportes generales, balances y estadísticas en Excel y PDF listos para analizar o enviar a tu contador con el Plan Premium.',
+                      ),
+                      icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Generar PDF'),
+                          SizedBox(width: 6),
+                          _ProPillBadge(label: 'PRO'),
+                        ],
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey.shade700,
+                        side: BorderSide(color: Colors.amber.shade300),
+                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.45),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                    ),
+                  ],
                 ],
                 IconButton(
                   onPressed: onRefresh,
@@ -501,7 +650,12 @@ class _FiscalFilterSegment extends StatelessWidget {
 class _DashboardContent extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  const _DashboardContent({required this.provider, this.isBrand = false});
+  final bool hasAdvancedReports;
+  const _DashboardContent({
+    required this.provider,
+    this.isBrand = false,
+    this.hasAdvancedReports = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -518,19 +672,58 @@ class _DashboardContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Hero Cards
-          _HeroCardsRow(provider: provider),
+          _HeroCardsRow(
+            provider: provider,
+            hasAdvancedReports: hasAdvancedReports,
+          ),
           const SizedBox(height: 24),
           if (isRankingView) ...[
             _PosQuickAccessRankingSection(provider: provider),
           ] else ...[
-            // Gráfico + Tabla
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 5, child: _ChartCard(provider: provider, isBrand: isBrand)),
-                const SizedBox(width: 16),
-                Expanded(flex: 5, child: _DetailTableCard(provider: provider, isBrand: isBrand)),
-              ],
+            // Gráfico + Tabla (responsivo: lado a lado >= 1100px, apilado en pantallas compactas)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 1050) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: _ChartCard(
+                          provider: provider,
+                          isBrand: isBrand,
+                          hasAdvancedReports: hasAdvancedReports,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 5,
+                        child: _DetailTableCard(
+                          provider: provider,
+                          isBrand: isBrand,
+                          hasAdvancedReports: hasAdvancedReports,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ChartCard(
+                      provider: provider,
+                      isBrand: isBrand,
+                      hasAdvancedReports: hasAdvancedReports,
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailTableCard(
+                      provider: provider,
+                      isBrand: isBrand,
+                      hasAdvancedReports: hasAdvancedReports,
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 24),
             // Gráfico Evolutivo
@@ -546,7 +739,11 @@ class _DashboardContent extends StatelessWidget {
 
 class _HeroCardsRow extends StatelessWidget {
   final ReportsProvider provider;
-  const _HeroCardsRow({required this.provider});
+  final bool hasAdvancedReports;
+  const _HeroCardsRow({
+    required this.provider,
+    this.hasAdvancedReports = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -584,30 +781,52 @@ class _HeroCardsRow extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _HeroCard(
-            title: 'Ganancia Neta',
-            value: '\$${provider.totalProfit.toCurrency()}',
-            icon: Icons.trending_up,
-            color: Colors.green.shade600,
-            bgColor: Colors.green.shade50,
-            trend: provider.profitTrendPercentage,
-            subtitle: provider.hasMissingCostData
-                ? 'Basado en $coverage% de ítems con costo registrado'
-                : null,
-          ),
+          child: hasAdvancedReports
+              ? _HeroCard(
+                  title: 'Ganancia Neta',
+                  value: '\$${provider.totalProfit.toCurrency()}',
+                  icon: Icons.trending_up,
+                  color: Colors.green.shade600,
+                  bgColor: Colors.green.shade50,
+                  trend: provider.profitTrendPercentage,
+                  subtitle: provider.hasMissingCostData
+                      ? 'Basado en $coverage% de ítems con costo registrado'
+                      : null,
+                )
+              : _LockedHeroCard(
+                  title: 'Ganancia Neta',
+                  subtitle: 'Tocá para desbloquear costos y rentabilidad',
+                  onTap: () => PlanUpgradeDialog.show(
+                    context,
+                    featureName: 'Ganancia Neta y Rentabilidad Real',
+                    description:
+                        'Calculá automáticamente cuánto ganás descontando el costo de reposición de cada venta con el Plan Premium.',
+                  ),
+                ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _HeroCard(
-            title: 'Margen Promedio',
-            value: '${provider.marginPercentage.toStringAsFixed(1)}%',
-            icon: Icons.pie_chart,
-            color: Colors.purple.shade600,
-            bgColor: Colors.purple.shade50,
-            subtitle: provider.hasMissingCostData
-                ? 'Calculado sobre ventas con costo cargado'
-                : null,
-          ),
+          child: hasAdvancedReports
+              ? _HeroCard(
+                  title: 'Margen Promedio',
+                  value: '${provider.marginPercentage.toStringAsFixed(1)}%',
+                  icon: Icons.pie_chart,
+                  color: Colors.purple.shade600,
+                  bgColor: Colors.purple.shade50,
+                  subtitle: provider.hasMissingCostData
+                      ? 'Calculado sobre ventas con costo cargado'
+                      : null,
+                )
+              : _LockedHeroCard(
+                  title: 'Margen Promedio',
+                  subtitle: 'Tocá para analizar márgenes por categoría',
+                  onTap: () => PlanUpgradeDialog.show(
+                    context,
+                    featureName: 'Margen Promedio y Análisis de Rentabilidad',
+                    description:
+                        'Identificá qué categorías y marcas te dejan mayor porcentaje de margen con el Plan Premium.',
+                  ),
+                ),
         ),
         if (checksEnabled) ...[
           const SizedBox(width: 16),
@@ -623,6 +842,91 @@ class _HeroCardsRow extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _LockedHeroCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _LockedHeroCard({
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.amber.shade200),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  color: Colors.amber.shade800,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const _ProPillBadge(label: 'PRO'),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Plan PRO',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -723,7 +1027,12 @@ class _HeroCard extends StatelessWidget {
 class _ChartCard extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  const _ChartCard({required this.provider, this.isBrand = false});
+  final bool hasAdvancedReports;
+  const _ChartCard({
+    required this.provider,
+    this.isBrand = false,
+    this.hasAdvancedReports = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -733,7 +1042,7 @@ class _ChartCard extends StatelessWidget {
       return p > m ? p : m;
     });
     
-    final bool useRevenue = maxOverallProfit <= 0;
+    final bool useRevenue = !hasAdvancedReports || maxOverallProfit <= 0;
 
     final topData = List.of(dataList)
       ..sort((a, b) {
@@ -855,7 +1164,12 @@ class _ChartCard extends StatelessWidget {
 class _DetailTableCard extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  const _DetailTableCard({required this.provider, this.isBrand = false});
+  final bool hasAdvancedReports;
+  const _DetailTableCard({
+    required this.provider,
+    this.isBrand = false,
+    this.hasAdvancedReports = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -896,6 +1210,7 @@ class _DetailTableCard extends StatelessWidget {
                 margin: '${margin.toStringAsFixed(1)}%',
                 profitColor: profit > 0 ? Colors.green.shade700 : Colors.red.shade600,
                 products: item['products'] as List<dynamic>? ?? [],
+                hasAdvancedReports: hasAdvancedReports,
               );
             }),
           ],
@@ -936,6 +1251,7 @@ class _TableRow extends StatelessWidget {
   final String margin;
   final Color profitColor;
   final List<dynamic> products;
+  final bool hasAdvancedReports;
 
   const _TableRow({
     required this.category,
@@ -945,7 +1261,27 @@ class _TableRow extends StatelessWidget {
     required this.margin,
     required this.profitColor,
     required this.products,
+    this.hasAdvancedReports = true,
   });
+
+  Widget _lockedMetricCell(BuildContext context, double width) {
+    return SizedBox(
+      width: width,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: InkWell(
+          onTap: () => PlanUpgradeDialog.show(
+            context,
+            featureName: 'Ganancia y Margen por Producto',
+            description:
+                'Consultá la ganancia neta y margen porcentual desglosado por categoría, marca y producto con el Plan Premium.',
+          ),
+          borderRadius: BorderRadius.circular(6),
+          child: const _ProPillBadge(label: 'PRO', showLock: true),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -958,8 +1294,13 @@ class _TableRow extends StatelessWidget {
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
             SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            if (hasAdvancedReports) ...[
+              SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+              SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            ] else ...[
+              _lockedMetricCell(context, 120),
+              _lockedMetricCell(context, 75),
+            ],
             const SizedBox(width: 24),
           ],
         ),
@@ -977,8 +1318,13 @@ class _TableRow extends StatelessWidget {
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
             SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            if (hasAdvancedReports) ...[
+              SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+              SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            ] else ...[
+              _lockedMetricCell(context, 120),
+              _lockedMetricCell(context, 75),
+            ],
           ],
         ),
         children: products.map((prod) {
@@ -1009,12 +1355,56 @@ class _TableRow extends StatelessWidget {
                 ),
                 SizedBox(width: 60, child: Text(pQty.toQty(), style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
                 SizedBox(width: 120, child: Text('\$${pRev.toCurrency()}', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
-                SizedBox(width: 120, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
-                SizedBox(width: 75, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
+                if (hasAdvancedReports) ...[
+                  SizedBox(width: 120, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
+                  SizedBox(width: 75, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
+                ] else ...[
+                  _lockedMetricCell(context, 120),
+                  _lockedMetricCell(context, 75),
+                ],
               ],
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _ProPillBadge extends StatelessWidget {
+  final String label;
+  final bool showLock;
+
+  const _ProPillBadge({
+    required this.label,
+    this.showLock = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade100,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: Colors.amber.shade400),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showLock) ...[
+            Icon(Icons.lock_outline_rounded, size: 10, color: Colors.amber.shade900),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              color: Colors.amber.shade900,
+            ),
+          ),
+        ],
       ),
     );
   }
