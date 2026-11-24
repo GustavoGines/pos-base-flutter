@@ -77,13 +77,22 @@ class CatalogRepositoryImpl implements CatalogRepository {
   }
 
   @override
-  Future<Rubro> createRubro(String name, {String? description}) async {
-    return await remoteDataSource.createRubro(name, description: description);
+  Future<Rubro> createRubro(String name, {String? description, String? verticalType}) async {
+    return await remoteDataSource.createRubro(
+      name,
+      description: description,
+      verticalType: verticalType,
+    );
   }
 
   @override
-  Future<Rubro> updateRubro(int id, String name, {String? description}) async {
-    return await remoteDataSource.updateRubro(id, name, description: description);
+  Future<Rubro> updateRubro(int id, String name, {String? description, String? verticalType}) async {
+    return await remoteDataSource.updateRubro(
+      id,
+      name,
+      description: description,
+      verticalType: verticalType,
+    );
   }
 
   @override

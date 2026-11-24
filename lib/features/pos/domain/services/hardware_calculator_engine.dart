@@ -96,11 +96,16 @@ class WoodCalculationResult {
 class RoofCalculationResult {
   final bool isValid;
   final String? errorMessage;
+  final bool isAreaEstimate;
+  final double wastePercent;
   final double roofWidthM;
   final double roofSlopeLengthM;
   final double roofAreaM2;
+  final double usefulAreaCoveredM2;
   final int columnsAcrossWidth;
   final int rowsAlongSlope;
+  final double coveredSlopeLengthM;
+  final double surplusPerColumnM;
   final int totalSheetsNeeded;
   final double totalLinearMeters;
   final double totalNominalM2;
@@ -112,11 +117,16 @@ class RoofCalculationResult {
   const RoofCalculationResult({
     required this.isValid,
     this.errorMessage,
+    this.isAreaEstimate = false,
+    this.wastePercent = 0,
     this.roofWidthM = 0,
     this.roofSlopeLengthM = 0,
     this.roofAreaM2 = 0,
+    this.usefulAreaCoveredM2 = 0,
     this.columnsAcrossWidth = 0,
     this.rowsAlongSlope = 0,
+    this.coveredSlopeLengthM = 0,
+    this.surplusPerColumnM = 0,
     this.totalSheetsNeeded = 0,
     this.totalLinearMeters = 0,
     this.totalNominalM2 = 0,
@@ -158,6 +168,21 @@ class PaintCalculationResult {
     this.billingUnitLabel = 'envases',
     this.customDetailsNote = '',
     this.complements = const [],
+  });
+}
+
+/// Resultado del auto-detector inteligente de medidas F7.
+class HardwareAutoDetectResult {
+  final Map<String, dynamic> config;
+  final bool missingWidthWarning;
+  final String? detectedThicknessLabel;
+  final bool detectedLength;
+
+  const HardwareAutoDetectResult({
+    required this.config,
+    this.missingWidthWarning = false,
+    this.detectedThicknessLabel,
+    this.detectedLength = false,
   });
 }
 
@@ -223,15 +248,25 @@ class HardwareCalculatorEngine {
       nominalWidthM: 0.2032,
       usefulWidthM: 0.188,
     ),
+    WoodInchPreset(
+      key: '10',
+      label: '10" (Nom: 25.4 cm · Útil: 23.8 cm)',
+      nominalWidthM: 0.254,
+      usefulWidthM: 0.238,
+    ),
+    WoodInchPreset(
+      key: '12',
+      label: '12" (Nom: 30.48 cm · Útil: 28.8 cm)',
+      nominalWidthM: 0.3048,
+      usefulWidthM: 0.288,
+    ),
   ];
 
   // ── 1. GESTIÓN DE CACHÉ OFFLINE CON PRECEDENCIA DEL SERVIDOR ──────────────
 
-  /// Resuelve la configuración técnica para un producto respetando la regla:
-  /// 1° Si el producto trae `calcConfig` desde el servidor, TIENE PRECEDENCIA y actualiza la caché local.
-  /// 2° Si no tiene `calcConfig` en servidor pero hay una guardada en `SharedPreferences` local (modo offline), usa esa.
-  /// 3° Si no existe ninguna, auto-detecta medidas inteligentemente desde el nombre del producto.
-  static Future<Map<String, dynamic>> resolveConfigForProduct(
+  /// Versión extendida de [resolveConfigForProduct] que también informa si falta
+  /// el ancho de la madera cuando el ítem aún no tiene `calcConfig` ni caché local.
+  static Future<HardwareAutoDetectResult> resolveAutoDetectForProduct(
     Product product, {
     SharedPreferences? prefs,
   }) async {
@@ -243,7 +278,10 @@ class HardwareCalculatorEngine {
       if (product.id > 0) {
         await sp.setString(cacheKey, jsonEncode(serverConfig));
       }
-      return serverConfig;
+      return HardwareAutoDetectResult(
+        config: serverConfig,
+        missingWidthWarning: false,
+      );
     }
 
     if (product.id > 0) {
@@ -252,13 +290,31 @@ class HardwareCalculatorEngine {
         try {
           final decoded = jsonDecode(cachedRaw);
           if (decoded is Map && decoded.isNotEmpty) {
-            return Map<String, dynamic>.from(decoded);
+            return HardwareAutoDetectResult(
+              config: Map<String, dynamic>.from(decoded),
+              missingWidthWarning: false,
+            );
           }
         } catch (_) {}
       }
     }
 
-    return inferConfigFromName(product.name);
+    return analyzeProductText(
+      name: product.name,
+      technicalSpec: product.technicalSpec,
+    );
+  }
+
+  /// Resuelve la configuración técnica para un producto respetando la regla:
+  /// 1° Si el producto trae `calcConfig` desde el servidor, TIENE PRECEDENCIA y actualiza la caché local.
+  /// 2° Si no tiene `calcConfig` en servidor pero hay una guardada en `SharedPreferences` local (modo offline), usa esa.
+  /// 3° Si no existe ninguna, auto-detecta medidas inteligentemente desde el nombre del producto.
+  static Future<Map<String, dynamic>> resolveConfigForProduct(
+    Product product, {
+    SharedPreferences? prefs,
+  }) async {
+    final result = await resolveAutoDetectForProduct(product, prefs: prefs);
+    return result.config;
   }
 
   /// Guarda la configuración en la caché local inmediatamente (0 ms, offline-ready).
@@ -284,34 +340,98 @@ class HardwareCalculatorEngine {
 
   // ── 2. AUTO-DETECTOR INTELIGENTE POR NOMBRE DE CATÁLOGO ───────────────────
 
-  /// Analiza el nombre de un producto (ej. "Machimbre Pino 1/2 x 4 x 3.00m",
-  /// "Chapa Acanalada C27 1.10 x 4.50m", "Membrana Líquida 20Kg", "Látex Interior 4L")
-  /// y sugiere la pestaña y parámetros iniciales.
-  static Map<String, dynamic> inferConfigFromName(String rawName) {
-    final name = rawName.trim().toLowerCase();
+  static bool _looksLikeHardwareCalcSubject(String lowerText) {
+    const keywords = [
+      'pintura',
+      'latex',
+      'látex',
+      'sintetico',
+      'sintético',
+      'esmalte',
+      'membrana',
+      'impermeabilizante',
+      'barniz',
+      'impregnante',
+      'chapa',
+      'acanalada',
+      'trapezoidal',
+      'techo',
+      'zingueria',
+      'policarbonato',
+      'machimbre',
+      'deck',
+      'tirante',
+      'alfajia',
+      'alfajía',
+      'tabla',
+      'tablon',
+      'tablón',
+      'madera',
+      'liston',
+      'listón',
+      'viga',
+    ];
+    return keywords.any(lowerText.contains);
+  }
 
-    // Detectar qué pestaña corresponde
-    if (name.contains('pintura') ||
-        name.contains('latex') ||
-        name.contains('látex') ||
-        name.contains('sintetico') ||
-        name.contains('sintético') ||
-        name.contains('esmalte') ||
-        name.contains('membrana') ||
-        name.contains('impermeabilizante') ||
-        name.contains('barniz') ||
-        name.contains('impregnante')) {
-      final isMembrane = name.contains('membrana') ||
-          name.contains('impermeabilizante') ||
-          name.contains('fibrado');
+  /// Analiza solo si el texto corresponde explícitamente a un ítem calculable
+  /// (Maderas, Chapas, Pintura). Devuelve `null` para tornillos/bulones/etc.
+  static Map<String, dynamic>? tryInferExplicitConfig({
+    required String name,
+    String? technicalSpec,
+  }) {
+    final combined = [
+      name.trim(),
+      if (technicalSpec != null && technicalSpec.trim().isNotEmpty)
+        technicalSpec.trim(),
+    ].join(' ').trim().toLowerCase();
+    if (combined.isEmpty || !_looksLikeHardwareCalcSubject(combined)) {
+      return null;
+    }
+    final result = analyzeProductText(name: name, technicalSpec: technicalSpec);
+    if (result.missingWidthWarning) {
+      return null;
+    }
+    return result.config;
+  }
+
+  /// Analiza el nombre del producto (y opcionalmente su `technicalSpec`, ej: `1" / 4m`
+  /// o `1" x 6" x 4m`) para auto-detectar pestaña F7, ancho nominal, largo y avisos
+  /// cuando falta el ancho de la tabla.
+  static HardwareAutoDetectResult analyzeProductText({
+    required String name,
+    String? technicalSpec,
+  }) {
+    final combined = [
+      name.trim(),
+      if (technicalSpec != null && technicalSpec.trim().isNotEmpty)
+        technicalSpec.trim(),
+    ].join(' ').trim();
+    final text = combined.toLowerCase();
+
+    // Detectar qué pestaña corresponde: 1. Pintura / Membrana
+    if (text.contains('pintura') ||
+        text.contains('latex') ||
+        text.contains('látex') ||
+        text.contains('sintetico') ||
+        text.contains('sintético') ||
+        text.contains('esmalte') ||
+        text.contains('membrana') ||
+        text.contains('impermeabilizante') ||
+        text.contains('barniz') ||
+        text.contains('impregnante')) {
+      final isMembrane = text.contains('membrana') ||
+          text.contains('impermeabilizante') ||
+          text.contains('fibrado');
 
       double containerLiters = 4.0;
       final capMatch = RegExp(
         r'(\d+(?:[.,]\d+)?)\s*(?:lt?s?|litros?|kg|kilos?)\b',
         caseSensitive: false,
-      ).firstMatch(name);
+      ).firstMatch(text);
       if (capMatch != null) {
-        final parsed = double.tryParse(capMatch.group(1)!.replaceAll(',', '.'));
+        final parsed =
+            double.tryParse(capMatch.group(1)!.replaceAll(',', '.'));
         if (parsed != null && parsed > 0) {
           containerLiters = parsed;
         }
@@ -319,127 +439,241 @@ class HardwareCalculatorEngine {
         containerLiters = 20.0;
       }
 
-      return {
-        'type': 'paint',
-        'yield_m2_per_liter': isMembrane ? 1.0 : 10.0,
-        'yield_mode': isMembrane ? 'final_total' : 'per_coat',
-        'container_liters': containerLiters,
-        'default_coats': isMembrane ? 3 : 2,
-      };
+      return HardwareAutoDetectResult(
+        config: {
+          'type': 'paint',
+          'yield_m2_per_liter': isMembrane ? 1.0 : 10.0,
+          'yield_mode': isMembrane ? 'final_total' : 'per_coat',
+          'container_liters': containerLiters,
+          'default_coats': isMembrane ? 3 : 2,
+        },
+        detectedLength: capMatch != null,
+      );
     }
 
-    final looksLikeWood = name.contains('machimbre') ||
-        name.contains('deck') ||
-        name.contains('tirante') ||
-        name.contains('alfajia') ||
-        name.contains('alfajía') ||
-        name.contains('tabla') ||
-        name.contains('madera');
+    final looksLikeWood = text.contains('machimbre') ||
+        text.contains('deck') ||
+        text.contains('tirante') ||
+        text.contains('alfajia') ||
+        text.contains('alfajía') ||
+        text.contains('tabla') ||
+        text.contains('tablon') ||
+        text.contains('tablón') ||
+        text.contains('madera') ||
+        text.contains('liston') ||
+        text.contains('listón') ||
+        text.contains('viga');
 
+    final meterRegex = RegExp(
+      r'(\d+(?:[.,]\d+)?)\s*(?:m|mts|metros?)\b(?!\s*[²³23]|l\b)',
+      caseSensitive: false,
+    );
+
+    // 2. Chapas / Techos
     if (!looksLikeWood &&
-        (name.contains('chapa') ||
-            name.contains('acanalada') ||
-            name.contains('trapezoidal') ||
-            name.contains('techo') ||
-            name.contains('zingueria') ||
-            name.contains('policarbonato'))) {
+        (text.contains('chapa') ||
+            text.contains('acanalada') ||
+            text.contains('trapezoidal') ||
+            text.contains('techo') ||
+            text.contains('zingueria') ||
+            text.contains('policarbonato'))) {
+      double nominalWidthM = 1.10;
+      double usefulWidthM = 1.00;
       double lengthM = 3.0;
-      final lenMatch = RegExp(
-        r'(?:x|\s)(\d+(?:[.,]\d+)?)\s*(?:m|mts|metros)\b',
+      bool detectedLen = false;
+
+      final pairMatch = RegExp(
+        r'(\d+(?:[.,]\d+)?)\s*m?\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(?:m|mts|metros?)\b(?!\s*[²³23]|l\b)',
         caseSensitive: false,
-      ).firstMatch(name);
-      if (lenMatch != null) {
-        final parsed = double.tryParse(lenMatch.group(1)!.replaceAll(',', '.'));
-        if (parsed != null && parsed >= 1.0 && parsed <= 16.0) {
-          lengthM = parsed;
+      ).firstMatch(text);
+      if (pairMatch != null) {
+        final w = double.tryParse(pairMatch.group(1)!.replaceAll(',', '.'));
+        final l = double.tryParse(pairMatch.group(2)!.replaceAll(',', '.'));
+        if (w != null && w >= 0.40 && w <= 3.0) {
+          nominalWidthM = w;
+          usefulWidthM = math.max(0.30, _round3(w - 0.10));
+        }
+        if (l != null && l >= 1.0 && l <= 16.0) {
+          lengthM = l;
+          detectedLen = true;
         }
       }
 
-      final isPerLinearMeter = name.contains('x metro') ||
-          name.contains('por metro') ||
-          name.contains('(ml)') ||
-          name.contains('/ml');
+      if (!detectedLen) {
+        for (final m in meterRegex.allMatches(text)) {
+          final parsed = double.tryParse(m.group(1)!.replaceAll(',', '.'));
+          if (parsed != null && parsed >= 1.0 && parsed <= 16.0) {
+            lengthM = parsed;
+            detectedLen = true;
+            break;
+          }
+        }
+      }
 
-      return {
-        'type': 'roof',
-        'nominal_width_m': 1.10,
-        'useful_width_m': 1.00,
-        'length_m': lengthM,
-        'longitudinal_overlap_m': 0.20,
-        'pricing_mode': isPerLinearMeter ? 'per_linear_meter' : 'per_sheet',
-      };
+      final isPerLinearMeter = text.contains('x metro') ||
+          text.contains('por metro') ||
+          text.contains('(ml)') ||
+          text.contains('/ml');
+
+      return HardwareAutoDetectResult(
+        config: {
+          'type': 'roof',
+          'nominal_width_m': nominalWidthM,
+          'useful_width_m': usefulWidthM,
+          'length_m': lengthM,
+          'longitudinal_overlap_m': 0.20,
+          'pricing_mode': isPerLinearMeter ? 'per_linear_meter' : 'per_sheet',
+        },
+        detectedLength: detectedLen,
+      );
     }
 
-    // Por defecto: Machimbre / Maderas
-    String inchPreset = '4';
-    double nominalW = 0.1016;
-    double usefulW = 0.088;
-
-    // Retirar primero largos en metros (ej. "x 3.00m") y fracciones de espesor (ej. "1/2", "3/4\"")
-    // para que no se confundan con el ancho en pulgadas.
-    final nameWithoutMeters = name.replaceAll(
-      RegExp(r'\d+(?:[.,]\d+)?\s*(?:m|mts|metros)\b', caseSensitive: false),
-      ' ',
-    );
-    final nameForInches = nameWithoutMeters.replaceAll(
-      RegExp(r'\b\d+\s*/\s*\d+\s*"?'),
-      ' ',
-    );
-    final afterXMatch = RegExp(
-      r'(?:^|[\s,"])(?:x|de)\s*([1234568])(?:\s*(?:"|pulg(?:adas?)?))?(?![.,\d/\w])',
-      caseSensitive: false,
-    ).firstMatch(nameForInches);
-    final standaloneInchMatch = RegExp(
-      r'(?<![\d.,/])([1234568])\s*(?:"|pulg(?:adas?)?)',
-      caseSensitive: false,
-    ).firstMatch(nameForInches);
-    final matchedInch =
-        afterXMatch?.group(1) ?? standaloneInchMatch?.group(1);
-    final matchedPreset = matchedInch == null
-        ? null
-        : woodInchPresets.where((p) => p.key == matchedInch).firstOrNull;
-    if (matchedPreset != null) {
-      inchPreset = matchedPreset.key;
-      nominalW = matchedPreset.nominalWidthM;
-      usefulW = matchedPreset.usefulWidthM;
-    }
-
+    // 3. Madera / Machimbre / Tirante / Deck
     double lengthM = 3.00;
-    final lenMatches = RegExp(
-      r'(\d+(?:[.,]\d+)?)\s*(?:m|mts|metros)\b',
-      caseSensitive: false,
-    ).allMatches(name);
-    for (final m in lenMatches) {
-      final fullMatch = m.group(0)!.toLowerCase();
-      if (fullMatch.contains('m2') || fullMatch.contains('m²')) continue;
+    bool detectedLength = false;
+    for (final m in meterRegex.allMatches(text)) {
       final val = double.tryParse(m.group(1)!.replaceAll(',', '.'));
-      if (val != null && val >= 1.20 && val <= 10.0) {
+      if (val != null && val >= 0.80 && val <= 16.0) {
         lengthM = val;
+        detectedLength = true;
         break;
       }
     }
 
+    final textWithoutMeters = text.replaceAll(meterRegex, ' ');
+
+    String inchPreset = '4';
+    double nominalW = 0.1016;
+    double usefulW = 0.088;
+    bool resolvedWidth = false;
+    String? detectedThicknessLabel;
+
+    WoodInchPreset? findWoodPreset(String rawKey) {
+      return woodInchPresets.where((p) => p.key == rawKey).firstOrNull;
+    }
+
+    void applyPresetOrCustomInch(double inchVal) {
+      final keyStr = _fmtNum(inchVal, decimals: 2);
+      final preset = findWoodPreset(keyStr);
+      if (preset != null) {
+        inchPreset = preset.key;
+        nominalW = preset.nominalWidthM;
+        usefulW = preset.usefulWidthM;
+        resolvedWidth = true;
+      } else if (inchVal > 0 && inchVal <= 36) {
+        inchPreset = 'custom';
+        nominalW = _round3(inchVal * 0.0254);
+        usefulW = math.max(0.005, _round3(nominalW - 0.012));
+        resolvedWidth = true;
+      }
+    }
+
+    // Paso A: Buscar par explícito "Espesor x Ancho" (ej: 1" x 6", 1 1/2" x 6", 1/2 x 4, 1" / 6", 2" x 2")
+    final twoDimMatch = RegExp(
+      r'(\d+(?:\s+\d+\s*/\s*\d+|\s*/\s*\d+|[.,]\d+)?)\s*(?:(?:"|pulg(?:adas?)?)\s*[x×/]|[x×])\s*(\d+(?:[.,]\d+)?)\s*(?:"|pulg(?:adas?)?)?(?![.,\d/\w])',
+      caseSensitive: false,
+    ).firstMatch(textWithoutMeters);
+
+    if (twoDimMatch != null) {
+      final rawThickness = twoDimMatch
+          .group(1)!
+          .replaceAll(',', '.')
+          .replaceAll(RegExp(r'\s*/\s*'), '/')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      detectedThicknessLabel = '$rawThickness"';
+      final widthVal = double.tryParse(
+        twoDimMatch.group(2)!.replaceAll(',', '.'),
+      );
+      if (widthVal != null) {
+        applyPresetOrCustomInch(widthVal);
+      }
+    }
+
+    // Paso B: Si no hubo par Espesor x Ancho, buscar ancho explícito o espesor solitario
+    if (!resolvedWidth) {
+      final textWithoutFractions = textWithoutMeters.replaceAll(
+        RegExp(r'\b\d+\s*/\s*\d+\s*"?'),
+        ' ',
+      );
+
+      final afterXMatch = RegExp(
+        r'(?:^|[\s,"])(?:x|de)\s*(10|12|[1234568])(?:\s*(?:"|pulg(?:adas?)?))?(?![.,\d/\w])',
+        caseSensitive: false,
+      ).firstMatch(textWithoutFractions);
+      final afterXRaw = afterXMatch?.group(1);
+      final afterXVal =
+          afterXRaw != null ? double.tryParse(afterXRaw) : null;
+
+      // Si dice "x 4" o "de 6" (>= 3") es un ancho claro. Si dice "de 1\"", en madera suele ser espesor.
+      final isExplicitSmallWidthAfterX = afterXMatch != null &&
+          afterXMatch.group(0)!.toLowerCase().contains('x') &&
+          afterXVal != null;
+      if (isExplicitSmallWidthAfterX ||
+          (afterXVal != null && afterXVal >= 3.0)) {
+        applyPresetOrCustomInch(afterXVal);
+      } else {
+        final standaloneInchMatch = RegExp(
+          r'(?<![\d.,/])(\d+(?:[.,]\d+)?)\s*(?:"|pulg(?:adas?)?)',
+          caseSensitive: false,
+        ).firstMatch(textWithoutFractions);
+        final standaloneVal = standaloneInchMatch != null
+            ? double.tryParse(
+                standaloneInchMatch.group(1)!.replaceAll(',', '.'),
+              )
+            : null;
+
+        if (standaloneVal != null && standaloneVal >= 3.0) {
+          applyPresetOrCustomInch(standaloneVal);
+        } else if (standaloneVal != null && standaloneVal > 0) {
+          // Medida chica solitaria (ej. 1" / 4m o 2" 4m) -> se interpreta como grosor/espesor
+          detectedThicknessLabel ??= '${_fmtNum(standaloneVal, decimals: 2)}"';
+        } else {
+          final fracMatch = RegExp(r'\b(\d+\s*/\s*\d+)\s*"?')
+              .firstMatch(textWithoutMeters);
+          if (fracMatch != null) {
+            detectedThicknessLabel ??=
+                '${fracMatch.group(1)!.replaceAll(RegExp(r'\s+'), '')}"';
+          }
+        }
+      }
+    }
+
     String pricingMode = 'per_board';
-    if (name.contains('m2') || name.contains('m²')) {
+    if (text.contains('m2') || text.contains('m²')) {
       pricingMode = 'per_m2';
-    } else if (name.contains('paq') || name.contains('paquete')) {
+    } else if (text.contains('paq') || text.contains('paquete')) {
       pricingMode = 'per_pack';
-    } else if (name.contains('lineal') || name.contains('/ml') || name.contains('x ml')) {
+    } else if (text.contains('lineal') ||
+        text.contains('/ml') ||
+        text.contains('x ml')) {
       pricingMode = 'per_linear_meter';
     }
 
-    return {
-      'type': 'wood',
-      'inch_preset': inchPreset,
-      'nominal_width_m': nominalW,
-      'useful_width_m': usefulW,
-      'length_m': lengthM,
-      'pricing_mode': pricingMode,
-      'm2_billing_basis': 'nominal',
-      'boards_per_pack': 10,
-      'round_to_full_pack': false,
-      'default_waste_pct': 10.0,
-    };
+    return HardwareAutoDetectResult(
+      config: {
+        'type': 'wood',
+        'inch_preset': inchPreset,
+        'nominal_width_m': nominalW,
+        'useful_width_m': usefulW,
+        'length_m': lengthM,
+        'pricing_mode': pricingMode,
+        'm2_billing_basis': 'nominal',
+        'boards_per_pack': 10,
+        'round_to_full_pack': false,
+        'default_waste_pct': 10.0,
+      },
+      missingWidthWarning: !resolvedWidth,
+      detectedThicknessLabel: detectedThicknessLabel,
+      detectedLength: detectedLength,
+    );
+  }
+
+  /// Analiza el nombre de un producto (ej. "Machimbre Pino 1/2 x 4 x 3.00m",
+  /// "Chapa Acanalada C27 1.10 x 4.50m", "Membrana Líquida 20Kg", "Látex Interior 4L")
+  /// y sugiere la pestaña y parámetros iniciales.
+  static Map<String, dynamic> inferConfigFromName(String rawName) {
+    return analyzeProductText(name: rawName).config;
   }
 
   // ── 3. MOTOR DE CÁLCULO: MACHIMBRE / MADERAS ──────────────────────────────
@@ -740,6 +974,14 @@ class HardwareCalculatorEngine {
         errorMessage: 'La cantidad total de chapas supera el límite permitido.',
       );
     }
+    final coveredSlopeLengthM = _round3(
+      rows <= 1
+          ? sheetLengthM
+          : sheetLengthM + (rows - 1) * (sheetLengthM - safeOverlap),
+    );
+    final surplusPerColumnM = _round3(
+      math.max(0.0, coveredSlopeLengthM - roofSlopeLengthM),
+    );
     final totalLinearMeters = _round3(totalSheets * sheetLengthM);
     final totalNominalM2 =
         _round3(totalSheets * sheetLengthM * sheetNominalWidthM);
@@ -800,8 +1042,155 @@ class HardwareCalculatorEngine {
       roofWidthM: roofWidthM,
       roofSlopeLengthM: roofSlopeLengthM,
       roofAreaM2: roofAreaM2,
+      usefulAreaCoveredM2: _round3(totalSheets * sheetLengthM * sheetUsefulWidthM),
       columnsAcrossWidth: columns,
       rowsAlongSlope: rows,
+      coveredSlopeLengthM: coveredSlopeLengthM,
+      surplusPerColumnM: surplusPerColumnM,
+      totalSheetsNeeded: totalSheets,
+      totalLinearMeters: totalLinearMeters,
+      totalNominalM2: totalNominalM2,
+      billingQuantity: billingQty,
+      billingUnitLabel: billingUnit,
+      customDetailsNote: note,
+      complements: complements,
+    );
+  }
+
+  /// Estimación rápida de chapas por superficie total (`m² Directos`) + margen
+  /// por cortes/solapes. Útil cuando el cliente aún no trae Ancho × Caída.
+  static RoofCalculationResult calculateRoofByArea({
+    required double targetAreaM2,
+    required double sheetNominalWidthM,
+    required double sheetUsefulWidthM,
+    required double sheetLengthM,
+    double wastePercent = 10.0,
+    RoofPricingMode pricingMode = RoofPricingMode.perSheet,
+  }) {
+    if (!targetAreaM2.isFinite ||
+        !sheetNominalWidthM.isFinite ||
+        !sheetUsefulWidthM.isFinite ||
+        !sheetLengthM.isFinite ||
+        !wastePercent.isFinite) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'Ingresá valores numéricos válidos.',
+      );
+    }
+    if (targetAreaM2 <= 0) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'Ingresá la superficie total del techo en m².',
+      );
+    }
+    if (targetAreaM2 > 10000000) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'La superficie ingresada supera el rango máximo permitido.',
+      );
+    }
+    if (sheetUsefulWidthM <= 0 || sheetNominalWidthM <= 0) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'El ancho útil y total de la chapa deben ser mayores a 0.',
+      );
+    }
+    if (sheetLengthM <= 0) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'El largo de la chapa debe ser mayor a 0.',
+      );
+    }
+    if (sheetLengthM > 50 ||
+        sheetNominalWidthM > 50 ||
+        sheetUsefulWidthM > 50) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'Las medidas ingresadas superan el rango máximo permitido.',
+      );
+    }
+    if (sheetUsefulWidthM > sheetNominalWidthM + 1e-6) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'El ancho útil de la chapa no puede superar al ancho total.',
+      );
+    }
+
+    final safeWaste = wastePercent.clamp(0.0, 50.0);
+    final areaWithWaste = targetAreaM2 * (1.0 + safeWaste / 100.0);
+    final usefulAreaPerSheet = sheetUsefulWidthM * sheetLengthM;
+    final rawSheets = (areaWithWaste - 1e-9) / usefulAreaPerSheet;
+    if (!rawSheets.isFinite || rawSheets > 10000000) {
+      return const RoofCalculationResult(
+        isValid: false,
+        isAreaEstimate: true,
+        errorMessage: 'La cantidad total de chapas supera el límite permitido.',
+      );
+    }
+
+    final totalSheets = math.max(1, rawSheets.ceil());
+    final totalLinearMeters = _round3(totalSheets * sheetLengthM);
+    final usefulAreaCoveredM2 = _round3(totalSheets * usefulAreaPerSheet);
+    final totalNominalM2 =
+        _round3(totalSheets * sheetLengthM * sheetNominalWidthM);
+    final roofAreaM2 = _round3(targetAreaM2);
+
+    late final double billingQty;
+    late final String billingUnit;
+    switch (pricingMode) {
+      case RoofPricingMode.perSheet:
+        billingQty = totalSheets.toDouble();
+        billingUnit = totalSheets == 1 ? 'chapa' : 'chapas';
+        break;
+      case RoofPricingMode.perLinearMeter:
+        billingQty = totalLinearMeters;
+        billingUnit = 'ml';
+        break;
+      case RoofPricingMode.perM2:
+        billingQty = totalNominalM2;
+        billingUnit = 'm²';
+        break;
+    }
+
+    final lenStr = _fmtNum(sheetLengthM, decimals: 2);
+    final areaStr = _fmtNum(roofAreaM2, decimals: 1);
+    final wasteText = safeWaste > 0 ? ' +${_fmtNum(safeWaste, decimals: 0)}%' : '';
+    final note =
+        'Estimado Techo $areaStr m2$wasteText: '
+        '$totalSheets chapas de ${lenStr}m '
+        '(cubre ${_fmtNum(usefulAreaCoveredM2, decimals: 1)} m2 útiles - ${_fmtNum(totalLinearMeters, decimals: 1)} ml)';
+
+    final screwsCount = math.max(totalSheets * 6, (roofAreaM2 * 7).ceil());
+    final purlinLinearMeters = math.max(1, (roofAreaM2 * 1.25).ceil());
+
+    final complements = <ComplementSuggestion>[
+      ComplementSuggestion(
+        title: 'Tornillos Autoperforantes p/ Techo',
+        quantityLabel: '~$screwsCount u.',
+        searchKeyword: 'Autoperforante',
+        detailHint: 'Aprox. 6-7 autoperforantes por m²',
+      ),
+      ComplementSuggestion(
+        title: 'Perfiles / Clavaderas (estimado)',
+        quantityLabel: '~$purlinLinearMeters ml',
+        searchKeyword: 'Perfil',
+        detailHint: 'Estimado ~1.25 ml de clavaderas por m² de techo',
+      ),
+    ];
+
+    return RoofCalculationResult(
+      isValid: true,
+      isAreaEstimate: true,
+      wastePercent: safeWaste,
+      roofAreaM2: roofAreaM2,
+      usefulAreaCoveredM2: usefulAreaCoveredM2,
       totalSheetsNeeded: totalSheets,
       totalLinearMeters: totalLinearMeters,
       totalNominalM2: totalNominalM2,

@@ -166,9 +166,21 @@ class CatalogProvider with ChangeNotifier {
   int? _filterSupplierId;
   String? _filterSupplierName;
   bool _supplierFilterFallbackActive = false;
+  int? _filterCategoryId;
+  int? _filterBrandId;
+  bool? _filterActive;
+
   int? get filterSupplierId => _filterSupplierId;
   String? get filterSupplierName => _filterSupplierName;
   bool get supplierFilterFallbackActive => _supplierFilterFallbackActive;
+  int? get filterCategoryId => _filterCategoryId;
+  int? get filterBrandId => _filterBrandId;
+  bool? get filterActive => _filterActive;
+  int get activeCatalogFiltersCount =>
+      (_filterSupplierId != null ? 1 : 0) +
+      (_filterCategoryId != null ? 1 : 0) +
+      (_filterBrandId != null ? 1 : 0) +
+      (_filterActive != null ? 1 : 0);
 
   void clearSearch() {
     _searchQuery = '';
@@ -180,6 +192,13 @@ class CatalogProvider with ChangeNotifier {
     _supplierFilterFallbackActive = false;
   }
 
+  void clearCatalogFiltersSilently() {
+    clearSupplierFilterSilently();
+    _filterCategoryId = null;
+    _filterBrandId = null;
+    _filterActive = null;
+  }
+
   Future<void> setSupplierFilter(
     int? supplierId, {
     String? supplierName,
@@ -189,6 +208,42 @@ class CatalogProvider with ChangeNotifier {
     _filterSupplierName =
         supplierId == null ? null : (supplierName?.trim().isNotEmpty == true ? supplierName!.trim() : null);
     _supplierFilterFallbackActive = false;
+    if (reload) {
+      await loadProducts(page: 1);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> setCategoryFilter(int? categoryId, {bool reload = true}) async {
+    _filterCategoryId = categoryId;
+    if (reload) {
+      await loadProducts(page: 1);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> setBrandFilter(int? brandId, {bool reload = true}) async {
+    _filterBrandId = brandId;
+    if (reload) {
+      await loadProducts(page: 1);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> setActiveFilter(bool? active, {bool reload = true}) async {
+    _filterActive = active;
+    if (reload) {
+      await loadProducts(page: 1);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> clearAllCatalogFilters({bool reload = true}) async {
+    clearCatalogFiltersSilently();
     if (reload) {
       await loadProducts(page: 1);
     } else {
@@ -254,7 +309,11 @@ class CatalogProvider with ChangeNotifier {
     if (search != null) _searchQuery = search;
     if (sortBy != null) _sortBy = sortBy;
     if (sortDirection != null) _sortDirection = sortDirection;
-    final activeSupplierId = _sortBy == '' ? null : _filterSupplierId;
+    final isPosDefaultOrder = _sortBy == '';
+    final activeSupplierId = isPosDefaultOrder ? null : _filterSupplierId;
+    final activeCategoryId = isPosDefaultOrder ? null : _filterCategoryId;
+    final activeBrandId = isPosDefaultOrder ? null : _filterBrandId;
+    final activeStatusFilter = isPosDefaultOrder ? null : _filterActive;
     notifyListeners();
     try {
       final result = await getProductsUseCase(
@@ -263,7 +322,10 @@ class CatalogProvider with ChangeNotifier {
         sortBy: _sortBy.isNotEmpty ? _sortBy : null,
         sortDirection: _sortBy.isNotEmpty ? _sortDirection : null,
         perPage: perPage,
+        categoryId: activeCategoryId,
+        brandId: activeBrandId,
         supplierId: activeSupplierId,
+        active: activeStatusFilter,
       );
       var fetched = List<Product>.from(result['data'] as List);
       _rememberProducts(fetched);
@@ -1722,13 +1784,20 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<int?> createRubro(String name, {String? description}) async {
+  Future<int?> createRubro(
+    String name, {
+    String? description,
+    String? verticalType,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final created =
-          await repository.createRubro(name, description: description);
+      final created = await repository.createRubro(
+        name,
+        description: description,
+        verticalType: verticalType,
+      );
       _rubros = sortByAlphabeticalName([..._rubros, created], (r) => r.name);
       return created.id;
     } catch (e) {
@@ -1740,13 +1809,22 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateRubro(int id, String name, {String? description}) async {
+  Future<bool> updateRubro(
+    int id,
+    String name, {
+    String? description,
+    String? verticalType,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated =
-          await repository.updateRubro(id, name, description: description);
+      final updated = await repository.updateRubro(
+        id,
+        name,
+        description: description,
+        verticalType: verticalType,
+      );
       final idx = _rubros.indexWhere((r) => r.id == id);
       if (idx != -1) {
         final newList = List.of(_rubros);
@@ -2215,6 +2293,94 @@ extension CatalogProviderSupplierFilterX on CatalogProvider {
     } catch (_) {}
   }
 
+  int? get safeFilterCategoryId {
+    try {
+      return filterCategoryId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? get safeFilterBrandId {
+    try {
+      return filterBrandId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool? get safeFilterActive {
+    try {
+      return filterActive;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int get safeActiveCatalogFiltersCount {
+    try {
+      return activeCatalogFiltersCount;
+    } catch (_) {
+      return safeFilterSupplierId != null ? 1 : 0;
+    }
+  }
+
+  void safeClearCatalogFiltersSilently() {
+    try {
+      clearCatalogFiltersSilently();
+    } catch (_) {
+      safeClearSupplierFilterSilently();
+    }
+  }
+
+  Future<void> safeSetSupplierFilter(
+    int? supplierId, {
+    String? supplierName,
+    bool reload = true,
+  }) async {
+    try {
+      await setSupplierFilter(
+        supplierId,
+        supplierName: supplierName,
+        reload: reload,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> safeSetCategoryFilter(int? categoryId, {bool reload = true}) async {
+    try {
+      await setCategoryFilter(categoryId, reload: reload);
+    } catch (_) {}
+  }
+
+  Future<void> safeSetBrandFilter(int? brandId, {bool reload = true}) async {
+    try {
+      await setBrandFilter(brandId, reload: reload);
+    } catch (_) {}
+  }
+
+  Future<void> safeSetActiveFilter(bool? active, {bool reload = true}) async {
+    try {
+      await setActiveFilter(active, reload: reload);
+    } catch (_) {}
+  }
+
+  Future<void> safeClearAllCatalogFilters({bool reload = true}) async {
+    try {
+      await clearAllCatalogFilters(reload: reload);
+    } catch (_) {
+      safeClearSupplierFilterSilently();
+    }
+  }
+
+  List<Rubro> get safeRubros {
+    try {
+      return rubros;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> loadProductsWithoutSupplierFilter({
     int page = 1,
     String? search,
@@ -2222,7 +2388,7 @@ extension CatalogProviderSupplierFilterX on CatalogProvider {
     String? sortDirection,
     int? perPage,
   }) async {
-    safeClearSupplierFilterSilently();
+    safeClearCatalogFiltersSilently();
     await loadProducts(
       page: page,
       search: search,

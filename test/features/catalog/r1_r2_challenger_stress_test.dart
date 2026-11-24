@@ -301,8 +301,11 @@ void main() {
       expect(quoteProvider.cart.length, 50);
       // All 50 products are now in pos cart
       expect(posProvider.cart.length, 50);
-      // Selection cleared
-      expect(find.text('Lote (50)'), findsNothing);
+      // Al volver sin emitir presupuesto, la selección en catálogo se preserva
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Lote (50)'), findsOneWidget);
     });
   });
 

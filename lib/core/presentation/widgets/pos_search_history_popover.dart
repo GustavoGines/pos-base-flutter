@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 /// Resolución opcional de `LocalTerminalProvider` que retorna `null` en entornos
 /// de test o vistas donde dicho provider no fue inyectado en el árbol.
@@ -185,6 +186,7 @@ class PosSearchHistoryPopover extends StatelessWidget {
                           const SizedBox(height: 6),
                           for (int i = 0; i < visibleProducts.length; i++)
                             _buildProductRow(
+                              context,
                               visibleProducts[i],
                               isHighlighted:
                                   highlightedIndex == (terms.length + i),
@@ -370,7 +372,11 @@ class PosSearchHistoryPopover extends StatelessWidget {
     );
   }
 
-  Widget _buildProductRow(Product p, {required bool isHighlighted}) {
+  Widget _buildProductRow(
+    BuildContext context,
+    Product p, {
+    required bool isHighlighted,
+  }) {
     final SearchHistoryPriceInfo resolvedPrice = priceResolver != null
         ? priceResolver!(p)
         : (
@@ -378,16 +384,29 @@ class PosSearchHistoryPopover extends StatelessWidget {
             crossedOutPrice: null,
             hasActiveOffer: false,
           );
-    final unitSuffix =
-        p.isSoldByWeight ? '/${p.effectiveQuantityUnitLabel}' : '';
+    bool canUseScale = true;
+    try {
+      canUseScale = Provider.of<SettingsProvider?>(context, listen: false)
+              ?.safeVerticalProfile
+              .canUseScaleWeight ??
+          true;
+    } catch (_) {}
+    final preferDiscrete =
+        p.isDiscreteFractionalItem(businessUsesScaleWeight: canUseScale);
+    final isNonScaleFrac = p.isSoldByWeight &&
+        (p.isMetricOrLiquidUnit || preferDiscrete || !canUseScale);
+    final resolvedUnitLabel = Product.resolveQuantityUnitLabel(
+      unitType: p.unitType,
+      isSoldByWeight: p.isSoldByWeight,
+      preferDiscreteUn: preferDiscrete,
+    );
+    final unitSuffix = p.isSoldByWeight ? '/$resolvedUnitLabel' : '';
     final priceStr = '\$${resolvedPrice.price.toCurrency()}$unitSuffix';
     final unitNorm = p.unitType.trim().toLowerCase();
     final stockUnitSuffix =
         (unitNorm.isEmpty || unitNorm == 'un') ? 'u' : p.unitShortLabel;
     final stockWeightUnit =
-        p.effectiveQuantityUnitLabel == 'Kg'
-            ? 'kg'
-            : p.effectiveQuantityUnitLabel;
+        resolvedUnitLabel == 'Kg' ? 'kg' : resolvedUnitLabel;
 
     final stockText = p.isService
         ? 'Servicio'
@@ -433,15 +452,21 @@ class PosSearchHistoryPopover extends StatelessWidget {
                       CircleAvatar(
                         radius: 15,
                         backgroundColor: p.isSoldByWeight
-                            ? Colors.orange.shade50
+                            ? (isNonScaleFrac
+                                ? Colors.teal.shade50
+                                : Colors.orange.shade50)
                             : const Color(0xFFEEF2FF),
                         child: Icon(
                           p.isSoldByWeight
-                              ? Icons.scale_rounded
+                              ? (isNonScaleFrac
+                                  ? Icons.straighten_rounded
+                                  : Icons.scale_rounded)
                               : Icons.inventory_2_outlined,
                           size: 16,
                           color: p.isSoldByWeight
-                              ? Colors.orange.shade700
+                              ? (isNonScaleFrac
+                                  ? Colors.teal.shade700
+                                  : Colors.orange.shade700)
                               : Colors.indigo.shade700,
                         ),
                       ),
@@ -467,9 +492,14 @@ class PosSearchHistoryPopover extends StatelessWidget {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 if (p.internalCode.isNotEmpty ||
+                                    (p.technicalSpec != null &&
+                                        p.technicalSpec!.trim().isNotEmpty) ||
                                     p.category?.name != null)
                                   Text(
                                     [
+                                      if (p.technicalSpec != null &&
+                                          p.technicalSpec!.trim().isNotEmpty)
+                                        p.technicalSpec!.trim(),
                                       if (p.internalCode.isNotEmpty)
                                         p.internalCode,
                                       if (p.category?.name != null)

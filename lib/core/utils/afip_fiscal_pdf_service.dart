@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'currency_formatter.dart';
 
@@ -1239,7 +1240,18 @@ class AfipFiscalPdfService {
                         item['product']?['name'] ??
                         'Producto')
                     .toString();
-            final customDetails = item['custom_details']?.toString().trim() ?? '';
+            final rawCustomDetails =
+                item['custom_details']?.toString().trim() ?? '';
+            final rawTechSpec = (item['technical_spec'] ??
+                    item['product']?['technical_spec'])
+                ?.toString()
+                .trim();
+            final customDetails = Product.resolveEffectiveReceiptDetails(
+                  displayName: pName,
+                  technicalSpec: rawTechSpec,
+                  customDetails: rawCustomDetails,
+                ) ??
+                '';
             final qty = double.tryParse((item['quantity'] ??
                         item['quantity_purchased'] ??
                         item['qty'] ??
@@ -1248,9 +1260,24 @@ class AfipFiscalPdfService {
                 1.0;
             final isWeight = item['product']?['is_sold_by_weight'] == true ||
                 item['is_sold_by_weight'] == true;
+            final rawUnit =
+                (item['unit_type'] ?? item['product']?['unit_type'])?.toString();
+            final rawCalcCfg =
+                item['calc_config'] ?? item['product']?['calc_config'];
+            final normUnit = (rawUnit ?? '').trim().toLowerCase();
+            final preferDiscrete = isWeight &&
+                (normUnit.isEmpty || normUnit == 'un') &&
+                (rawCalcCfg is Map && rawCalcCfg.isNotEmpty);
+            final unitSuffix = Product.resolveReceiptUnitSuffix(
+              unitType: rawUnit,
+              isSoldByWeight: isWeight,
+              preferDiscreteUn: preferDiscrete,
+            );
             final qtyText = isWeight
-                ? '${qty.toQty()} kg'
-                : (qty % 1 == 0 ? '${qty.toInt()} un' : '${qty.toQty()} un');
+                ? '${qty.toQty()} $unitSuffix'
+                : (qty % 1 == 0
+                    ? '${qty.toInt()} $unitSuffix'
+                    : '${qty.toQty()} $unitSuffix');
 
             final safeDetails = _sanitizePdfText(customDetails);
             return pw.TableRow(
@@ -1689,7 +1716,18 @@ class AfipFiscalPdfService {
                         item['product']?['name'] ??
                         'Producto')
                     .toString();
-            final customDetails = item['custom_details']?.toString().trim() ?? '';
+            final rawCustomDetails =
+                item['custom_details']?.toString().trim() ?? '';
+            final rawTechSpec = (item['technical_spec'] ??
+                    item['product']?['technical_spec'])
+                ?.toString()
+                .trim();
+            final customDetails = Product.resolveEffectiveReceiptDetails(
+                  displayName: name,
+                  technicalSpec: rawTechSpec,
+                  customDetails: rawCustomDetails,
+                ) ??
+                '';
             final qty = double.tryParse(
                     (item['quantity'] ?? item['qty'] ?? 1).toString()) ??
                 1.0;
@@ -1829,7 +1867,18 @@ class AfipFiscalPdfService {
                         item['product']?['name'] ??
                         'Producto')
                     .toString();
-            final customDetails = item['custom_details']?.toString().trim() ?? '';
+            final rawCustomDetails =
+                item['custom_details']?.toString().trim() ?? '';
+            final rawTechSpec = (item['technical_spec'] ??
+                    item['product']?['technical_spec'])
+                ?.toString()
+                .trim();
+            final customDetails = Product.resolveEffectiveReceiptDetails(
+                  displayName: name,
+                  technicalSpec: rawTechSpec,
+                  customDetails: rawCustomDetails,
+                ) ??
+                '';
             final qty = double.tryParse(
                     (item['quantity'] ?? item['qty'] ?? 1).toString()) ??
                 1.0;

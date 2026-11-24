@@ -34,8 +34,8 @@ abstract class CatalogRepository {
   Future<List<Category>> getCategories();
   // Rubro CRUD
   Future<List<Rubro>> getRubros();
-  Future<Rubro> createRubro(String name, {String? description});
-  Future<Rubro> updateRubro(int id, String name, {String? description});
+  Future<Rubro> createRubro(String name, {String? description, String? verticalType});
+  Future<Rubro> updateRubro(int id, String name, {String? description, String? verticalType});
   Future<void> deleteRubro(int id);
   // Brand CRUD
   Future<List<Brand>> getBrands();

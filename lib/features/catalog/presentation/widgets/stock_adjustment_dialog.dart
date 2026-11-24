@@ -43,8 +43,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     try {
       final s = Provider.of<SettingsProvider?>(context, listen: false);
       if (s != null) {
-        return !s.safeIsHardwareStore &&
-            (s.features.batchExpiration || s.features.production);
+        return s.features.batchExpiration || s.features.production;
       }
     } catch (_) {}
     return true;
@@ -53,7 +52,18 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
   String _resolveUnitLabel(Product product) {
     final u = product.unitType.trim().toLowerCase();
     if (u == 'un' || u.isEmpty) {
-      return product.isSoldByWeight ? 'Kg' : 'unidades';
+      if (!product.isSoldByWeight) return 'unidades';
+      bool businessUsesScale = true;
+      try {
+        businessUsesScale = Provider.of<SettingsProvider?>(context, listen: false)
+                ?.safeVerticalProfile
+                .canUseScaleWeight ??
+            true;
+      } catch (_) {}
+      return product.isDiscreteFractionalItem(
+              businessUsesScaleWeight: businessUsesScale)
+          ? 'unidades'
+          : 'Kg';
     }
     return product.unitShortLabel;
   }

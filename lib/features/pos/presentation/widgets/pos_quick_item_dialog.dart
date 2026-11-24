@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
@@ -1649,10 +1650,15 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final settingsProv = context.watch<SettingsProvider?>();
     final isResponsableInscripto =
-        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ?? false;
-    final isHardwareStore =
-        context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false;
+        settingsProv?.settings?.isResponsableInscripto ?? false;
+    final profile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final showWeightToggle =
+        profile.canUseScaleWeight ||
+        profile.canUseFractionalCut ||
+        _isSoldByWeight;
     final qty = _parseDouble(_quantityController.text);
     final unitPrice = _parseArs(_priceController.text);
     final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
@@ -1945,7 +1951,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                   onFieldSubmitted: (_) => _submit(),
                                   decoration: InputDecoration(
                                     labelText: _isSoldByWeight
-                                        ? (isHardwareStore
+                                        ? (profile.canUseFractionalCut &&
+                                                !profile.canUseScaleWeight
                                             ? 'Cantidad / Medida *'
                                             : 'Peso (Kg) *')
                                         : 'Cantidad *',
@@ -1955,7 +1962,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     isDense: true,
-                                    suffixIcon: (_isSoldByWeight && !isHardwareStore)
+                                    suffixIcon: (_isSoldByWeight &&
+                                            profile.canUseScaleWeight)
                                         ? Consumer<LocalTerminalProvider>(
                                             builder: (ctx, localTerminal, _) {
                                               final comPort = localTerminal.scaleComPort;
@@ -2168,22 +2176,24 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                                 ),
                                               ),
                                               child: !_isComboMode
-                                                  ? Row(
-                                                      key: const ValueKey<String>('trailing_weight'),
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        ChoiceChip(
-                                                          label: Text(
-                                                            isHardwareStore
-                                                                ? 'Fraccionable / Decimal'
-                                                                : 'Por Peso (Kg)',
-                                                            style: const TextStyle(fontSize: 11),
-                                                          ),
-                                                          selected: _isSoldByWeight,
-                                                          visualDensity: VisualDensity.compact,
-                                                          onSelected: (v) => setState(() => _isSoldByWeight = v),
-                                                        ),
-                                                        if (_isSoldByWeight && !isHardwareStore) ...[
+                                                  ? (showWeightToggle
+                                                      ? Row(
+                                                          key: const ValueKey<String>('trailing_weight'),
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            ChoiceChip(
+                                                              label: Text(
+                                                                profile.canUseFractionalCut &&
+                                                                        !profile.canUseScaleWeight
+                                                                    ? 'Fraccionable / Decimal'
+                                                                    : 'Por Peso (Kg)',
+                                                                style: const TextStyle(fontSize: 11),
+                                                              ),
+                                                              selected: _isSoldByWeight,
+                                                              visualDensity: VisualDensity.compact,
+                                                              onSelected: (v) => setState(() => _isSoldByWeight = v),
+                                                            ),
+                                                            if (_isSoldByWeight && profile.canUseScaleWeight) ...[
                                                           const SizedBox(width: 6),
                                                           Consumer<LocalTerminalProvider>(
                                                             builder: (ctx, localTerminal, _) {
@@ -2212,6 +2222,9 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                                         ],
                                                       ],
                                                     )
+                                                      : const SizedBox.shrink(
+                                                          key: ValueKey<String>('trailing_weight'),
+                                                        ))
                                                   : Container(
                                                       key: const ValueKey<String>('trailing_combo_badge'),
                                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

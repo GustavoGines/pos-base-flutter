@@ -5,16 +5,19 @@ class RubroModel extends Rubro {
     required super.id,
     required super.name,
     super.description,
+    super.verticalType,
     super.isSystem = false,
     super.categoriesCount = 0,
     super.createdAt,
   });
 
   factory RubroModel.fromJson(Map<String, dynamic> json) {
+    final rawVertical = json['vertical_type']?.toString().trim();
     return RubroModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? 'Sin nombre',
       description: json['description']?.toString(),
+      verticalType: (rawVertical != null && rawVertical.isNotEmpty) ? rawVertical : null,
       isSystem: json['is_system'] == true ||
           json['is_system'] == 1 ||
           json['is_system']?.toString() == '1' ||
@@ -33,6 +36,7 @@ class RubroModel extends Rubro {
       'id': id,
       'name': name,
       if (description != null) 'description': description,
+      if (verticalType != null) 'vertical_type': verticalType,
       'is_system': isSystem,
       'categories_count': categoriesCount,
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),

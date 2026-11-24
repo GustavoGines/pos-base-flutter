@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:flutter/material.dart';
@@ -691,19 +692,49 @@ class _PosScreenState extends State<PosScreen> {
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (_, i) {
             final p = results[i];
+            bool canUseScale = true;
+            try {
+              canUseScale = Provider.of<SettingsProvider?>(context, listen: false)
+                      ?.safeVerticalProfile
+                      .canUseScaleWeight ??
+                  true;
+            } catch (_) {}
+            final preferDiscrete = p.isDiscreteFractionalItem(
+              businessUsesScaleWeight: canUseScale,
+            );
+            final isNonScale =
+                p.isMetricOrLiquidUnit || preferDiscrete || !canUseScale;
+            final unitLbl = Product.resolveQuantityUnitLabel(
+              unitType: p.unitType,
+              isSoldByWeight: p.isSoldByWeight,
+              preferDiscreteUn: preferDiscrete,
+            );
+            final spec = p.technicalSpec?.trim();
+            final loc = p.storageLocation?.trim();
+            final metaParts = <String>[
+              if (spec != null && spec.isNotEmpty) spec,
+              if (loc != null && loc.isNotEmpty) loc,
+              p.isSoldByWeight
+                  ? 'Por $unitLbl · \$${p.sellingPrice.toCurrency()}/$unitLbl'
+                  : '\$${p.sellingPrice.toCurrency()}',
+            ];
             return Material(
               color: Colors.transparent,
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: p.isSoldByWeight
-                      ? Colors.orange.shade100
+                      ? (isNonScale ? Colors.teal.shade50 : Colors.orange.shade100)
                       : Colors.blue.shade50,
                   child: Icon(
                     p.isSoldByWeight
-                        ? Icons.scale_rounded
+                        ? (isNonScale
+                            ? Icons.straighten_rounded
+                            : Icons.scale_rounded)
                         : Icons.inventory_2_outlined,
                     color: p.isSoldByWeight
-                        ? Colors.orange.shade700
+                        ? (isNonScale
+                            ? Colors.teal.shade700
+                            : Colors.orange.shade700)
                         : Colors.blue.shade700,
                     size: 20,
                   ),
@@ -711,9 +742,9 @@ class _PosScreenState extends State<PosScreen> {
                 title: Text(p.name,
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(
-                  p.isSoldByWeight
-                      ? 'Por ${p.effectiveQuantityUnitLabel} · \$${p.sellingPrice.toCurrency()}/${p.effectiveQuantityUnitLabel}'
-                      : '\$${p.sellingPrice.toCurrency()}',
+                  metaParts.join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 trailing:
                     const Icon(Icons.add_circle_outline, color: Colors.green),
@@ -1144,12 +1175,18 @@ class _PosScreenState extends State<PosScreen> {
     final bool isHardwareVertical;
     {
       SettingsProvider? settingsProv;
+      List<dynamic>? rawRubros;
       try {
         settingsProv = Provider.of<SettingsProvider>(context, listen: false);
+        rawRubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros;
       } catch (_) {
         settingsProv = null;
       }
-      canUseHardwareCalculator = settingsProv?.canUseHardwareCalculator ?? false;
+      canUseHardwareCalculator = settingsProv?.canUseHardwareCalculatorFor(
+            product: product,
+            rubros: rawRubros?.cast() ?? const [],
+          ) ??
+          false;
       isHardwareVertical =
           (settingsProv?.safeIsHardwareStore ?? false) ||
               canUseHardwareCalculator;
@@ -1970,7 +2007,11 @@ class _PosScreenState extends State<PosScreen> {
                 _shortcutRow(
                     ['F5'], 'Consultar precio y stock sin agregar al carrito'),
                 _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
-                if (context.read<SettingsProvider>().canUseHardwareCalculator)
+                if (context.read<SettingsProvider>().canUseHardwareCalculatorFor(
+                      rubros: Provider.of<CatalogProvider?>(context, listen: false)
+                              ?.safeRubros ??
+                          const [],
+                    ))
                   _shortcutRow(['F7'],
                       'Calculadora Rápida Ferretera (Machimbre / Chapas / Pintura)'),
                 _shortcutRow(['Esc'],
@@ -2080,14 +2121,31 @@ class _PosScreenState extends State<PosScreen> {
     String? batchExpirationDate,
   }) {
     SettingsProvider? settingsProv;
+    List<dynamic>? rawRubros;
     try {
       settingsProv = context.read<SettingsProvider?>();
+      rawRubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros;
     } catch (_) {}
+    final businessUsesScale =
+        settingsProv?.safeVerticalProfile.canUseScaleWeight ?? true;
+    final preferDiscreteUn = product.isDiscreteFractionalItem(
+      businessUsesScaleWeight: businessUsesScale,
+    );
     final isHardwareStore = settingsProv?.safeIsHardwareStore ?? false;
-    final canUseF7 = settingsProv?.canUseHardwareCalculator ?? false;
-    final isHardwareFractionalMode =
-        isHardwareStore || product.isMetricOrLiquidUnit;
-    final unitShort = product.unitShortLabel;
+    final canUseF7 = settingsProv?.canUseHardwareCalculatorFor(
+          product: product,
+          rubros: rawRubros?.cast() ?? const [],
+        ) ??
+        false;
+    final isHardwareFractionalMode = isHardwareStore ||
+        product.isMetricOrLiquidUnit ||
+        preferDiscreteUn ||
+        !businessUsesScale;
+    final unitShort = Product.resolveQuantityUnitLabel(
+      unitType: product.unitType,
+      isSoldByWeight: product.isSoldByWeight,
+      preferDiscreteUn: preferDiscreteUn,
+    );
     final double maxLimit = isHardwareFractionalMode ? 100000.0 : 1000.0;
     bool openedF7Calculator = false;
 
@@ -2510,7 +2568,7 @@ class _PosScreenState extends State<PosScreen> {
                           'quantity': item.quantity,
                           'product_name': item.effectiveDisplayName,
                           'custom_description': item.customDescription,
-                          'custom_details': item.customDetails,
+                          'custom_details': item.effectiveReceiptDetails(),
                           'is_temporary': item.isTemporary,
                           'unit_price': item.unitPrice,
                           'regular_price': item.product.sellingPrice,
@@ -2527,6 +2585,9 @@ class _PosScreenState extends State<PosScreen> {
                             'internal_code': item.product.internalCode,
                             'iva_rate': item.product.ivaRate,
                             'is_sold_by_weight': item.product.isSoldByWeight,
+                            'unit_type': item.product.unitType,
+                            'technical_spec': item.product.technicalSpec,
+                            'calc_config': item.product.calcConfig,
                             'selling_price': item.product.sellingPrice,
                           }
                         })
@@ -4102,6 +4163,26 @@ class _PosScreenState extends State<PosScreen> {
 
                           // Fila 3 unificada (Orden estricto: 1.Estrategia -> 2.Stock/Vto -> 3.Origen/Costo)
                           final leadingBadges = <Widget>[];
+                          final cartSpecTrim = item.product.technicalSpec?.trim();
+                          if (cartSpecTrim != null &&
+                              cartSpecTrim.isNotEmpty &&
+                              Product.resolveEffectiveReceiptDetails(
+                                    displayName: item.effectiveDisplayName,
+                                    technicalSpec: cartSpecTrim,
+                                    customDetails: item.customDetails,
+                                  ) !=
+                                  null &&
+                              !((item.customDetails ?? '')
+                                  .toLowerCase()
+                                  .contains(cartSpecTrim.toLowerCase()))) {
+                            leadingBadges.add(_buildCartMicroChip(
+                              label: cartSpecTrim,
+                              bgColor: const Color(0xFFEEF2FF),
+                              borderColor: const Color(0xFFC7D2FE),
+                              textColor: const Color(0xFF3730A3),
+                              tooltip: 'Especificación / Variante: $cartSpecTrim',
+                            ));
+                          }
                           if (item.hasManualSellingPriceOverride) {
                             leadingBadges.add(_buildCartMicroChip(
                               label: '✏️ Precio manual',
@@ -4501,7 +4582,14 @@ class _PosScreenState extends State<PosScreen> {
                                                 ),
                                                 if (context
                                                         .read<SettingsProvider>()
-                                                        .canUseHardwareCalculator &&
+                                                        .canUseHardwareCalculatorFor(
+                                                          product: item.product,
+                                                          rubros: Provider.of<CatalogProvider?>(
+                                                                    context,
+                                                                    listen: false,
+                                                                  )?.safeRubros ??
+                                                              const [],
+                                                        ) &&
                                                     !item.isTemporary &&
                                                     item.product.id > 0) ...[
                                                   const SizedBox(width: 4),
@@ -5198,7 +5286,9 @@ class _PosScreenState extends State<PosScreen> {
     if (event.logicalKey == LogicalKeyboardKey.f7) {
       final settingsProv =
           Provider.of<SettingsProvider>(context, listen: false);
-      if (settingsProv.canUseHardwareCalculator) {
+      final rubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+          const [];
+      if (settingsProv.canUseHardwareCalculatorFor(rubros: rubros)) {
         _hideSearchHistoryPopover();
         _openHardwareCalculatorDialog();
         return true;
@@ -5488,7 +5578,14 @@ class _PosScreenState extends State<PosScreen> {
       );
     }
     final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
-    if (!settingsProv.canUseHardwareCalculator) return;
+    final rubros = Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
+        const [];
+    if (!settingsProv.canUseHardwareCalculatorFor(
+      product: initialProduct,
+      rubros: rubros,
+    )) {
+      return;
+    }
 
     final out = await PosHardwareCalculatorDialog.show(
       context,
@@ -5980,6 +6077,12 @@ class _PosScreenState extends State<PosScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isCompact = constraints.maxWidth < 580;
+        final rightPanelProfile =
+            context.watch<SettingsProvider?>()?.safeVerticalProfile ??
+                BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+        final panelRubros =
+            Provider.of<CatalogProvider?>(context, listen: true)?.safeRubros ??
+                const [];
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -6093,7 +6196,7 @@ class _PosScreenState extends State<PosScreen> {
                   const SizedBox(width: 10),
                   if (context
                       .watch<SettingsProvider>()
-                      .canUseHardwareCalculator) ...[
+                      .canUseHardwareCalculatorFor(rubros: panelRubros)) ...[
                     Tooltip(
                       message:
                           'Calculadora Rápida Ferretera: Machimbre, Chapas y Pintura (F7)',
@@ -6153,16 +6256,16 @@ class _PosScreenState extends State<PosScreen> {
               if (_searchQuery.isEmpty) ...[
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Acceso Rápido',
+                          const Text('Acceso Rápido',
                               style: TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(
-                            'Fijados · Más vendidos · Productos por peso · Orden alfabético',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                            'Fijados · Más vendidos · ${rightPanelProfile.posQuickAccessSubtitle} · Orden alfabético',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -6299,6 +6402,7 @@ class _PosScreenState extends State<PosScreen> {
                     if (displayItems.isEmpty) {
                       if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.activeProducts.isNotEmpty) {
                         // Filtro activo devuelve 0 ítems pero el catálogo tiene productos
+                        String emptyMessage = '';
                         String filterName = 'este filtro';
                         if (_quickAccessFilter == 'pinned') {
                           filterName = 'productos fijados';
@@ -6307,7 +6411,8 @@ class _PosScreenState extends State<PosScreen> {
                         } else if (_quickAccessFilter == 'offers') {
                           filterName = 'ofertas activas';
                         } else if (_quickAccessFilter == 'weight') {
-                          filterName = 'productos por peso';
+                          emptyMessage =
+                              rightPanelProfile.posEmptyFractionalFilterLabel;
                         } else if (_quickAccessFilter.startsWith('cat_')) {
                           filterName = 'esta categoría';
                         }
@@ -6320,7 +6425,9 @@ class _PosScreenState extends State<PosScreen> {
                                   size: 56, color: Colors.grey),
                               const SizedBox(height: 12),
                               Text(
-                                'No hay productos para $filterName',
+                                emptyMessage.isNotEmpty
+                                    ? emptyMessage
+                                    : 'No hay productos para $filterName',
                                 style: const TextStyle(color: Colors.grey, fontSize: 15),
                                 textAlign: TextAlign.center,
                               ),
@@ -6612,10 +6719,15 @@ class _PosScreenState extends State<PosScreen> {
     final localTerminal = context.watch<LocalTerminalProvider>();
     final catalog = context.watch<CatalogProvider>();
     final offerProv = context.watch<OfferProvider>();
-    bool isHardwareStore = false;
+    BusinessVerticalProfile quickProfile =
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     try {
-      isHardwareStore = context.watch<SettingsProvider?>()?.safeIsHardwareStore ?? false;
+      quickProfile =
+          context.watch<SettingsProvider?>()?.safeVerticalProfile ??
+              quickProfile;
     } catch (_) {}
+    final supportsWeightFilter =
+        quickProfile.canUseFractionalCut || quickProfile.canUseScaleWeight;
 
     final activeCatalogProducts = catalog.activeProducts;
     final hasPinned = localTerminal.pinnedProductIds.any(
@@ -6670,7 +6782,8 @@ class _PosScreenState extends State<PosScreen> {
     if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||
         (_quickAccessFilter == 'pinned' && !hasPinned) ||
         (_quickAccessFilter == 'offers' && !hasOffers) ||
-        (_quickAccessFilter == 'weight' && !hasWeight) ||
+        (_quickAccessFilter == 'weight' &&
+            (!supportsWeightFilter || !hasWeight)) ||
         selectedCatMissing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -6692,7 +6805,7 @@ class _PosScreenState extends State<PosScreen> {
         (hasPinned ? 102.0 : 0.0) +
         (hasTopSellers ? 130.0 : 0.0) +
         (hasOffers ? 100.0 : 0.0) +
-        105.0; // '⚖️ Por Peso'
+        (supportsWeightFilter ? 105.0 : 0.0); // '⚖️ Por Peso' / '📏 Fraccionables'
 
     final maxWithoutMore = ((innerWidth - systemChipsWidth) / 125.0).floor().clamp(1, 8);
     final int maxDirectCategories = allCategories.length <= maxWithoutMore
@@ -6764,11 +6877,14 @@ class _PosScreenState extends State<PosScreen> {
                     _buildFilterChip('🔥 Más Vendidos', 'top_sellers', _quickAccessFilter),
                   if (hasOffers)
                     _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
-                  _buildFilterChip(
-                    isHardwareStore ? '📏 Fraccionables' : '⚖️ Por Peso',
-                    'weight',
-                    _quickAccessFilter,
-                  ),
+                  if (supportsWeightFilter)
+                    _buildFilterChip(
+                      quickProfile.canUseFractionalCut
+                          ? '📏 Fraccionables'
+                          : '⚖️ Por Peso',
+                      'weight',
+                      _quickAccessFilter,
+                    ),
                   for (final catEntry in visibleCategories)
                     _buildCategoryChip(
                       catEntry.key,
@@ -7208,12 +7324,18 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _buildDynamicCatalogView(List<Product> displayItems, String viewMode) {
     final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final canUseScale =
+        Provider.of<SettingsProvider?>(context, listen: false)
+                ?.safeVerticalProfile
+                .canUseScaleWeight ??
+            true;
     return PosQuickAccessCatalogView(
       products: displayItems,
       viewMode: viewMode,
       // El ranking Top solo aplica al Acceso Rápido; en búsquedas sería relativo a los resultados.
       showTopRanks: _searchQuery.isEmpty,
       showKeyboardShortcuts: true,
+      canUseScaleWeight: canUseScale,
       onSelectProduct: _handleProductSelection,
       onDecrementProduct: _handleDecrementProduct,
       onQuickLook: _showProductQuickLookDialog,
@@ -7253,7 +7375,18 @@ class _PosScreenState extends State<PosScreen> {
         );
 
         final displayPrice = calc.finalUnitPrice;
-        final unitSuffix = product.effectiveQuantityUnitLabel;
+        final canUseScale =
+            Provider.of<SettingsProvider?>(context, listen: false)
+                    ?.safeVerticalProfile
+                    .canUseScaleWeight ??
+                true;
+        final unitSuffix = Product.resolveQuantityUnitLabel(
+          unitType: product.unitType,
+          isSoldByWeight: product.isSoldByWeight,
+          preferDiscreteUn: product.isDiscreteFractionalItem(
+            businessUsesScaleWeight: canUseScale,
+          ),
+        );
         final formattedMain = isByWeight
             ? '\$${displayPrice.toCurrency()}/$unitSuffix'
             : '\$${displayPrice.toCurrency()}';

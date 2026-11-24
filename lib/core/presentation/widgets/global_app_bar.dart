@@ -1589,6 +1589,9 @@ class _TerminalPeripheralsDialogState
 
         final cashProvider = context.watch<CashRegisterProvider?>();
         final settingsProvider = context.watch<SettingsProvider?>();
+        final bool showScaleSection =
+            (settingsProvider?.safeVerticalProfile.canUseScaleWeight ?? true) ||
+                savedComPort.isNotEmpty;
         final shift = cashProvider?.currentShift;
         final isOpen = shift != null && shift.isOpen;
         final registers = cashProvider?.availableRegisters ?? [];
@@ -1742,26 +1745,38 @@ class _TerminalPeripheralsDialogState
                           fontWeight: FontWeight.w600,
                           fontSize: 12.5,
                         ),
-                        tabs: const [
-                          Tab(
+                        tabs: [
+                          const Tab(
                             height: 36,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(Icons.desktop_windows_outlined, size: 16),
                                 SizedBox(width: 6),
-                                Text('Terminal y Turno'),
+                                Flexible(
+                                  child: Text(
+                                    'Terminal y Turno',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Tab(
+                          const Tab(
                             height: 36,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(Icons.print_outlined, size: 16),
                                 SizedBox(width: 6),
-                                Text('Impresora y Cajón'),
+                                Flexible(
+                                  child: Text(
+                                    'Impresora y Cajón',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1770,9 +1785,22 @@ class _TerminalPeripheralsDialogState
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.scale_outlined, size: 16),
-                                SizedBox(width: 6),
-                                Text('Balanza y Point'),
+                                Icon(
+                                  showScaleSection
+                                      ? Icons.scale_outlined
+                                      : Icons.credit_card_outlined,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    showScaleSection
+                                        ? 'Balanza y Point'
+                                        : 'Posnet Point',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1931,17 +1959,19 @@ class _TerminalPeripheralsDialogState
                                   const SizedBox(height: 10),
                                   Row(
                                     children: [
-                                      Expanded(
-                                        child: _buildHardwareSummaryCard(
-                                          icon: Icons.scale_outlined,
-                                          title: 'Balanza Serie',
-                                          value: scaleSummary,
-                                          isActive: savedComPort.isNotEmpty,
-                                          color: Colors.indigo.shade700,
-                                          onTap: () => DefaultTabController.of(tabContext).animateTo(2),
+                                      if (showScaleSection) ...[
+                                        Expanded(
+                                          child: _buildHardwareSummaryCard(
+                                            icon: Icons.scale_outlined,
+                                            title: 'Balanza Serie',
+                                            value: scaleSummary,
+                                            isActive: savedComPort.isNotEmpty,
+                                            color: Colors.indigo.shade700,
+                                            onTap: () => DefaultTabController.of(tabContext).animateTo(2),
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 10),
+                                        const SizedBox(width: 10),
+                                      ],
                                       Expanded(
                                         child: _buildHardwareSummaryCard(
                                           icon: Icons.credit_card_rounded,
@@ -2207,55 +2237,57 @@ class _TerminalPeripheralsDialogState
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildSectionHeader(
-                                    icon: Icons.scale_rounded,
-                                    title: 'Balanza Electrónica (Cable Serie / USB-COM)',
-                                    color: Colors.indigo.shade700,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'Puerto COM de la Balanza (Systel, Kretz, Moretti, etc.):',
-                                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  DropdownButtonFormField<String>(
-                                    key: ValueKey('scale_port_$savedComPort'),
-                                    initialValue: addedPorts.contains(savedComPort) ? savedComPort : '',
-                                    isExpanded: true,
-                                    decoration: const InputDecoration(
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
+                                  if (showScaleSection) ...[
+                                    _buildSectionHeader(
+                                      icon: Icons.scale_rounded,
+                                      title: 'Balanza Electrónica (Cable Serie / USB-COM)',
+                                      color: Colors.indigo.shade700,
                                     ),
-                                    items: scalePortItems,
-                                    onChanged: (v) {
-                                      if (v != null) {
-                                        p.setScaleComPort(v);
-                                        _setFeedback(
-                                          v.isEmpty
-                                              ? 'Balanza desactivada (modo ingreso manual).'
-                                              : 'Puerto $v seleccionado para la balanza.',
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  if (savedComPort.isNotEmpty) ...[
-                                    const SizedBox(height: 10),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: OutlinedButton.icon(
-                                        onPressed: _isTestingScale ? null : () => _handleTestScale(p),
-                                        icon: _isTestingScale
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              )
-                                            : const Icon(Icons.monitor_weight_outlined, size: 18),
-                                        label: const Text('Probar Lectura de Peso'),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Puerto COM de la Balanza (Systel, Kretz, Moretti, etc.):',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    DropdownButtonFormField<String>(
+                                      key: ValueKey('scale_port_$savedComPort'),
+                                      initialValue: addedPorts.contains(savedComPort) ? savedComPort : '',
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
                                       ),
+                                      items: scalePortItems,
+                                      onChanged: (v) {
+                                        if (v != null) {
+                                          p.setScaleComPort(v);
+                                          _setFeedback(
+                                            v.isEmpty
+                                                ? 'Balanza desactivada (modo ingreso manual).'
+                                                : 'Puerto $v seleccionado para la balanza.',
+                                          );
+                                        }
+                                      },
                                     ),
+                                    if (savedComPort.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: OutlinedButton.icon(
+                                          onPressed: _isTestingScale ? null : () => _handleTestScale(p),
+                                          icon: _isTestingScale
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.monitor_weight_outlined, size: 18),
+                                          label: const Text('Probar Lectura de Peso'),
+                                        ),
+                                      ),
+                                    ],
+                                    const Divider(height: 26),
                                   ],
-                                  const Divider(height: 26),
                                   _buildSectionHeader(
                                     icon: Icons.credit_card_rounded,
                                     title: 'Posnet Mercado Pago Point (Opcional por Caja)',

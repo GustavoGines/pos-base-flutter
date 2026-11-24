@@ -94,6 +94,7 @@ class Product {
     'rollo',
     'caja',
     'par',
+    'docena',
   };
 
   static const Set<String> metricOrLiquidUnitTypes = {
@@ -109,41 +110,86 @@ class Product {
   bool get isMetricOrLiquidUnit =>
       metricOrLiquidUnitTypes.contains(unitType.trim().toLowerCase());
 
+  /// Indica si este producto pertenece a un rubro o configuración F7 de Ferretería / Maderera.
+  bool get hasHardwareCalcAccess {
+    if (calcConfig != null && calcConfig!.isNotEmpty) return true;
+    final rubroVert = category?.rubro?.verticalType?.trim().toLowerCase() ?? '';
+    final rubroName = category?.rubro?.name.trim().toLowerCase() ?? '';
+    return rubroVert == 'hardware_store' ||
+        RegExp(r'ferret|mader|corral').hasMatch(rubroName);
+  }
+
+  /// Determina si un producto fraccionable con `unitType == 'un'` representa
+  /// una unidad entera fraccionable (ej. tabla de madera, metro/pieza sin balanza)
+  /// en lugar de un ítem pesable legado de verdulería/carnicería en Kg.
+  bool isDiscreteFractionalItem({bool businessUsesScaleWeight = true}) {
+    if (!isSoldByWeight) return false;
+    final norm = unitType.trim().toLowerCase();
+    if (norm.isNotEmpty && norm != 'un') return false;
+    if (calcConfig != null && calcConfig!.isNotEmpty) return true;
+    final rubroVert = category?.rubro?.verticalType?.trim().toLowerCase() ?? '';
+    final rubroName = category?.rubro?.name.trim().toLowerCase() ?? '';
+    if (rubroVert == 'hardware_store' ||
+        RegExp(r'ferret|mader|corral').hasMatch(rubroName)) {
+      return true;
+    }
+    if (rubroVert == 'retail' ||
+        rubroVert == 'butcher' ||
+        RegExp(r'verdul|carnic|fiambr|poller|supermerc|kiosc|almac|minimerc|panad')
+            .hasMatch(rubroName)) {
+      return false;
+    }
+    return !businessUsesScaleWeight;
+  }
+
   String get unitShortLabel => shortLabelFor(unitType);
 
   /// Etiqueta corta de unidad efectiva para cantidades/stock/precios fraccionados:
-  /// Si `unitType` es explícito y distinto de `'un'` (ej. `'mt'`, `'m2'`, `'m3'`, `'lt'`, `'kg'`, `'g'`, `'bolsa'`, `'rollo'`, `'caja'`, `'par'`),
-  /// devuelve `shortLabelFor(unitType)`. Si es `'un'` (o vacío), devuelve `'Kg'` cuando `isSoldByWeight == true` o `'un.'` cuando es `false`.
-  String get effectiveQuantityUnitLabel =>
-      resolveQuantityUnitLabel(unitType: unitType, isSoldByWeight: isSoldByWeight);
+  /// Si `unitType` es explícito y distinto de `'un'` (ej. `'mt'`, `'m2'`, `'m3'`, `'lt'`, `'kg'`, `'g'`, `'bolsa'`, `'rollo'`, `'caja'`, `'par'`, `'docena'`),
+  /// devuelve `shortLabelFor(unitType)`. Si es `'un'` (o vacío), devuelve `'un.'` cuando
+  /// `isSoldByWeight == false` o es un ítem discreto fraccionable (`calcConfig` o rubro ferretería),
+  /// y `'Kg'` solo para pesables legados de balanza.
+  String get effectiveQuantityUnitLabel => resolveQuantityUnitLabel(
+        unitType: unitType,
+        isSoldByWeight: isSoldByWeight,
+        preferDiscreteUn: isDiscreteFractionalItem(businessUsesScaleWeight: true),
+      );
 
   /// Sufijo corto para tickets/recibos UI o PDF (ej. `'mt'`, `'m²'`, `'m³'`, `'Lt'`, `'kg'`, `'g'`, `'un'`).
-  String get effectiveReceiptUnitSuffix =>
-      resolveReceiptUnitSuffix(unitType: unitType, isSoldByWeight: isSoldByWeight);
+  String get effectiveReceiptUnitSuffix => resolveReceiptUnitSuffix(
+        unitType: unitType,
+        isSoldByWeight: isSoldByWeight,
+        preferDiscreteUn: isDiscreteFractionalItem(businessUsesScaleWeight: true),
+      );
 
   /// Sufijo ASCII puro para impresoras térmicas ESC/POS (ej. `'mt'`, `'m2'`, `'m3'`, `'lt'`, `'kg'`, `'g'`, `'un'`).
-  String get effectiveAsciiReceiptUnitSuffix =>
-      resolveReceiptUnitSuffix(
+  String get effectiveAsciiReceiptUnitSuffix => resolveReceiptUnitSuffix(
         unitType: unitType,
         isSoldByWeight: isSoldByWeight,
         asciiOnly: true,
+        preferDiscreteUn: isDiscreteFractionalItem(businessUsesScaleWeight: true),
       );
 
   static String resolveQuantityUnitLabel({
     String? unitType,
     required bool isSoldByWeight,
+    bool preferDiscreteUn = false,
   }) {
     final norm = (unitType ?? '').trim().toLowerCase();
     if (norm.isNotEmpty && norm != 'un') {
       return shortLabelFor(norm);
     }
-    return isSoldByWeight ? 'Kg' : 'un.';
+    if (!isSoldByWeight || preferDiscreteUn) {
+      return 'un.';
+    }
+    return 'Kg';
   }
 
   static String resolveReceiptUnitSuffix({
     String? unitType,
     required bool isSoldByWeight,
     bool asciiOnly = false,
+    bool preferDiscreteUn = false,
   }) {
     final norm = (unitType ?? '').trim().toLowerCase();
     if (norm.isNotEmpty && norm != 'un') {
@@ -164,7 +210,10 @@ class Product {
           return norm;
       }
     }
-    return isSoldByWeight ? 'kg' : 'un';
+    if (!isSoldByWeight || preferDiscreteUn) {
+      return 'un';
+    }
+    return 'kg';
   }
 
   static String shortLabelFor(String rawUnitType) {
@@ -191,9 +240,103 @@ class Product {
         return 'caja';
       case 'par':
         return 'par';
+      case 'docena':
+        return 'doc.';
       default:
         return rawUnitType.isNotEmpty ? rawUnitType : 'un.';
     }
+  }
+
+  static String _normalizeForReceiptComparison(String input) {
+    const fold = {
+      'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'ñ': 'n',
+      '×': 'x',
+      '·': ' ',
+      '•': ' ',
+      '–': ' ',
+      '—': ' ',
+      '-': ' ',
+      '/': ' ',
+    };
+    final out = StringBuffer();
+    for (final rune in input.toLowerCase().runes) {
+      final ch = String.fromCharCode(rune);
+      out.write(fold[ch] ?? ch);
+    }
+    return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// Convierte símbolos Unicode no soportados por ESC/POS (`×`, `·`, acentos, emojis)
+  /// en ASCII plano seguro (`x`, `-`, etc.).
+  static String sanitizeAsciiReceiptText(String text) {
+    if (text.isEmpty) return text;
+    const Map<String, String> replacements = {
+      'Á': 'A', 'À': 'A', 'Â': 'A', 'Ä': 'A', 'Ã': 'A', 'Å': 'A',
+      'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+      'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Ö': 'O', 'Õ': 'O', 'Ø': 'O',
+      'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o', 'ø': 'o',
+      'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'Ç': 'C', 'ç': 'c',
+      'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'Ñ': 'N', 'ñ': 'n',
+      '°': 'o', 'º': 'o', 'ª': 'a',
+      '¡': '', '¿': '',
+      '→': '->', '←': '<-',
+      '²': '2', '³': '3',
+      '·': '-', '•': '-', '×': 'x',
+      '–': '-', '—': '-',
+      '“': '"', '”': '"', '‘': "'", '’': "'",
+    };
+    final out = StringBuffer();
+    for (final rune in text.runes) {
+      final char = String.fromCharCode(rune);
+      final mapped = replacements[char];
+      if (mapped != null) {
+        out.write(mapped);
+      } else if (rune >= 0x20 && rune <= 0x7E) {
+        out.write(char);
+      }
+    }
+    return out.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// Combina `technicalSpec` y `customDetails` sin duplicar datos que ya aparezcan
+  /// en `displayName` ni repetir `technicalSpec` dentro de `customDetails`.
+  static String? resolveEffectiveReceiptDetails({
+    required String displayName,
+    String? technicalSpec,
+    String? customDetails,
+    bool asciiOnly = false,
+  }) {
+    final cleanCustom = customDetails?.trim() ?? '';
+    final cleanSpec = technicalSpec?.trim() ?? '';
+
+    final normDisplay = _normalizeForReceiptComparison(displayName);
+    final normCustom = _normalizeForReceiptComparison(cleanCustom);
+    final normSpec = _normalizeForReceiptComparison(cleanSpec);
+
+    final includeSpec = cleanSpec.isNotEmpty &&
+        normSpec.isNotEmpty &&
+        !normDisplay.contains(normSpec) &&
+        !normCustom.contains(normSpec);
+
+    final parts = <String>[
+      if (includeSpec) cleanSpec,
+      if (cleanCustom.isNotEmpty) cleanCustom,
+    ];
+    if (parts.isEmpty) return null;
+
+    final joined = parts.join(' - ');
+    return asciiOnly ? sanitizeAsciiReceiptText(joined) : joined;
   }
 
   Product copyWith({

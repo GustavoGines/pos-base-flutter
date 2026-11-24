@@ -139,12 +139,12 @@ class _AuditSettingsProvider extends ChangeNotifier implements SettingsProvider 
           companyName: 'Test Audit POS',
           businessType: businessType,
           licensePlanType: 'premium',
-          features: const FeatureFlags(
+          features: FeatureFlags(
             quotes: true,
             suppliers: true,
             multiRubro: true,
-            batchExpiration: true,
-            production: true,
+            batchExpiration: businessType == 'retail',
+            production: businessType == 'retail',
           ),
         );
 

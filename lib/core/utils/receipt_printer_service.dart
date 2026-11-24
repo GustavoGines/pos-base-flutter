@@ -446,10 +446,15 @@ class ReceiptPrinterService {
         productName,
         styles: const PosStyles(bold: true),
       );
-      final customDetails = item.customDetails?.trim();
-      if (customDetails != null && customDetails.isNotEmpty) {
+      final quoteDetails = Product.resolveEffectiveReceiptDetails(
+        displayName: item.productName,
+        technicalSpec: item.product?.technicalSpec,
+        customDetails: item.customDetails,
+        asciiOnly: true,
+      );
+      if (quoteDetails != null && quoteDetails.isNotEmpty) {
         bytes += generator.text(
-          _cleanText('  $customDetails'),
+          _cleanText('  * $quoteDetails'),
           styles: const PosStyles(align: PosAlign.left),
         );
       }
@@ -942,7 +947,7 @@ class ReceiptPrinterService {
       final double subtotal = item.subtotal;
 
       final productName = _cleanText(item.effectiveDisplayName.toUpperCase());
-      final customDetailsText = item.customDetails?.trim();
+      final customDetailsText = item.effectiveReceiptDetails(asciiOnly: true);
       final ivaRateVal = item.product.ivaRate;
       final ivaRateFormatted = ivaRateVal.truncateToDouble() == ivaRateVal
           ? ivaRateVal.toInt().toString()
@@ -1511,7 +1516,7 @@ class ReceiptPrinterService {
           : ivaRateVal.toStringAsFixed(1);
       final aliquotTag = splitShowIvaAliquot ? ' ($ivaRateFormatted)' : '';
       bytes += generator.text(_cleanText(item.effectiveDisplayName.toUpperCase()), styles: const PosStyles(bold: true));
-      final splitDetails = item.customDetails?.trim();
+      final splitDetails = item.effectiveReceiptDetails(asciiOnly: true);
       if (splitDetails != null && splitDetails.isNotEmpty) {
         bytes += generator.text(
           _cleanText('  * $splitDetails'),
@@ -1837,7 +1842,7 @@ class ReceiptPrinterService {
         PosColumn(text: _cleanText(item.effectiveDisplayName.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
         PosColumn(text: qtyStr, width: 3, styles: const PosStyles(align: PosAlign.right)),
       ]);
-      final remDetails = item.customDetails?.trim();
+      final remDetails = item.effectiveReceiptDetails(asciiOnly: true);
       if (remDetails != null && remDetails.isNotEmpty) {
         bytes += generator.text(
           _cleanText('  * $remDetails'),

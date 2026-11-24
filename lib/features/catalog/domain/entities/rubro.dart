@@ -2,6 +2,7 @@ class Rubro {
   final int id;
   final String name;
   final String? description;
+  final String? verticalType;
   final bool isSystem;
   final int categoriesCount;
   final DateTime? createdAt;
@@ -10,6 +11,7 @@ class Rubro {
     required this.id,
     required this.name,
     this.description,
+    this.verticalType,
     this.isSystem = false,
     this.categoriesCount = 0,
     this.createdAt,
@@ -19,6 +21,8 @@ class Rubro {
     int? id,
     String? name,
     String? description,
+    String? verticalType,
+    bool clearVerticalType = false,
     bool? isSystem,
     int? categoriesCount,
     DateTime? createdAt,
@@ -27,6 +31,8 @@ class Rubro {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      verticalType:
+          clearVerticalType ? null : (verticalType ?? this.verticalType),
       isSystem: isSystem ?? this.isSystem,
       categoriesCount: categoriesCount ?? this.categoriesCount,
       createdAt: createdAt ?? this.createdAt,

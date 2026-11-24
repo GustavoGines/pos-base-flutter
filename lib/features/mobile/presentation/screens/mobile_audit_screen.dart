@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/config/business_vertical_profile.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
@@ -312,6 +313,13 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       _scannerController.stop().catchError((_) {});
     } catch (_) {}
 
+    SettingsProvider? settingsProv;
+    try {
+      settingsProv = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final profile = settingsProv?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+
     final nameCtrl = TextEditingController(text: productToEdit?.name);
     final barcodeCtrl = TextEditingController(text: productToEdit?.barcode ?? initialBarcode);
     final costCtrl = TextEditingController(
@@ -330,6 +338,14 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final vencimientoCtrl = TextEditingController(text: productToEdit?.vencimientoDias?.toString() ?? '');
     final addStockCtrl = TextEditingController();
     final internalCodeCtrl = TextEditingController(text: productToEdit?.internalCode ?? '');
+    final technicalSpecCtrl =
+        TextEditingController(text: productToEdit?.technicalSpec ?? '');
+
+    final canUseBatches = (settingsProv == null
+            ? true
+            : (settingsProv.features.batchExpiration ||
+                settingsProv.features.production)) ||
+        vencimientoCtrl.text.trim().isNotEmpty;
 
     bool isSaving = false;
     String? selectedImagePath;
@@ -340,9 +356,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     int? selectedCategoryId = productToEdit?.category?.id;
     int? selectedBrandId = productToEdit?.brand?.id;
     int? selectedSupplierId = productToEdit?.supplier?.id;
-    bool isSoldByWeight = productToEdit?.isSoldByWeight ?? false;
+    bool isSoldByWeight =
+        productToEdit?.isSoldByWeight ?? profile.defaultSoldByWeight;
     bool isActive = productToEdit?.active ?? true;
-    String unitType = productToEdit?.unitType ?? 'un';
+    String unitType = productToEdit?.unitType ?? profile.defaultUnitType;
 
     if (productToEdit != null && productToEdit.costPrice > 0) {
       final marginVal = ((productToEdit.sellingPrice - productToEdit.costPrice) / productToEdit.costPrice) * 100;
@@ -852,6 +869,16 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       decoration: const InputDecoration(labelText: 'Código Interno', isDense: true, border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 12),
+                    TextField(
+                      controller: technicalSpecCtrl,
+                      decoration: InputDecoration(
+                        labelText: profile.specFieldLabel,
+                        hintText: profile.specFieldHint,
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -1028,12 +1055,38 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             value: unitType,
                             isExpanded: true,
                             decoration: const InputDecoration(labelText: 'Unidad', isDense: true, border: OutlineInputBorder()),
-                            items: const [
-                              DropdownMenuItem(value: 'un', child: Text('Unidades')),
-                              DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
-                              DropdownMenuItem(value: 'lt', child: Text('Litros')),
-                              DropdownMenuItem(value: 'm', child: Text('Metros')),
-                            ],
+                            items: () {
+                              const unitLabels = <String, String>{
+                                'un': 'Unidades',
+                                'kg': 'Kilogramos',
+                                'g': 'Gramos',
+                                'lt': 'Litros',
+                                'mt': 'Metros (mt)',
+                                'm2': 'Metros² (m²)',
+                                'm3': 'Metros³ (m³)',
+                                'bolsa': 'Bolsa',
+                                'rollo': 'Rollo',
+                                'caja': 'Caja',
+                                'par': 'Par',
+                                'docena': 'Docenas',
+                              };
+                              final keys = <String>[
+                                ...profile.allowedUnitKeys,
+                                if (!profile.allowedUnitKeys.contains(unitType))
+                                  unitType,
+                              ];
+                              return keys
+                                  .map(
+                                    (k) => DropdownMenuItem<String>(
+                                      value: k,
+                                      child: Text(
+                                        unitLabels[k] ?? Product.shortLabelFor(k),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList();
+                            }(),
                             onChanged: (val) {
                               if (val != null) {
                                 setStateDialog(() => unitType = val);
@@ -1043,19 +1096,24 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: vencimientoCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Días para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      title: const Text('Se vende por peso (Balanza)'),
-                      value: isSoldByWeight,
-                      onChanged: (val) => setStateDialog(() => isSoldByWeight = val),
-                      contentPadding: EdgeInsets.zero,
-                    ),
+                    if (canUseBatches) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: vencimientoCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Días para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
+                      ),
+                    ],
+                    if (profile.showFractionSwitchInForm || isSoldByWeight) ...[
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        title: Text(profile.weightSwitchLabelNarrow),
+                        value: isSoldByWeight,
+                        onChanged: (val) => setStateDialog(() => isSoldByWeight = val),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ] else
+                      const SizedBox(height: 8),
                     SwitchListTile(
                       title: const Text('Activo (Visible en Catálogo)'),
                       value: isActive,
@@ -1098,6 +1156,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               'name': name,
                               'barcode': barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
                               'internal_code': internalCodeCtrl.text.trim().isEmpty ? null : internalCodeCtrl.text.trim(),
+                              'technical_spec': technicalSpecCtrl.text.trim().isEmpty
+                                  ? null
+                                  : technicalSpecCtrl.text.trim(),
                               'cost_price': cost,
                               'selling_price': price,
                               'stock': stock,
@@ -1105,7 +1166,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               'brand_id': selectedBrandId,
                               'supplier_id': selectedSupplierId,
                               'is_sold_by_weight': isSoldByWeight,
-                              'unit_type': isSoldByWeight ? 'kg' : unitType,
+                              'unit_type': unitType,
                               'active': isActive,
                             };
 
@@ -1220,7 +1281,12 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                   supplier: newSupplier,
                                   clearSupplier: selectedSupplierId == null,
                                   isSoldByWeight: isSoldByWeight,
-                                  unitType: isSoldByWeight ? 'kg' : unitType,
+                                  unitType: unitType,
+                                  technicalSpec: technicalSpecCtrl.text.trim().isEmpty
+                                      ? null
+                                      : technicalSpecCtrl.text.trim(),
+                                  clearTechnicalSpec:
+                                      technicalSpecCtrl.text.trim().isEmpty,
                                   active: isActive,
                                 );
                               }
@@ -1288,6 +1354,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         vencimientoCtrl.dispose();
         addStockCtrl.dispose();
         internalCodeCtrl.dispose();
+        technicalSpecCtrl.dispose();
       });
     }
 

@@ -89,6 +89,16 @@ class CartItem {
     return product.name;
   }
 
+  /// Detalle técnico efectivo para tickets/facturas/presupuestos combinando `technicalSpec`
+  /// y `customDetails` sin duplicarlo si ya forma parte del nombre mostrado.
+  String? effectiveReceiptDetails({bool asciiOnly = false}) =>
+      Product.resolveEffectiveReceiptDetails(
+        displayName: effectiveDisplayName,
+        technicalSpec: product.technicalSpec,
+        customDetails: customDetails,
+        asciiOnly: asciiOnly,
+      );
+
   /// Indica si el ítem tiene un alias/renombrado temporal distinto al nombre original del catálogo
   bool get isRenamed {
     final cleanCustom = customDescription?.trim();
