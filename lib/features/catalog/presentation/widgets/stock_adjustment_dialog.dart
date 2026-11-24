@@ -6,8 +6,10 @@ import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart'
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/config/business_vertical_profile.dart';
 import 'package:frontend_desktop/features/catalog/data/models/product_batch_model.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/product_batches_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -43,7 +45,32 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     try {
       final s = Provider.of<SettingsProvider?>(context, listen: false);
       if (s != null) {
-        return s.features.batchExpiration || s.features.production;
+        final baseProfile = s.safeVerticalProfile;
+        Rubro? itemRubro = widget.product.category?.rubro;
+        final rId =
+            widget.product.category?.rubroId ?? widget.product.category?.rubro?.id;
+        if (rId != null) {
+          itemRubro = widget.provider.safeRubros
+                  .where((r) => r.id == rId)
+                  .firstOrNull ??
+              itemRubro;
+        }
+        final hasExplicitVertical = itemRubro?.verticalType != null &&
+            BusinessVerticalProfile.allVerticalCodes
+                .contains(itemRubro!.verticalType!.trim().toLowerCase());
+        final itemProfile = (s.features.multiRubro || hasExplicitVertical)
+            ? baseProfile.forCategoryRubro(itemRubro)
+            : baseProfile;
+        final storeHasNativeBatch =
+            BusinessVerticalProfile.isNativeBatchVertical(
+          baseProfile.primaryType,
+          baseProfile.secondaryTypes,
+        );
+        return itemProfile.canUseBatchExpiration(
+          featureBatchExpiration: s.features.batchExpiration,
+          featureProduction: s.features.production,
+          storeHasNativeBatchVertical: storeHasNativeBatch,
+        );
       }
     } catch (_) {}
     return true;

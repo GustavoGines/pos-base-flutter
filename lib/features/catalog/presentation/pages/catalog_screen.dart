@@ -3309,10 +3309,41 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final sp = ctx.read<SettingsProvider?>();
     final canSeeSupplier = sp?.features.suppliers ?? false;
     final canUseQuotes = sp?.features.quotes ?? false;
+    final baseProfile = sp?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    Rubro? itemRubro = p.category?.rubro;
+    final itemRubroId = p.category?.rubroId ?? p.category?.rubro?.id;
+    if (itemRubroId != null) {
+      itemRubro = provider.safeRubros
+              .where((r) => r.id == itemRubroId)
+              .firstOrNull ??
+          itemRubro;
+    }
+    final hasExplicitVertical = itemRubro?.verticalType != null &&
+        BusinessVerticalProfile.allVerticalCodes
+            .contains(itemRubro!.verticalType!.trim().toLowerCase());
+    final shouldScopeItem =
+        (sp?.features.multiRubro ?? false) || hasExplicitVertical;
+    final itemProfile =
+        shouldScopeItem ? baseProfile.forCategoryRubro(itemRubro) : baseProfile;
+    final storeHasNativeBatch = sp == null
+        ? true
+        : BusinessVerticalProfile.isNativeBatchVertical(
+            baseProfile.primaryType,
+            baseProfile.secondaryTypes,
+          );
     final canUseBatches = sp == null
         ? true
-        : (sp.features.batchExpiration || sp.features.production);
-    final canUseProduction = sp?.features.production ?? false;
+        : itemProfile.canUseBatchExpiration(
+            featureBatchExpiration: sp.features.batchExpiration,
+            featureProduction: sp.features.production,
+            storeHasNativeBatchVertical: storeHasNativeBatch,
+          );
+    final canUseProduction = sp == null
+        ? false
+        : itemProfile.canUseProductionForItem(
+            featureProduction: sp.features.production,
+          );
     final isBulkContext =
         _selectedProducts.length > 1 && _selectedProducts.containsKey(p.id);
     final resolvedImgUrl =
@@ -4478,6 +4509,35 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         ? double.tryParse(_conversionFactorCtrl.text.trim().replaceAll(',', '.'))
         : null;
 
+    SettingsProvider? sp;
+    try {
+      sp = context.read<SettingsProvider?>();
+    } catch (_) {}
+    final baseProfile = sp?.safeVerticalProfile ??
+        BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    final formProfile = _resolveEffectiveFormProfile(
+      sp,
+      widget.provider.categories,
+    );
+    final storeHasNativeBatch = sp == null
+        ? true
+        : BusinessVerticalProfile.isNativeBatchVertical(
+            baseProfile.primaryType,
+            baseProfile.secondaryTypes,
+          );
+    final canUseBatches = sp == null
+        ? true
+        : formProfile.canUseBatchExpiration(
+            featureBatchExpiration: sp.features.batchExpiration,
+            featureProduction: sp.features.production,
+            storeHasNativeBatchVertical: storeHasNativeBatch,
+          );
+    final canUseProduction = sp == null
+        ? true
+        : formProfile.canUseProductionForItem(
+            featureProduction: sp.features.production,
+          );
+
     final data = {
       'name': _nameCtrl.text.trim(),
       'barcode': _barcodeCtrl.text.trim(),
@@ -4514,38 +4574,46 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'category_id': _categoryId,
       'brand_id': _isService ? null : _brandId,
       'supplier_id': _isService ? null : _supplierId,
-      'vencimiento_dias': _expiryCtrl.text.trim().isNotEmpty
-          ? int.tryParse(_expiryCtrl.text.trim())
-          : null,
-      'expiration_date': _expirationDate != null
-          ? '${_expirationDate!.year.toString().padLeft(4, '0')}-${_expirationDate!.month.toString().padLeft(2, '0')}-${_expirationDate!.day.toString().padLeft(2, '0')}'
-          : null,
-      'expiry_alert_days': _expiryAlertDaysCtrl.text.trim().isNotEmpty
-          ? int.tryParse(_expiryAlertDaysCtrl.text.trim())
-          : 15,
-      'track_batches': (_isService || _isCombo) ? false : _trackBatches,
-      'lot_deduction_policy': _lotDeductionPolicy,
-      'allow_sell_expired': _allowSellExpired,
-      'has_production_recipe':
-          (_isService || _isCombo) ? false : _hasProductionRecipe,
-      if (!_isService && !_isCombo && _hasProductionRecipe) ...{
-        'recipe_yield_quantity':
-            double.tryParse(_recipeYieldCtrl.text.replaceAll(',', '.').trim()) ??
-                1.0,
-        'recipe_ingredients': _recipeIngredients
-            .map(
-              (r) => {
-                'ingredient_product_id': r['ingredient_product_id'] ?? r['id'],
-                'quantity':
-                    double.tryParse(r['quantity']?.toString() ?? '1') ?? 1.0,
-                'waste_pct':
-                    double.tryParse((r['waste_pct'] ?? 0).toString()) ?? 0.0,
-              },
-            )
-            .toList(),
+      if (canUseBatches) ...{
+        'vencimiento_dias': _expiryCtrl.text.trim().isNotEmpty
+            ? int.tryParse(_expiryCtrl.text.trim())
+            : null,
+        'expiration_date': _expirationDate != null
+            ? '${_expirationDate!.year.toString().padLeft(4, '0')}-${_expirationDate!.month.toString().padLeft(2, '0')}-${_expirationDate!.day.toString().padLeft(2, '0')}'
+            : null,
+        'expiry_alert_days': _expiryAlertDaysCtrl.text.trim().isNotEmpty
+            ? int.tryParse(_expiryAlertDaysCtrl.text.trim())
+            : 15,
+        'track_batches': (_isService || _isCombo) ? false : _trackBatches,
+        'lot_deduction_policy': _lotDeductionPolicy,
+        'allow_sell_expired': _allowSellExpired,
+        if (!_isEditing && _initialBatchCodeCtrl.text.trim().isNotEmpty)
+          'initial_batch_code': _initialBatchCodeCtrl.text.trim(),
+      } else if (!_isEditing) ...{
+        'track_batches': false,
       },
-      if (!_isEditing && _initialBatchCodeCtrl.text.trim().isNotEmpty)
-        'initial_batch_code': _initialBatchCodeCtrl.text.trim(),
+      if (canUseProduction) ...{
+        'has_production_recipe':
+            (_isService || _isCombo) ? false : _hasProductionRecipe,
+        if (!_isService && !_isCombo && _hasProductionRecipe) ...{
+          'recipe_yield_quantity':
+              double.tryParse(_recipeYieldCtrl.text.replaceAll(',', '.').trim()) ??
+                  1.0,
+          'recipe_ingredients': _recipeIngredients
+              .map(
+                (r) => {
+                  'ingredient_product_id': r['ingredient_product_id'] ?? r['id'],
+                  'quantity':
+                      double.tryParse(r['quantity']?.toString() ?? '1') ?? 1.0,
+                  'waste_pct':
+                      double.tryParse((r['waste_pct'] ?? 0).toString()) ?? 0.0,
+                },
+              )
+              .toList(),
+        },
+      } else if (!_isEditing) ...{
+        'has_production_recipe': false,
+      },
     };
 
     bool ok = false;
@@ -4764,12 +4832,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final baseProfile = settingsProv?.safeVerticalProfile ??
         BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     final effectiveCategoryId = categoryIdOverride ?? _categoryId;
-    if (!(settingsProv?.features.multiRubro ?? false) ||
-        effectiveCategoryId == null) {
+    if (effectiveCategoryId == null) {
       return baseProfile;
     }
     final cat = categories.where((c) => c.id == effectiveCategoryId).firstOrNull;
     final rubro = _resolveCategoryRubro(cat);
+    final hasExplicitVertical = rubro?.verticalType != null &&
+        BusinessVerticalProfile.allVerticalCodes
+            .contains(rubro!.verticalType!.trim().toLowerCase());
+    if (!(settingsProv?.features.multiRubro ?? false) && !hasExplicitVertical) {
+      return baseProfile;
+    }
     return baseProfile.forCategoryRubro(rubro);
   }
 
@@ -5331,7 +5404,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     setState(() {
       _userCustomizedUnit = true;
       _isSoldByWeight = v;
-      if (!profile.isHardwareStore) {
+      if (!profile.isHardwareStore && !profile.isTech) {
         if (v && Product.discreteUnitTypes.contains(_unitType)) {
           _unitType = 'kg';
         } else if (!v) {
@@ -5345,7 +5418,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     required bool isNarrow,
     required BusinessVerticalProfile profile,
   }) {
-    final showFractionSwitch = profile.showFractionSwitchInForm || _isSoldByWeight;
+    final showFractionSwitch = profile.showFractionSwitchForUnit(_unitType);
     final unitDropdown = DropdownButtonFormField<String>(
       key: ValueKey('unit_type_${isNarrow ? 'narrow' : 'wide'}_$_unitType'),
       isExpanded: true,
@@ -5483,6 +5556,19 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final baseProfile = settingsProv?.safeVerticalProfile ??
         BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     final formProfile = _resolveEffectiveFormProfile(settingsProv, categories);
+    final selectedCatForHeader = _categoryId == null
+        ? null
+        : categories.where((c) => c.id == _categoryId).firstOrNull;
+    final selectedRubroForHeader = _resolveCategoryRubro(selectedCatForHeader);
+    final hasExplicitCategoryVertical =
+        selectedRubroForHeader?.verticalType != null &&
+            BusinessVerticalProfile.allVerticalCodes.contains(
+              selectedRubroForHeader!.verticalType!.trim().toLowerCase(),
+            );
+    final headerProfile =
+        (baseProfile.secondaryTypes.isNotEmpty || hasExplicitCategoryVertical)
+            ? formProfile
+            : baseProfile;
     final isNarrow = MediaQuery.of(context).size.width < 450;
     final isBusy = provider.isLoading || _isUploadingImage;
 
@@ -5625,7 +5711,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  baseProfile.productTabLabel,
+                                  headerProfile.productTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5639,7 +5725,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  baseProfile.serviceTabLabel,
+                                  headerProfile.serviceTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5653,7 +5739,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   size: 16,
                                 ),
                                 label: Text(
-                                  baseProfile.comboTabLabel,
+                                  headerProfile.comboTabLabel,
                                   style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
@@ -5706,8 +5792,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             focusNode: _nameFocusNode,
                             decoration: InputDecoration(
                               labelText: _isService
-                                  ? baseProfile.serviceNameFieldLabel
-                                  : baseProfile.productNameFieldLabel,
+                                  ? headerProfile.serviceNameFieldLabel
+                                  : headerProfile.productNameFieldLabel,
                               prefixIcon: const Icon(Icons.label_outline),
                               isDense: true,
                             ),
@@ -5734,7 +5820,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               decoration: InputDecoration(
                                 labelText: 'Código de Barras (EAN)',
                                 prefixIcon: const Icon(Icons.qr_code_scanner),
-                                helperText: baseProfile.barcodeHelperText,
+                                helperText: headerProfile.barcodeHelperText,
                                 isDense: true,
                               ),
                             ),
@@ -5756,8 +5842,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       focusNode: _nameFocusNode,
                                       decoration: InputDecoration(
                                         labelText: _isService
-                                            ? baseProfile.serviceNameFieldLabel
-                                            : baseProfile.productNameFieldLabel,
+                                            ? headerProfile.serviceNameFieldLabel
+                                            : headerProfile.productNameFieldLabel,
                                         prefixIcon: const Icon(Icons.label_outline),
                                         isDense: true,
                                       ),
@@ -5796,7 +5882,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                 prefixIcon: const Icon(Icons.qr_code_scanner),
                                                 helperText: _isService
                                                     ? 'No aplica en servicios'
-                                                    : baseProfile.barcodeHelperText,
+                                                    : headerProfile.barcodeHelperText,
                                                 isDense: true,
                                               ),
                                             ),
@@ -6198,16 +6284,34 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                             try {
                                               sp = ctx.watch<SettingsProvider?>();
                                             } catch (_) {}
+                                            final storeHasNativeBatch = sp == null
+                                                ? true
+                                                : BusinessVerticalProfile
+                                                    .isNativeBatchVertical(
+                                                    baseProfile.primaryType,
+                                                    baseProfile.secondaryTypes,
+                                                  );
                                             final canUseBatches = sp == null
                                                 ? true
-                                                : (sp.features.batchExpiration || sp.features.production);
-                                            final canUseProduction =
-                                                sp == null ? true : sp.features.production;
-                                            final showExpBox = canUseBatches ||
-                                                _trackBatches ||
-                                                _expirationDate != null ||
-                                                _expiryCtrl.text.trim().isNotEmpty;
-                                            final showProdBox = canUseProduction || _hasProductionRecipe;
+                                                : formProfile
+                                                    .canUseBatchExpiration(
+                                                    featureBatchExpiration:
+                                                        sp.features
+                                                            .batchExpiration,
+                                                    featureProduction:
+                                                        sp.features.production,
+                                                    storeHasNativeBatchVertical:
+                                                        storeHasNativeBatch,
+                                                  );
+                                            final canUseProduction = sp == null
+                                                ? true
+                                                : formProfile
+                                                    .canUseProductionForItem(
+                                                    featureProduction:
+                                                        sp.features.production,
+                                                  );
+                                            final showExpBox = canUseBatches;
+                                            final showProdBox = canUseProduction;
 
                                             return Column(
                                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -6403,7 +6507,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                                               },
                                                             ),
                                                           ],
-                                                          _buildBatchTrackingSubpanel(),
+                                                          _buildBatchTrackingSubpanel(
+                                                            canUseProduction:
+                                                                canUseProduction,
+                                                          ),
                                                         ],
                                                       ),
                                                     ),
@@ -6489,7 +6596,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
-  Widget _buildBatchTrackingSubpanel() {
+  Widget _buildBatchTrackingSubpanel({required bool canUseProduction}) {
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(10),
@@ -6510,9 +6617,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 'Controlar vencimientos por lotes',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
               ),
-              subtitle: const Text(
-                'Cada compra u horneado crea un lote propio y las ventas descuentan automáticamente por orden.',
-                style: TextStyle(fontSize: 11),
+              subtitle: Text(
+                canUseProduction
+                    ? 'Cada compra u horneado crea un lote propio y las ventas descuentan automáticamente por orden.'
+                    : 'Cada compra o ingreso crea un lote propio y las ventas descuentan automáticamente por orden.',
+                style: const TextStyle(fontSize: 11),
               ),
               value: _trackBatches,
               onChanged: (v) => setState(() {

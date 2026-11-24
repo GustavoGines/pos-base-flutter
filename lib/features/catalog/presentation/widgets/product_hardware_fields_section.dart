@@ -58,6 +58,10 @@ class _ProductHardwareAndSupplierFieldsSectionState
     'Rollo',
     'Caja',
     'Bolsa',
+    'Bolsón',
+    'Balde',
+    'Tambor',
+    'Pallet',
     'Pack',
     'Atado',
   ];
@@ -181,7 +185,7 @@ class _ProductHardwareAndSupplierFieldsSectionState
                 key: const ValueKey('hardware_dimension_helper_btn'),
                 tooltip: 'Armar medida rápida (Grosor × Ancho × Largo)',
                 icon: const Icon(
-                  Icons.auto_fix_high_rounded,
+                  Icons.straighten_rounded,
                   size: 18,
                   color: Color(0xFF0F766E),
                 ),
@@ -479,20 +483,21 @@ class _ProductHardwareAndSupplierFieldsSectionState
           if (widget.isNarrow) ...[
             _buildSupplierSkuField(prof),
             const SizedBox(height: 10),
-            _buildTechnicalSpecField(prof),
-            const SizedBox(height: 10),
             _buildStorageLocationField(prof),
-          ] else
+            const SizedBox(height: 10),
+            _buildTechnicalSpecField(prof),
+          ] else ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 3, child: _buildSupplierSkuField(prof)),
+                Expanded(flex: 5, child: _buildSupplierSkuField(prof)),
                 const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildTechnicalSpecField(prof)),
-                const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildStorageLocationField(prof)),
+                Expanded(flex: 6, child: _buildStorageLocationField(prof)),
               ],
             ),
+            const SizedBox(height: 10),
+            _buildTechnicalSpecField(prof),
+          ],
           if (!widget.isCombo && prof.showPackageConversionInForm)
             _buildConversionCard(prof),
         ],
@@ -511,17 +516,15 @@ class _ProductHardwareAndSupplierFieldsSectionState
             const SizedBox(height: 10),
             _buildTechnicalSpecField(prof),
           ],
-        ] else
+        ] else ...[
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(flex: 5, child: _buildSupplierSkuField(prof)),
               const SizedBox(width: 10),
-              if (_showRetailExtraDetails) ...[
-                Expanded(flex: 4, child: _buildStorageLocationField(prof)),
-                const SizedBox(width: 10),
-                Expanded(flex: 4, child: _buildTechnicalSpecField(prof)),
-              ] else
+              if (_showRetailExtraDetails)
+                Expanded(flex: 6, child: _buildStorageLocationField(prof))
+              else
                 Expanded(
                   flex: 6,
                   child: Align(
@@ -543,6 +546,11 @@ class _ProductHardwareAndSupplierFieldsSectionState
                 ),
             ],
           ),
+          if (_showRetailExtraDetails) ...[
+            const SizedBox(height: 10),
+            _buildTechnicalSpecField(prof),
+          ],
+        ],
         if (widget.isNarrow && !_showRetailExtraDetails)
           Align(
             alignment: Alignment.centerLeft,

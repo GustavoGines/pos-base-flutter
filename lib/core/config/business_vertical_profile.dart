@@ -41,6 +41,7 @@ class BusinessVerticalProfile {
 
   final String primaryType;
   final List<String> secondaryTypes;
+  final bool isRubroScoped;
 
   // Etiquetas de pestañas y campos en Ficha Producto
   final String productTabLabel;
@@ -93,6 +94,7 @@ class BusinessVerticalProfile {
   const BusinessVerticalProfile({
     required this.primaryType,
     this.secondaryTypes = const [],
+    this.isRubroScoped = false,
     required this.productTabLabel,
     required this.serviceTabLabel,
     required this.comboTabLabel,
@@ -228,6 +230,37 @@ class BusinessVerticalProfile {
 
   bool get showQuickGridFracColumn => canUseScaleWeight || canUseFractionalCut;
 
+  bool get hasNativeBatches => primaryType == retail || primaryType == butcher;
+
+  bool showFractionSwitchForUnit(String rawUnitType) {
+    if (showFractionSwitchInForm) return true;
+    return isTech && rawUnitType.trim().toLowerCase() == 'mt';
+  }
+
+  /// Controla si se habilita Vencimientos/Lotes según la licencia y, en Polirrubro,
+  /// restringido al vertical del rubro del producto (aislando Ferretería/Indumentaria/Tech).
+  bool canUseBatchExpiration({
+    required bool featureBatchExpiration,
+    required bool featureProduction,
+    bool storeHasNativeBatchVertical = true,
+  }) {
+    if (!featureBatchExpiration && !featureProduction) return false;
+    // Licencias no-alimentarias con addon batch_expiration explícito (ej. Pinturería)
+    if (!storeHasNativeBatchVertical) return true;
+    if (!isRubroScoped) return true;
+    return hasNativeBatches;
+  }
+
+  /// Controla si se habilita Receta de Elaboración Propia (solo Almacén/Carnicería).
+  bool canUseProductionForItem({required bool featureProduction}) {
+    if (!featureProduction) return false;
+    if (!isRubroScoped) {
+      return hasNativeBatches ||
+          secondaryTypes.any((t) => t == retail || t == butcher);
+    }
+    return hasNativeBatches;
+  }
+
   static bool isNativeBatchVertical(
     String? primary, [
     List<String> secondary = const [],
@@ -259,6 +292,7 @@ class BusinessVerticalProfile {
   static BusinessVerticalProfile fromType(
     String? rawType, {
     List<String> secondaryTypes = const [],
+    bool isRubroScoped = false,
   }) {
     final normalizedPrimary = normalizeCode(rawType);
     final normalizedSecondary = secondaryTypes
@@ -272,6 +306,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: hardwareStore,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Artículo / Material',
           serviceTabLabel: 'Servicio / Flete',
           comboTabLabel: 'Kit / Fracción',
@@ -286,7 +321,17 @@ class BusinessVerticalProfile {
           detailsToggleLabel: 'Agregar ubicación / medida',
           showDetailsExpandedInForm: true,
           showPackageConversionInForm: true,
-          packagePresets: const ['Rollo', 'Caja', 'Bolsa', 'Bolsón', 'Pack', 'Atado'],
+          packagePresets: const [
+            'Rollo',
+            'Caja',
+            'Bolsa',
+            'Bolsón',
+            'Balde',
+            'Tambor',
+            'Pallet',
+            'Pack',
+            'Atado',
+          ],
           showFractionSwitchInForm: true,
           weightSwitchLabelWide: 'Permite fraccionar',
           weightSwitchLabelNarrow: 'Permite venta fraccionada / corte',
@@ -306,6 +351,7 @@ class BusinessVerticalProfile {
             'rollo',
             'caja',
             'par',
+            'docena',
             'kg',
             'g',
             'lt',
@@ -327,6 +373,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: butcher,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Corte / Producto',
           serviceTabLabel: 'Envío / Servicio',
           comboTabLabel: 'Promo / Bolsón',
@@ -369,6 +416,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: apparel,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Prenda / Calzado',
           serviceTabLabel: 'Arreglo / Envío',
           comboTabLabel: 'Conjunto / Pack',
@@ -411,6 +459,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: tech,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Producto / Equipo',
           serviceTabLabel: 'Servicio Técnico',
           comboTabLabel: 'Combo / Kit',
@@ -453,6 +502,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: general,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Producto / Artículo',
           serviceTabLabel: 'Servicio / Envío',
           comboTabLabel: 'Combo / Promo',
@@ -496,6 +546,7 @@ class BusinessVerticalProfile {
         return BusinessVerticalProfile(
           primaryType: retail,
           secondaryTypes: normalizedSecondary,
+          isRubroScoped: isRubroScoped,
           productTabLabel: 'Producto Físico',
           serviceTabLabel: 'Servicio / Honorario',
           comboTabLabel: 'Combo / Fracción',
@@ -537,30 +588,29 @@ class BusinessVerticalProfile {
     }
   }
 
-  /// Adapta la ficha o grilla al [Rubro] específico de la categoría seleccionada
-  /// (ideal para Minimercados / Polirrubros que mezclan Kiosco + Carnicería + Verdulería).
+  /// Adapta la ficha o grilla al [Rubro] específico de la categoría seleccionada,
+  /// aislando estrictamente sus capacidades frente al resto de rubros en Polirrubro.
   BusinessVerticalProfile forCategoryRubro(Rubro? rubro) {
     if (rubro == null) return this;
 
     final explicit = rubro.verticalType?.trim().toLowerCase();
     if (explicit != null && allVerticalCodes.contains(explicit)) {
-      if (explicit == primaryType) return this;
       return BusinessVerticalProfile.fromType(
         explicit,
-        secondaryTypes: {primaryType, ...secondaryTypes}
-            .where((t) => t != explicit)
-            .toList(),
+        secondaryTypes: const [],
+        isRubroScoped: true,
       );
     }
 
     final inferred = inferVerticalCodeFromRubroName(rubro.name);
-    if (inferred == null || inferred == primaryType) return this;
-    return BusinessVerticalProfile.fromType(
-      inferred,
-      secondaryTypes: {primaryType, ...secondaryTypes}
-          .where((t) => t != inferred)
-          .toList(),
-    );
+    if (inferred != null) {
+      return BusinessVerticalProfile.fromType(
+        inferred,
+        secondaryTypes: const [],
+        isRubroScoped: true,
+      );
+    }
+    return this;
   }
 
   static String? inferVerticalCodeFromRubroName(String rawName) {
@@ -579,13 +629,20 @@ class BusinessVerticalProfile {
         name.contains('indument') ||
         name.contains('calzad') ||
         name.contains('zapat') ||
-        name.contains('lencer')) {
+        name.contains('lencer') ||
+        name.contains('textil') ||
+        name.contains('boutique')) {
       return apparel;
     }
     if (name.contains('ferret') ||
         name.contains('mader') ||
         name.contains('pintur') ||
-        name.contains('corral')) {
+        name.contains('corral') ||
+        name.contains('sanitar') ||
+        name.contains('electric') ||
+        name.contains('construc') ||
+        name.contains('buloner') ||
+        name.contains('herramient')) {
       return hardwareStore;
     }
     if (name.contains('celular') ||
@@ -611,7 +668,18 @@ class BusinessVerticalProfile {
         name.contains('almac') ||
         name.contains('bebid') ||
         name.contains('golosin') ||
-        name.contains('supermerc')) {
+        name.contains('supermerc') ||
+        name.contains('pastel') ||
+        name.contains('panad') ||
+        name.contains('confiter') ||
+        name.contains('gastron') ||
+        name.contains('cocin') ||
+        name.contains('rotiser') ||
+        name.contains('lacteo') ||
+        name.contains('limpiez') ||
+        name.contains('perfum') ||
+        name.contains('farmac') ||
+        name.contains('dietet')) {
       return retail;
     }
     return null;
