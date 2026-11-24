@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
@@ -294,7 +295,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     return Consumer<SettingsProvider>(
                       builder: (context, settings, _) {
                         final bool canAccessPos = settings.features.fastPos;
-                        final bool canAccessAdvancedReports = settings.features.advancedReports;
                         final bool canAccessQuotes = settings.features.quotes;
                         final bool canAccessCurrentAccounts = settings.features.currentAccounts;
                         final bool canAccessChecks = settings.features.checks;
@@ -428,18 +428,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Reportes Gerenciales',
-                                      icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
+                                      icon: Icons.bar_chart,
                                       color: const Color(0xFFC084FC),
                                       route: '/reports',
                                       permissionKey: AppPermissions.viewReports,
-                                      isLocked: !canAccessAdvancedReports,
-                                      lockedTitle: 'Reportes Gerenciales PREMIUM',
-                                      lockedFeatures: [
-                                        'Balance mensual con ganancias y márgenes',
-                                        'Exportación a Excel y PDF gerencial',
-                                        'Análisis por categoría y período',
-                                        'Comparativas de rendimiento',
-                                      ],
+                                      isLocked: false,
                                     ),
                                   ],
                                 ),
@@ -660,6 +653,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
       padding: EdgeInsets.symmetric(horizontal: isIconOnly ? 2.0 : 3.0),
       child: Tooltip(
         message: label,
+        excludeFromSemantics: true,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
@@ -909,12 +903,39 @@ class _NavDropdownGroup extends StatefulWidget {
 
 class _NavDropdownGroupState extends State<_NavDropdownGroup> {
   final MenuController _controller = MenuController();
+  Timer? _openTimer;
+  Timer? _closeTimer;
   bool _isHoveringButton = false;
   bool _isHoveringMenu = false;
 
+  bool get _canMutateMenu =>
+      mounted && (ModalRoute.of(context)?.isCurrent ?? true);
+
+  @override
+  void dispose() {
+    _openTimer?.cancel();
+    _closeTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleOpen() {
+    _closeTimer?.cancel();
+    _openTimer?.cancel();
+    _openTimer = Timer(const Duration(milliseconds: 90), () {
+      if (!_canMutateMenu || !_isHoveringButton) return;
+      if (!_controller.isOpen) {
+        _controller.open();
+      }
+    });
+  }
+
   void _checkClose() {
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (!mounted) return;
+    if (!_isHoveringButton) {
+      _openTimer?.cancel();
+    }
+    _closeTimer?.cancel();
+    _closeTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!_canMutateMenu) return;
       if (!_isHoveringButton && !_isHoveringMenu) {
         if (_controller.isOpen) {
           _controller.close();
@@ -971,9 +992,7 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
               if (mounted) {
                 setState(() => _isHoveringButton = true);
               }
-              if (!controller.isOpen) {
-                controller.open();
-              }
+              _scheduleOpen();
             },
             onExit: (_) {
               if (mounted) {
@@ -1199,12 +1218,23 @@ void _showUpgradeDialog(
               ),
               onPressed: () async {
                 final url = Uri.parse(
-                  'https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20del%20Sistema%20POS',
+                  'https://wa.me/5493704367202?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20del%20Sistema%20POS',
                 );
                 if (await canLaunchUrl(url)) {
                   await launchUrl(url, mode: LaunchMode.externalApplication);
                 }
               },
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Center(
+            child: Text(
+              'WhatsApp Soporte: +54 9 3704 36-7202',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
         ],
@@ -1900,11 +1930,13 @@ class _TerminalPeripheralsDialogState
                                             if (navCtx != null && navCtx.mounted) {
                                               navCtx.read<PosProvider>().clearCart();
                                               try {
-                                                navCtx.read<CashMovementProvider>().fetchMovements(
-                                                      refresh: true,
-                                                      all: false,
-                                                      cashShiftId: newShiftId,
-                                                    );
+                                                if (settingsProvider.features.expenses) {
+                                                  navCtx.read<CashMovementProvider>().fetchMovements(
+                                                        refresh: true,
+                                                        all: false,
+                                                        cashShiftId: newShiftId,
+                                                      );
+                                                }
                                               } catch (_) {}
                                               try {
                                                 navCtx.read<SalesHistoryProvider>().loadSales(

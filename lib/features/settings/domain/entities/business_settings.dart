@@ -171,9 +171,12 @@ class BusinessSettings extends Equatable {
   /// licencia activa y un plan Básico o Premium válido (SaaS o Lifetime).
   bool get canUseHardwareCalculator {
     if (!isHardwareStore) return false;
-    final rawKeyOrStatus = (licenseStatus ?? '').trim();
-    if (rawKeyOrStatus.isEmpty) return false;
-    final statusLower = rawKeyOrStatus.toLowerCase();
+    final statusLower = (licenseStatus ?? '').trim().toLowerCase();
+    final hasHydratedFeatures =
+        features.fastPos || features.quotes || features.logistics;
+    if (statusLower.isEmpty && !hasHydratedFeatures) {
+      return false;
+    }
     if (statusLower == 'suspended' ||
         statusLower == 'expired' ||
         statusLower == 'error' ||

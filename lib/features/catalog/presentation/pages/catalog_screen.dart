@@ -757,6 +757,37 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               });
                             },
                           ),
+                        ] else if (() {
+                          final sp = context.watch<SettingsProvider?>();
+                          final s = sp?.settings;
+                          if (s == null) return false;
+                          return BusinessVerticalProfile.isNativeBatchVertical(
+                            s.businessType,
+                            s.secondaryBusinessTypes,
+                          );
+                        }()) ...[
+                          const SizedBox(width: 6),
+                          OutlinedButton.icon(
+                            key: const ValueKey('catalog_locked_production_addon_btn'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: Colors.blueGrey.shade700,
+                              backgroundColor: Colors.amber.shade50.withValues(alpha: 0.45),
+                              side: BorderSide(color: Colors.amber.shade300),
+                              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+                            ),
+                            icon: Icon(Icons.lock_outline_rounded, size: 16, color: Colors.amber.shade800),
+                            label: const Text('Producción / Recetas 🔒 ADDON'),
+                            onPressed: () {
+                              PlanUpgradeDialog.show(
+                                context,
+                                title: 'Módulo Adicional Disponible',
+                                featureName: 'Producción Propia y Recetas',
+                                description:
+                                    'Elaborá productos propios con descuento automático de insumos y control de lotes/vencimientos activando el módulo de Producción Propia.',
+                              );
+                            },
+                          ),
                         ],
                         const SizedBox(width: 6),
                         FilledButton.icon(
@@ -1560,6 +1591,46 @@ class _CatalogScreenState extends State<CatalogScreen> {
           },
         );
 
+    Widget buildLockedSupplierFilter() => InkWell(
+          key: const ValueKey('catalog_locked_supplier_filter'),
+          onTap: () {
+            PlanUpgradeDialog.show(
+              context,
+              featureName: 'Filtro y Gestión de Proveedores',
+              description:
+                  'Asociá proveedores a tus productos, filtrá el catálogo al instante y cargá facturas con el Asistente Inteligente de Compras en el Plan Premium.',
+            );
+          },
+          borderRadius: BorderRadius.circular(6),
+          child: InputDecorator(
+            isEmpty: true,
+            decoration: InputDecoration(
+              labelText: 'Proveedor 🔒 PRO',
+              prefixIcon: Icon(
+                Icons.lock_outline_rounded,
+                size: 18,
+                color: Colors.amber.shade800,
+              ),
+              border: const OutlineInputBorder(),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.amber.shade300),
+              ),
+              filled: true,
+              fillColor: Colors.amber.shade50.withValues(alpha: 0.35),
+              isDense: true,
+            ),
+            child: Text(
+              'Disponible en Plan PRO',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Colors.blueGrey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        );
+
     Widget buildCategoryFilter() => SearchableSelectField<int?>(
           key: const ValueKey('catalog_filter_category_field'),
           value: sortedCategories.any((c) => c.id == activeCategoryId)
@@ -1683,6 +1754,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 if (canSeeSupplier && supplierProv != null) ...[
                   Expanded(flex: 3, child: buildSupplierFilter()),
                   const SizedBox(width: 10),
+                ] else if (!canSeeSupplier && sp?.settings != null) ...[
+                  Expanded(flex: 3, child: buildLockedSupplierFilter()),
+                  const SizedBox(width: 10),
                 ],
                 Expanded(flex: 2, child: buildCategoryFilter()),
                 const SizedBox(width: 10),
@@ -1704,6 +1778,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 SizedBox(
                   width: math.min(250.0, constraints.maxWidth),
                   child: buildSupplierFilter(),
+                )
+              else if (!canSeeSupplier && sp?.settings != null)
+                SizedBox(
+                  width: math.min(250.0, constraints.maxWidth),
+                  child: buildLockedSupplierFilter(),
                 ),
               SizedBox(
                 width: math.min(220.0, constraints.maxWidth),

@@ -76,8 +76,15 @@ class BusinessSettingsModel extends BusinessSettings {
         .trim()
         .toLowerCase();
     final isPremiumPlan = rawPlan == 'pro' || rawPlan == 'premium';
-    final businessTypeStr =
-        (json['license_business_type'] ?? 'retail').toString().trim();
+    final rawLicenseBusinessType =
+        (json['license_business_type'] ?? '').toString().trim();
+    final rawFallbackBusinessType =
+        (json['business_type'] ?? '').toString().trim();
+    final businessTypeStr = rawLicenseBusinessType.isNotEmpty
+        ? rawLicenseBusinessType
+        : (rawFallbackBusinessType.isNotEmpty
+            ? rawFallbackBusinessType
+            : 'retail');
     final secondaryBusinessTypes = _parseStringList(
       json['license_secondary_business_types'] ??
           json['secondary_business_types'],
