@@ -81,6 +81,7 @@ class SupplierQuickGridDialog extends StatefulWidget {
   final String? initialSupplierName;
   final bool alreadyAuthorized;
   final String? authorizedAdminPin;
+  final ValueChanged<List<Product>>? onProductsCreated;
 
   const SupplierQuickGridDialog({
     super.key,
@@ -89,6 +90,7 @@ class SupplierQuickGridDialog extends StatefulWidget {
     this.initialSupplierName,
     this.alreadyAuthorized = false,
     this.authorizedAdminPin,
+    this.onProductsCreated,
   });
 
   @override
@@ -328,6 +330,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
 
     int createdCount = 0;
     final Set<_QuickGridRowModel> succeededRows = {};
+    final List<Product> createdProducts = [];
 
     Future<void> executeBatchSave() async {
       setState(() {
@@ -381,6 +384,7 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
           succeededRows.add(row);
           final created = widget.provider.lastCreatedProduct;
           if (created != null && mounted) {
+            createdProducts.add(created);
             try {
               context.read<PosProvider?>()?.syncUpdatedCatalogProduct(created);
             } catch (_) {}
@@ -442,6 +446,9 @@ class _SupplierQuickGridDialogState extends State<SupplierQuickGridDialog> {
       try {
         context.read<InventoryAlertsProvider?>()?.fetchAlerts();
       } catch (_) {}
+      if (createdProducts.isNotEmpty) {
+        widget.onProductsCreated?.call(List<Product>.unmodifiable(createdProducts));
+      }
     }
 
     if (succeededRows.length == activeRows.length) {
