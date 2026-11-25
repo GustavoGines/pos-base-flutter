@@ -584,22 +584,64 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        OutlinedButton.icon(
-                          style: compactOutlinedStyle,
-                          icon: const Icon(Icons.category_rounded, size: 18),
-                          label: const Text('Rubros'),
-                          onPressed: () async {
-                            final hasMultiRubro = context.read<SettingsProvider>().features.multiRubro;
-                            if (!hasMultiRubro) {
-                              PlanUpgradeDialog.show(
-                                context,
-                                featureName: 'Gestión de Rubros',
-                                description: 'La gestión de múltiples rubros comerciales es exclusiva del Plan Premium.',
-                              );
-                              return;
-                            }
-                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar Rubros', permissionKey: 'manage_catalog');
-                            if (auth && context.mounted) _openRubrosManager(context);
+                        Builder(
+                          builder: (context) {
+                            final spToolbar = context.watch<SettingsProvider?>();
+                            final hasMultiRubro = spToolbar?.settings == null
+                                ? true
+                                : spToolbar!.features.multiRubro;
+                            return OutlinedButton.icon(
+                              key: const ValueKey('catalog_rubros_btn'),
+                              style: hasMultiRubro
+                                  ? compactOutlinedStyle
+                                  : OutlinedButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      foregroundColor: Colors.blueGrey.shade700,
+                                      backgroundColor: Colors.amber.shade50
+                                          .withValues(alpha: 0.45),
+                                      side: BorderSide(
+                                          color: Colors.amber.shade300),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 11, vertical: 10),
+                                    ),
+                              icon: hasMultiRubro
+                                  ? const Icon(Icons.category_rounded, size: 18)
+                                  : Icon(Icons.lock_outline_rounded,
+                                      size: 16, color: Colors.amber.shade800),
+                              label: hasMultiRubro
+                                  ? const Text('Rubros')
+                                  : const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text('Rubros'),
+                                        SizedBox(width: 6),
+                                        _CatalogProBadge(),
+                                      ],
+                                    ),
+                              onPressed: () async {
+                                final currentHasMultiRubro = context
+                                        .read<SettingsProvider?>()
+                                        ?.features
+                                        .multiRubro ??
+                                    false;
+                                if (!currentHasMultiRubro) {
+                                  PlanUpgradeDialog.show(
+                                    context,
+                                    featureName: 'Gestión de Rubros',
+                                    description:
+                                        'La creación y organización de múltiples rubros comerciales está disponible en el Plan Premium.',
+                                  );
+                                  return;
+                                }
+                                final auth = await AdminPinDialog.verify(
+                                    context,
+                                    action: 'Gestionar Rubros',
+                                    permissionKey: 'manage_catalog');
+                                if (auth && context.mounted) {
+                                  _openRubrosManager(context);
+                                }
+                              },
+                            );
                           },
                         ),
                         const SizedBox(width: 6),
@@ -1005,6 +1047,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   /// Barra contextual de acciones en lote, alineada a la izquierda
   /// justo encima del checkbox "seleccionar todos" de la tabla.
   Widget _buildBulkActionsBar(CatalogProvider provider) {
+    final spBulk = context.watch<SettingsProvider?>();
+    final canUseSuppliersBulk = spBulk?.settings == null
+        ? true
+        : spBulk!.features.suppliers;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(8, 6, 16, 6),
@@ -1072,9 +1118,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               _buildDarkPopupOption<int>(
                 value: 7,
-                icon: Icons.local_shipping_outlined,
+                icon: canUseSuppliersBulk
+                    ? Icons.local_shipping_outlined
+                    : Icons.lock_outline_rounded,
                 label: 'Asignar Proveedor',
-                accent: AppColors.orangeLight,
+                accent: canUseSuppliersBulk
+                    ? AppColors.orangeLight
+                    : Colors.amber.shade400,
+                isLockedPro: !canUseSuppliersBulk,
               ),
               _buildDarkPopupOption<int>(
                 value: 12,
@@ -1591,44 +1642,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
           },
         );
 
-    Widget buildLockedSupplierFilter() => InkWell(
-          key: const ValueKey('catalog_locked_supplier_filter'),
-          onTap: () {
-            PlanUpgradeDialog.show(
-              context,
-              featureName: 'Filtro y Gestión de Proveedores',
-              description:
-                  'Asociá proveedores a tus productos, filtrá el catálogo al instante y cargá facturas con el Asistente Inteligente de Compras en el Plan Premium.',
-            );
-          },
-          borderRadius: BorderRadius.circular(6),
-          child: InputDecorator(
-            isEmpty: true,
-            decoration: InputDecoration(
-              labelText: 'Proveedor 🔒 PRO',
-              prefixIcon: Icon(
-                Icons.lock_outline_rounded,
-                size: 18,
-                color: Colors.amber.shade800,
-              ),
-              border: const OutlineInputBorder(),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.amber.shade300),
-              ),
-              filled: true,
-              fillColor: Colors.amber.shade50.withValues(alpha: 0.35),
-              isDense: true,
-            ),
-            child: Text(
-              'Disponible en Plan PRO',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: Colors.blueGrey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
+    Widget buildLockedSupplierFilter() => const _LockedSupplierShowcaseField(
+          fieldKey: ValueKey('catalog_locked_supplier_filter'),
+          featureName: 'Filtro y Gestión de Proveedores',
+          description:
+              'Asociá proveedores a tus productos, filtrá el catálogo al instante y cargá facturas con el Asistente Inteligente de Compras en el Plan Premium.',
         );
 
     Widget buildCategoryFilter() => SearchableSelectField<int?>(
@@ -3292,6 +3310,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     required String label,
     required Color accent,
     bool isDanger = false,
+    bool isLockedPro = false,
   }) {
     return PopupMenuItem<T>(
       value: value,
@@ -3322,10 +3341,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 fontWeight: isDanger ? FontWeight.w700 : FontWeight.w500,
                 color: isDanger
                     ? const Color(0xFFFCA5A5)
-                    : const Color(0xFFF1F5F9),
+                    : (isLockedPro
+                        ? Colors.amber.shade200
+                        : const Color(0xFFF1F5F9)),
               ),
             ),
           ),
+          if (isLockedPro) ...[
+            const SizedBox(width: 8),
+            const _CatalogProBadge(),
+          ],
         ],
       ),
     );
@@ -3337,6 +3362,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     required Color color,
     required String label,
     Color? textColor,
+    bool isLockedPro = false,
   }) {
     return PopupMenuItem<String>(
       value: value,
@@ -3353,11 +3379,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: textColor,
+                fontWeight: isLockedPro ? FontWeight.w600 : FontWeight.w500,
+                color: textColor ??
+                    (isLockedPro ? Colors.amber.shade900 : null),
               ),
             ),
           ),
+          if (isLockedPro) ...[
+            const SizedBox(width: 6),
+            const _CatalogProBadge(),
+          ],
         ],
       ),
     );
@@ -3398,13 +3429,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
               .firstOrNull ??
           itemRubro;
     }
-    final hasExplicitVertical = itemRubro?.verticalType != null &&
-        BusinessVerticalProfile.allVerticalCodes
-            .contains(itemRubro!.verticalType!.trim().toLowerCase());
-    final shouldScopeItem =
-        (sp?.features.multiRubro ?? false) || hasExplicitVertical;
-    final itemProfile =
-        shouldScopeItem ? baseProfile.forCategoryRubro(itemRubro) : baseProfile;
+    final itemProfile = baseProfile.resolveItemProfile(
+      itemRubro,
+      hasMultiRubro: sp?.features.multiRubro ?? false,
+    );
     final storeHasNativeBatch = sp == null
         ? true
         : BusinessVerticalProfile.isNativeBatchVertical(
@@ -3484,13 +3512,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   color: Colors.indigo,
                   label: 'Asignar Marca',
                 ),
-                if (canSeeSupplier)
-                  _buildContextMenuItem(
-                    value: 'bulk_supplier',
-                    icon: Icons.local_shipping_outlined,
-                    color: Colors.brown,
-                    label: 'Asignar Proveedor',
-                  ),
+                _buildContextMenuItem(
+                  value: 'bulk_supplier',
+                  icon: canSeeSupplier
+                      ? Icons.local_shipping_outlined
+                      : Icons.lock_outline_rounded,
+                  color: canSeeSupplier ? Colors.brown : Colors.amber.shade800,
+                  label: 'Asignar Proveedor',
+                  isLockedPro: !canSeeSupplier,
+                ),
                 _buildContextMenuItem(
                   value: 'bulk_prices',
                   icon: Icons.trending_up,
@@ -3577,9 +3607,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   value: 'quick_classify',
                   icon: Icons.label_important_outline_rounded,
                   color: Colors.indigo,
-                  label: canSeeSupplier
-                      ? 'Clasificación rápida (Cat. / Marca / Prov.)'
-                      : 'Clasificación rápida (Cat. / Marca)',
+                  label: 'Clasificación rápida (Cat. / Marca / Prov.)',
                 ),
                 if (!p.isService)
                   _buildContextMenuItem(
@@ -4916,13 +4944,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
     final cat = categories.where((c) => c.id == effectiveCategoryId).firstOrNull;
     final rubro = _resolveCategoryRubro(cat);
-    final hasExplicitVertical = rubro?.verticalType != null &&
-        BusinessVerticalProfile.allVerticalCodes
-            .contains(rubro!.verticalType!.trim().toLowerCase());
-    if (!(settingsProv?.features.multiRubro ?? false) && !hasExplicitVertical) {
-      return baseProfile;
-    }
-    return baseProfile.forCategoryRubro(rubro);
+    return baseProfile.resolveItemProfile(
+      rubro,
+      hasMultiRubro: settingsProv?.features.multiRubro ?? false,
+    );
   }
 
   void _applyCategoryDefaultUnitIfUntouched(
@@ -6081,6 +6106,19 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   ],
                                 );
                               },
+                            ),
+                          )
+                        else if (!canSeeSupplier &&
+                            !_isService &&
+                            settingsProv?.settings != null)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: _LockedSupplierShowcaseField(
+                              fieldKey:
+                                  ValueKey('product_form_locked_supplier_field'),
+                              featureName: 'Asignación y Gestión de Proveedores',
+                              description:
+                                  'Vinculá cada producto con su proveedor habitual, llevá cuentas corrientes de compra y usá el Asistente Inteligente con el Plan Premium.',
                             ),
                           ),
                         if (!_isService)
@@ -9283,6 +9321,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   }
 }
 
+
 class BulkPriceHistoryDialog extends StatefulWidget {
   final CatalogProvider provider;
 
@@ -9424,6 +9463,7 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
     );
   }
 }
+
 
 class _QuickPriceEditDialog extends StatefulWidget {
   final CatalogProvider provider;
@@ -9753,6 +9793,7 @@ class _QuickPriceEditDialogState extends State<_QuickPriceEditDialog> {
   }
 }
 
+
 /// Modal liviano y buscable para cambiar de proveedor al instante desde el banner del catálogo.
 class _QuickSupplierPickerDialog extends StatefulWidget {
   final int? currentSupplierId;
@@ -9947,6 +9988,7 @@ class _QuickSupplierPickerDialogState
     );
   }
 }
+
 
 /// Mini-modal de clasificación rápida para 1 producto (Categoría, Marca, Proveedor y Ubicación)
 /// con buscador y alta rápida "+" inline sin necesidad de abrir la ficha completa.
@@ -10302,6 +10344,14 @@ class _QuickProductClassificationDialogState
                 ),
               ],
             ),
+          ] else if (sp?.settings != null && !p.isService) ...[
+            const SizedBox(height: 12),
+            const _LockedSupplierShowcaseField(
+              fieldKey: ValueKey('quick_classify_locked_supplier_field'),
+              featureName: 'Asignación Rápida de Proveedor',
+              description:
+                  'Asigná y clasificá productos por proveedor de forma individual o masiva activando el Plan Premium.',
+            ),
           ],
           if (showStorageLocation) ...[
             const SizedBox(height: 12),
@@ -10357,3 +10407,95 @@ class _QuickProductClassificationDialogState
 
 
 
+
+
+class _CatalogProBadge extends StatelessWidget {
+  const _CatalogProBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade100,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.amber.shade400),
+      ),
+      child: Text(
+        'PRO',
+        style: TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          color: Colors.amber.shade900,
+        ),
+      ),
+    );
+  }
+}
+
+class _LockedSupplierShowcaseField extends StatelessWidget {
+  final Key? fieldKey;
+  final String featureName;
+  final String description;
+
+  const _LockedSupplierShowcaseField({
+    this.fieldKey,
+    required this.featureName,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Proveedor',
+      value: 'Disponible en Plan PRO',
+      child: InkWell(
+        key: fieldKey,
+        onTap: () {
+          PlanUpgradeDialog.show(
+            context,
+            featureName: featureName,
+            description: description,
+          );
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: InputDecorator(
+          isEmpty: false,
+          decoration: InputDecoration(
+            labelText: 'Proveedor',
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            prefixIcon: Icon(
+              Icons.lock_outline_rounded,
+              size: 18,
+              color: Colors.amber.shade800,
+            ),
+            suffixIcon: const Padding(
+              padding: EdgeInsets.only(right: 8, left: 4),
+              child: _CatalogProBadge(),
+            ),
+            suffixIconConstraints:
+                const BoxConstraints(minWidth: 32, minHeight: 24),
+            border: const OutlineInputBorder(),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.amber.shade300),
+            ),
+            filled: true,
+            fillColor: Colors.amber.shade50.withValues(alpha: 0.35),
+            isDense: true,
+          ),
+          child: Text(
+            'Disponible en Plan PRO',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: Colors.amber.shade900,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
