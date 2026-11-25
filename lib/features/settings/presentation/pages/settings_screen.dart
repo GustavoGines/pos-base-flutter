@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -77,6 +78,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _advancedPriceTiersEnabled = false; // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   bool _isIibbPerceptionAgent = false;
   final _defaultIibbRateCtrl = TextEditingController();
+  String _iibbCalculationBase = IibbFiscalCalculator.baseNetWithoutVat;
+  Set<String> _iibbSubjectTaxConditions = {'responsable_inscripto'};
 
   // Red y Rutas Locales
   final _backendPathCtrl = TextEditingController();
@@ -234,6 +237,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
             ? settings.defaultIibbPerceptionRate.toString()
             : '';
+        _iibbCalculationBase = settings.iibbCalculationBase;
+        _iibbSubjectTaxConditions = settings.iibbSubjectTaxConditions.toSet();
 
         _customTiers = List<Map<String, dynamic>>.from(
             settings.customPriceTiers.map((e) => Map<String, dynamic>.from(e)));
@@ -1932,6 +1937,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'default_iibb_perception_rate': double.tryParse(
               _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
           0.0,
+      'iibb_calculation_base': _iibbCalculationBase,
+      'iibb_subject_tax_conditions': _iibbSubjectTaxConditions.toList(),
       'tax_condition': _selectedTaxCondition ?? 'IVA Responsable Inscripto',
       'iibb': _iibbCtrl.text.trim(),
       'activity_start_date': _activityStartDateCtrl.text.trim(),
@@ -4755,6 +4762,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildDefaultIibbPresetChip('6.0', '6.0% (No Inscripto / Riesgo)'),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Base de cálculo de la Percepción IIBB (consultar con su contador):',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_net_option'),
+                      value: IibbFiscalCalculator.baseNetWithoutVat,
+                      title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto). En Monotributo (Factura C) coincide con el total.',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_gross_option'),
+                      value: IibbFiscalCalculator.baseGrossWithVat,
+                      title: 'Sobre Subtotal con IVA incluido',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Condiciones frente al IVA alcanzadas por defecto:',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _buildIibbSubjectChip(
+                          key: const ValueKey('iibb_subject_ri'),
+                          conditionKey: 'responsable_inscripto',
+                          label: 'Responsable Inscripto (Fact. A / C)',
+                        ),
+                        _buildIibbSubjectChip(
+                          key: const ValueKey('iibb_subject_mono'),
+                          conditionKey: 'monotributo',
+                          label: 'Monotributista (Fact. A / B / C)',
+                        ),
+                        _buildIibbSubjectChip(
+                          key: const ValueKey('iibb_subject_exento'),
+                          conditionKey: 'exento',
+                          label: 'IVA Exento (Fact. B / C)',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blueGrey.shade100),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline_rounded,
+                              size: 16, color: Colors.blueGrey.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Consumidor Final nunca recibe percepción IIBB automática. Las tasas personalizadas o exclusiones configuradas en la ficha de cada cliente tienen prioridad.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.blueGrey.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
               ],
               ),
@@ -4767,6 +4859,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildBackupSection(provider),
         const SizedBox(height: 32),
       ],
+    );
+  }
+
+  Widget _buildIibbBaseOptionCard({
+    required Key key,
+    required String value,
+    required String title,
+    required String subtitle,
+  }) {
+    final isSelected = _iibbCalculationBase == value;
+    return Material(
+      key: key,
+      color: isSelected
+          ? const Color(0xFF2E7D32).withValues(alpha: 0.06)
+          : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade300,
+          width: isSelected ? 1.5 : 1.0,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => setState(() => _iibbCalculationBase = value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                isSelected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                size: 20,
+                color:
+                    isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade500,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected
+                            ? const Color(0xFF1B5E20)
+                            : Colors.grey.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIibbSubjectChip({
+    required Key key,
+    required String conditionKey,
+    required String label,
+  }) {
+    final isSelected = _iibbSubjectTaxConditions.contains(conditionKey);
+    return FilterChip(
+      key: key,
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? const Color(0xFF1B5E20) : Colors.grey.shade800,
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: const Color(0xFF2E7D32).withValues(alpha: 0.14),
+      checkmarkColor: const Color(0xFF2E7D32),
+      backgroundColor: Colors.grey.shade100,
+      side: BorderSide(
+        color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade300,
+      ),
+      visualDensity: VisualDensity.compact,
+      onSelected: (selected) {
+        setState(() {
+          if (selected) {
+            _iibbSubjectTaxConditions.add(conditionKey);
+          } else {
+            _iibbSubjectTaxConditions.remove(conditionKey);
+          }
+        });
+      },
     );
   }
 
@@ -6440,11 +6636,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final navCtx = AppConfig.navigatorKey.currentContext!;
                 navCtx.read<PosProvider>().clearCart();
                 try {
-                  navCtx.read<CashMovementProvider>().fetchMovements(
-                        refresh: true,
-                        all: false,
-                        cashShiftId: newShiftId,
-                      );
+                  if (settingsProvider.features.expenses) {
+                    navCtx.read<CashMovementProvider>().fetchMovements(
+                          refresh: true,
+                          all: false,
+                          cashShiftId: newShiftId,
+                        );
+                  }
                 } catch (_) {}
                 try {
                   navCtx.read<SalesHistoryProvider>().loadSales(

@@ -3646,33 +3646,87 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Tooltip(
-              message: 'Gastos y Mov. de Caja',
-              child: InkWell(
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: true,
-                    builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
-                  );
-                },
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.07),
+            Builder(
+              builder: (walletCtx) {
+                final canAccessExpenses =
+                    walletCtx.watch<SettingsProvider?>()?.features.expenses ??
+                        false;
+                return Tooltip(
+                  message: canAccessExpenses
+                      ? 'Gastos y Mov. de Caja'
+                      : '🔒 Gastos y Mov. de Caja • Plan Premium',
+                  child: InkWell(
+                    key: const ValueKey('pos_appbar_wallet_btn'),
+                    onTap: () {
+                      if (!canAccessExpenses) {
+                        PlanUpgradeDialog.show(
+                          walletCtx,
+                          featureName: 'Gestión de Gastos y Movimientos de Caja',
+                          description:
+                              'El registro de gastos operativos, retiros e ingresos manuales de caja con impacto en reportes y cierres Z está disponible en el Plan Premium.',
+                          onNavigateToSettings: () =>
+                              Navigator.of(walletCtx).pushNamed('/settings'),
+                        );
+                        return;
+                      }
+                      showDialog(
+                        context: walletCtx,
+                        barrierDismissible: true,
+                        builder: (context) =>
+                            const frontend_desktop_cash_movements_dialog
+                                .MovementFormDialog(),
+                      );
+                    },
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: canAccessExpenses
+                            ? Colors.white.withValues(alpha: 0.07)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: canAccessExpenses
+                              ? Colors.white.withValues(alpha: 0.14)
+                              : const Color(0xFFF59E0B).withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.account_balance_wallet_outlined,
+                            size: 19,
+                            color: canAccessExpenses
+                                ? const Color(0xFF38BDF8)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          if (!canAccessExpenses)
+                            Positioned(
+                              right: -4,
+                              top: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(1.5),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFD97706),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.lock_rounded,
+                                  size: 9,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.account_balance_wallet_outlined,
-                    size: 19,
-                    color: Color(0xFF38BDF8),
-                  ),
-                ),
-              ),
+                );
+              },
             ),
             const SizedBox(width: 6),
             Consumer<PosProvider>(
@@ -4904,7 +4958,78 @@ class _PosScreenState extends State<PosScreen> {
                         ],
                       ),
                     );
-                  }),
+                  })
+                else if (context.watch<SettingsProvider>().settings != null &&
+                    !context
+                        .watch<SettingsProvider>()
+                        .settings!
+                        .features
+                        .multiplePrices)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6.0),
+                    child: InkWell(
+                      key: const ValueKey('pos_locked_price_tiers_indicator'),
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () async {
+                        await PlanUpgradeDialog.show(
+                          context,
+                          featureName: 'Múltiples Listas de Precios',
+                          description:
+                              'Operá con listas Mayorista, Tarjeta y listas personalizadas automáticas desde el mostrador con el Plan Premium.',
+                        );
+                        if (mounted) _requestSearchFocusSilently();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.shade200),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Lista de Precio:',
+                              style: TextStyle(
+                                color: Colors.blueGrey.shade700,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline_rounded,
+                                    size: 14,
+                                    color: Colors.amber.shade800,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      'Minorista · Mayorista/Tarjeta [PRO]',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.amber.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
 
                 // ── Resumen Financiero: Subtotal, Ahorro/Descuentos y Total ──────────────
                 const PosFinancialSummary(),

@@ -430,29 +430,34 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   if (val != null) {
                     setState(() {
                       _taxCondition = val;
-                      if (val == 'responsable_inscripto' || val == 'monotributo') {
+                      if (val == 'responsable_inscripto' ||
+                          val == 'monotributo' ||
+                          val == 'exento') {
                         _documentType = 80; // Forzar CUIT automáticamente
                         if (widget.customer == null && !_isInternalAccount) {
                           try {
                             final settings =
                                 context.read<SettingsProvider?>()?.settings;
-                            if (settings?.isIibbPerceptionAgent == true &&
-                                settings!.defaultIibbPerceptionRate > 0) {
-                              _appliesIibbPerception = true;
-                              if (_iibbRateController.text.trim().isEmpty) {
-                                _iibbRateController.text = settings
-                                    .defaultIibbPerceptionRate
-                                    .toString();
-                              }
+                            final qualifiesByRule =
+                                settings?.isIibbPerceptionAgent == true &&
+                                    settings!.defaultIibbPerceptionRate > 0 &&
+                                    settings.isTaxConditionSubjectToIibb(val);
+                            _appliesIibbPerception = qualifiesByRule;
+                            if (qualifiesByRule &&
+                                _iibbRateController.text.trim().isEmpty) {
+                              _iibbRateController.text = settings
+                                  .defaultIibbPerceptionRate
+                                  .toString();
                             }
-                          } catch (_) {}
+                          } catch (_) {
+                            if (val == 'exento') _appliesIibbPerception = false;
+                          }
+                        } else if (val == 'exento') {
+                          _appliesIibbPerception = false;
                         }
                       } else if (val == 'consumidor_final') {
                         _documentType = 96; // Forzar DNI automáticamente
                         _appliesIibbPerception = false; // Desactivar percepción para Consumidor Final
-                      } else if (val == 'exento') {
-                        _documentType = 80; // Los exentos suelen operar con CUIT
-                        _appliesIibbPerception = false; // Los exentos no sufren percepción
                       }
                     });
                   }

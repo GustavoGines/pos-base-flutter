@@ -68,55 +68,59 @@ class _LiveClockWidgetState extends State<LiveClockWidget> {
     final effectiveTextColor = widget.textColor ?? const Color(0xFFCBD5E1);
     final effectiveBgColor = widget.backgroundColor ?? Colors.white.withValues(alpha: 0.06);
 
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: effectiveBgColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.access_time_rounded,
-            size: widget.fontSize + 2,
-            color: const Color(0xFF34D399),
+    return RepaintBoundary(
+      child: ExcludeSemantics(
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: effectiveBgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
-          const SizedBox(width: 6),
-          Text(
-            dateString,
-            style: TextStyle(
-              fontSize: widget.fontSize,
-              fontWeight: FontWeight.w600,
-              color: effectiveTextColor,
-              letterSpacing: 0.2,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Container(
-              width: 4,
-              height: 4,
-              decoration: const BoxDecoration(
-                color: Colors.white38,
-                shape: BoxShape.circle,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.access_time_rounded,
+                size: widget.fontSize + 2,
+                color: const Color(0xFF34D399),
               ),
-            ),
+              const SizedBox(width: 6),
+              Text(
+                dateString,
+                style: TextStyle(
+                  fontSize: widget.fontSize,
+                  fontWeight: FontWeight.w600,
+                  color: effectiveTextColor,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: const BoxDecoration(
+                    color: Colors.white38,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Text(
+                timeString,
+                style: TextStyle(
+                  fontSize: widget.fontSize,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontFamily: 'monospace',
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
           ),
-          Text(
-            timeString,
-            style: TextStyle(
-              fontSize: widget.fontSize,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              fontFamily: 'monospace',
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

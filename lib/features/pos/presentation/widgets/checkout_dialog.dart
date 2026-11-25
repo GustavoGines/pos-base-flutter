@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/iibb_fiscal_calculator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -346,6 +347,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final _dialogFocusNode = FocusNode();
 
   bool _saleCompleted = false;
+  double? _frozenCartTotal;
+  double? _frozenIibbAmount;
   PosProvider? _posProviderRef;
 
   late TextEditingController _shippingCostCtrl;
@@ -358,12 +361,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Customer? get _effectiveIibbCustomer =>
       _selectedCustomer ?? _matchedFiscalCustomer;
 
-  bool get _isFiscalCuitSubjectToIibb =>
-      _isFiscalMode &&
-      (_voucherType == 1 ||
-          (_fiscalDocType == 80 &&
-              _fiscalTaxCondition != 'consumidor_final' &&
-              _fiscalTaxCondition != 'exento'));
+  bool get _isFiscalCuitSubjectToIibb {
+    if (!_isFiscalMode) return false;
+    final normCond =
+        IibbFiscalCalculator.normalizeTaxConditionKey(_fiscalTaxCondition);
+    if (normCond == 'consumidor_final') return false;
+    final settings = context.read<SettingsProvider>().settings;
+    final isSubject = settings?.isTaxConditionSubjectToIibb(normCond) ??
+        (normCond == 'responsable_inscripto');
+    if (!isSubject) return false;
+    return _voucherType == 1 || _fiscalDocType == 80;
+  }
 
   double? get _effectiveIibbRate {
     if (_customIibbRateOverride != null) {
@@ -1646,8 +1654,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   double get _currentIibbAmount {
-    // FINDING-SALES-09: Si es una venta diferida cobrada desde la lista (widget.saleId != null),
-    // usar overrideTotal: widget.total para no contaminar con netSubtotal del carrito activo en fondo.
+    if (_frozenIibbAmount != null) return _frozenIibbAmount!;
+    // FINDING-SALES-09: Si es una venta diferida cobrada desde la lista (widget.saleId != null)
+    // o el carrito fue limpiado en fondo, usar overrideTotal: widget.total para no caer a $0.
     final posProvider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     final extra = _totalSurcharge + _shippingCostToApply;
@@ -1655,15 +1664,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         ((_isFiscalCuitSubjectToIibb && (_effectiveIibbRate ?? 0.0) > 0)
             ? _effectiveIibbRate
             : null);
+    final useOverrideTotal = widget.saleId != null || posProvider.cart.isEmpty;
+    final effectiveSettings =
+        (_isFiscalMode && _voucherType == 11 && settings != null)
+            ? settings.copyWith(
+                iibbCalculationBase: IibbFiscalCalculator.baseGrossWithVat,
+              )
+            : settings;
     return posProvider.calculateIibbPerceptionAmount(
-        settings: settings,
-        customer: _effectiveIibbCustomer,
-        extraAmount: extra,
-        overrideTotal: widget.saleId != null ? widget.total : null,
-        overrideRate: effectiveRateOverride);
+      settings: effectiveSettings,
+      customer: _effectiveIibbCustomer,
+      extraAmount: extra,
+      overrideTotal: useOverrideTotal ? widget.total : null,
+      overrideRate: effectiveRateOverride,
+    );
   }
 
   double get _effectiveCartTotal {
+    if (_frozenCartTotal != null) return _frozenCartTotal!;
     if (widget.saleId != null) return widget.total;
     final posProvider = context.read<PosProvider>();
     return posProvider.cart.isNotEmpty ? posProvider.cartSubtotal : widget.total;
@@ -1681,44 +1699,111 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final currentMerch = _effectiveCartTotal;
     if (currentMerch <= 0) return;
 
-    final currentExtras = _grandTotal - currentMerch;
+    final settings = context.read<SettingsProvider>().settings;
+    final nonIibbExtras = _totalSurcharge + _shippingCostToApply;
+    final currentIibb = _currentIibbAmount;
+    final activeIibbRate =
+        currentIibb > 0.009 ? (_effectiveIibbRate ?? 0.0) : 0.0;
+    final hasActiveIibb = currentIibb > 0.009 && activeIibbRate > 0.0;
+    final calcBase =
+        settings?.iibbCalculationBase ?? IibbFiscalCalculator.baseNetWithoutVat;
+    final isFacturaC = _isFiscalMode && _voucherType == 11;
+    final cartLines = posProvider.cart
+        .map((item) => IibbTaxableLine(
+              subtotal: item.subtotal,
+              ivaRate: item.product.ivaRate,
+            ))
+        .toList();
 
-    // Generar chips rápidos de redondeo inferior sin duplicados
-    final seenTargets = <int>{};
-    final quickTargets = <double>[];
-    for (final step in [100, 500, 1000]) {
-      double candidate = ((currentMerch / step).floor() * step).toDouble();
-      if ((currentMerch - candidate).abs() < 0.01) {
-        candidate = (currentMerch - step).floorToDouble();
-      }
-      if (candidate > 0 && candidate < currentMerch - 0.01) {
-        final centsKey = (candidate * 100).round();
-        if (seenTargets.add(centsKey)) {
-          quickTargets.add(candidate);
+    List<double> buildQuickTargets(double referenceTotal) {
+      final seenTargets = <int>{};
+      final result = <double>[];
+      for (final step in [100, 500, 1000]) {
+        double candidate = ((referenceTotal / step).floor() * step).toDouble();
+        if ((referenceTotal - candidate).abs() < 0.01) {
+          candidate = (referenceTotal - step).floorToDouble();
+        }
+        if (candidate > 0 && candidate < referenceTotal - 0.01) {
+          final centsKey = (candidate * 100).round();
+          if (seenTargets.add(centsKey)) {
+            result.add(candidate);
+          }
         }
       }
+      return result;
     }
 
-    final ctrl = TextEditingController(text: currentMerch.toArsInput());
+    bool pactFinalWithIibb = hasActiveIibb;
+    final ctrl = TextEditingController(
+      text: (pactFinalWithIibb ? _grandTotal : currentMerch).toArsInput(),
+    );
     final focusNode = FocusNode();
 
-    final double? target = await showDialog<double>(
+    final double? targetMerch = await showDialog<double>(
       context: context,
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final parsed = ArsThousandsInputFormatter.parse(ctrl.text);
-            final diff = parsed > 0 ? parsed - currentMerch : 0.0;
-            final estimatedGrand =
-                parsed > 0 ? (parsed + currentExtras) : _grandTotal;
+            final quickTargets =
+                buildQuickTargets(pactFinalWithIibb ? _grandTotal : currentMerch);
+
+            AgreedTotalSolution? inverseSolution;
+            double resolvedMerch = parsed;
+            double previewIibb = currentIibb;
+            double estimatedGrand = _grandTotal;
+
+            if (parsed > 0) {
+              if (pactFinalWithIibb && hasActiveIibb) {
+                inverseSolution = IibbFiscalCalculator.solveAgreedGrandTotal(
+                  lines: cartLines,
+                  targetGrandTotal: parsed,
+                  extraAmount: nonIibbExtras,
+                  iibbRate: activeIibbRate,
+                  calculationBase: calcBase,
+                  isFacturaC: isFacturaC,
+                );
+                resolvedMerch = inverseSolution.merchandiseTotal;
+                previewIibb = inverseSolution.breakdown.iibbAmount;
+                estimatedGrand = inverseSolution.breakdown.grandTotal;
+              } else {
+                resolvedMerch = parsed;
+                final allocated =
+                    IibbFiscalCalculator.allocateCentsProportionally(
+                  cartLines.map((l) => l.subtotal).toList(),
+                  (parsed * 100).round(),
+                );
+                final simulatedLines = <IibbTaxableLine>[
+                  for (int i = 0; i < cartLines.length; i++)
+                    IibbTaxableLine(
+                      subtotal: allocated[i] / 100.0,
+                      ivaRate: cartLines[i].ivaRate,
+                    ),
+                ];
+                final simBreakdown = IibbFiscalCalculator.calculateBreakdown(
+                  lines: simulatedLines,
+                  extraAmount: nonIibbExtras,
+                  iibbRate: activeIibbRate,
+                  calculationBase: calcBase,
+                  isFacturaC: isFacturaC,
+                );
+                previewIibb = simBreakdown.iibbAmount;
+                estimatedGrand = simBreakdown.grandTotal;
+              }
+            }
+
+            final diff = resolvedMerch > 0 ? resolvedMerch - currentMerch : 0.0;
+            final canSubmit = parsed > 0 && resolvedMerch > 0;
 
             return AppModalShell(
-              title: 'Pactar / Redondear Total de Mercadería',
+              title: pactFinalWithIibb
+                  ? 'Pactar / Absorber Total Final (c/ IIBB)'
+                  : 'Pactar / Redondear Total de Mercadería',
               subtitle: 'Prorratea la diferencia para cierre fiscal exacto',
               icon: Icons.tune_rounded,
               accent: AppModalAccent.emerald,
               compact: true,
-              maxWidth: 460,
+              maxWidth: 480,
               onClose: () => Navigator.of(dialogCtx).pop(),
               bodyPadding: const EdgeInsets.all(18),
               body: Column(
@@ -1726,12 +1811,62 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Prorratea la diferencia en cada línea del ticket para que el subtotal de ARCA y el comprobante cierren al centavo.',
+                    pactFinalWithIibb
+                        ? 'Despeja inversamente el subtotal de mercadería para que Mercadería + IVA + Percepción IIBB cierren exactos al centavo en ARCA.'
+                        : 'Prorratea la diferencia en cada línea del ticket para que el subtotal de ARCA y el comprobante cierren al centavo.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.blueGrey.shade700,
                     ),
                   ),
+                  if (hasActiveIibb) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            key: const ValueKey('rounding_mode_final_with_iibb'),
+                            label: const Text(
+                              'Total Final (c/ IIBB)',
+                              style: TextStyle(fontSize: 11.5),
+                            ),
+                            selected: pactFinalWithIibb,
+                            onSelected: (selected) {
+                              if (!selected || pactFinalWithIibb) return;
+                              setDialogState(() {
+                                pactFinalWithIibb = true;
+                                ctrl.text = _grandTotal.toArsInput();
+                                ctrl.selection = TextSelection.collapsed(
+                                  offset: ctrl.text.length,
+                                );
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ChoiceChip(
+                            key: const ValueKey('rounding_mode_merchandise'),
+                            label: const Text(
+                              'Mercadería (s/ IIBB)',
+                              style: TextStyle(fontSize: 11.5),
+                            ),
+                            selected: !pactFinalWithIibb,
+                            onSelected: (selected) {
+                              if (!selected || !pactFinalWithIibb) return;
+                              setDialogState(() {
+                                pactFinalWithIibb = false;
+                                ctrl.text = currentMerch.toArsInput();
+                                ctrl.selection = TextSelection.collapsed(
+                                  offset: ctrl.text.length,
+                                );
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1741,28 +1876,57 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
                       children: [
-                        const Text(
-                          'Mercadería actual:',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Mercadería actual:',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '\$${currentMerch.toCurrency()}',
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          '\$${currentMerch.toCurrency()}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                        if (hasActiveIibb) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Total actual (c/ IIBB ${activeIibbRate.toStringAsFixed(1)}%):',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.indigo.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '\$${_grandTotal.toCurrency()}',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.indigo.shade900,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
+                    key: const ValueKey('agreed_total_input_field'),
                     controller: ctrl,
                     focusNode: focusNode,
                     autofocus: true,
@@ -1770,15 +1934,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     inputFormatters: const [ArsThousandsInputFormatter()],
                     onChanged: (_) => setDialogState(() {}),
                     onSubmitted: (_) {
-                      final v = ArsThousandsInputFormatter.parse(ctrl.text);
-                      if (v > 0) Navigator.of(dialogCtx).pop(v);
+                      if (canSubmit) Navigator.of(dialogCtx).pop(resolvedMerch);
                     },
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Nuevo Subtotal de Mercadería Pactado',
+                      labelText: pactFinalWithIibb
+                          ? 'Total Final Pactado a Cobrar (c/ IIBB)'
+                          : 'Nuevo Subtotal de Mercadería Pactado',
                       prefixText: '\$ ',
                       filled: true,
                       fillColor: AppColors.surfaceMuted,
@@ -1787,7 +1952,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ),
                     ),
                   ),
-                  if (quickTargets.isNotEmpty) ...[
+                  if (quickTargets.isNotEmpty ||
+                      (pactFinalWithIibb &&
+                          hasActiveIibb &&
+                          currentMerch < _grandTotal - 0.01)) ...[
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 6,
@@ -1802,6 +1970,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             color: Colors.blueGrey.shade700,
                           ),
                         ),
+                        if (pactFinalWithIibb &&
+                            hasActiveIibb &&
+                            currentMerch < _grandTotal - 0.01)
+                          ActionChip(
+                            key: const ValueKey('absorb_iibb_quick_chip'),
+                            label: Text(
+                              'Absorber IIBB (\$${currentMerch.toCurrency()})',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.teal.shade900,
+                              ),
+                            ),
+                            backgroundColor: Colors.teal.shade50,
+                            side: BorderSide(color: Colors.teal.shade200),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              ctrl.text = currentMerch.toArsInput();
+                              ctrl.selection = TextSelection.collapsed(
+                                offset: ctrl.text.length,
+                              );
+                              setDialogState(() {});
+                            },
+                          ),
                         for (final t in quickTargets)
                           ActionChip(
                             label: Text(
@@ -1842,6 +2034,28 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     ),
                     child: Column(
                       children: [
+                        if (pactFinalWithIibb && hasActiveIibb) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Mercadería despejada:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '\$${resolvedMerch.toCurrency()}',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                        ],
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -1864,17 +2078,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ],
                         ),
-                        if (currentExtras.abs() > 0.01) ...[
+                        if (previewIibb > 0.009) ...[
                           const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Extras (IIBB / Envío / Recargo):',
-                                style: TextStyle(fontSize: 11.5),
+                              Text(
+                                'Percepción IIBB (${activeIibbRate.toStringAsFixed(1)}%):',
+                                style: const TextStyle(fontSize: 11.5),
                               ),
                               Text(
-                                '+\$${currentExtras.toCurrency()}',
+                                '+\$${previewIibb.toCurrency()}',
                                 style: const TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
@@ -1883,12 +2097,43 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ],
                           ),
                         ],
+                        if (nonIibbExtras.abs() > 0.01) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Envío / Recargo financiero:',
+                                style: TextStyle(fontSize: 11.5),
+                              ),
+                              Text(
+                                '+\$${nonIibbExtras.toCurrency()}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (inverseSolution != null &&
+                            !inverseSolution.isExactMatch) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Ajustado \$0,01 a favor del cliente para mantener cierre fiscal exacto en ARCA.',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: Colors.amber.shade900,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                         const Divider(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              'Total Final a Cobrar est.:',
+                              'Total Final a Cobrar:',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
@@ -1915,8 +2160,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: parsed > 0
-                      ? () => Navigator.of(dialogCtx).pop(parsed)
+                  onPressed: canSubmit
+                      ? () => Navigator.of(dialogCtx).pop(resolvedMerch)
                       : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
@@ -1934,14 +2179,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     ctrl.dispose();
     focusNode.dispose();
 
-    if (!mounted || target == null || target <= 0) return;
-    if ((target - currentMerch).abs() < 0.01) return;
+    if (!mounted || targetMerch == null || targetMerch <= 0) return;
+    if ((targetMerch - currentMerch).abs() < 0.01) return;
 
-    if (target < currentMerch - 0.01) {
+    if (targetMerch < currentMerch - 0.01) {
       final pinResult = await AdminPinDialog.verifyAndGetPin(
         context,
         action:
-            'Pactar / redondear mercadería de \$${currentMerch.toCurrency()} a \$${target.toCurrency()}',
+            'Pactar / redondear mercadería de \$${currentMerch.toCurrency()} a \$${targetMerch.toCurrency()}',
         permissionKey: AppPermissions.applyDiscounts,
       );
       if (!mounted || pinResult == null) return;
@@ -1950,12 +2195,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       }
     }
 
-    posProvider.applyAgreedTotalRounding(target);
+    posProvider.applyAgreedTotalRounding(targetMerch);
     setState(() {});
     _syncPaymentsWithGrandTotal();
     SnackBarService.success(
       context,
-      '🎯 Mercadería pactada en \$${target.toCurrency()} (Total a cobrar: \$${_grandTotal.toCurrency()}).',
+      '🎯 Mercadería pactada en \$${targetMerch.toCurrency()} (Total a cobrar: \$${_grandTotal.toCurrency()}).',
     );
   }
   double get _pendingBalance =>
@@ -2356,6 +2601,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ? _effectiveIibbRate
           : (_customIibbRateOverride != null ? 0.0 : null);
 
+      // Congelar totales mostrados en el diálogo antes de enviar la venta y abrir Vista Previa:
+      // PosProvider ejecuta clearCart() antes de mostrar AppPdfPreviewModal; sin este snapshot,
+      // _currentIibbAmount caería a $0 y mostraría un parpadeo rojo en Saldo Pendiente al cerrar.
+      _frozenCartTotal = _effectiveCartTotal;
+      _frozenIibbAmount = _currentIibbAmount;
+
       Future<bool> executeCheckoutCall() async {
         if (isPending) {
           return await posProvider.payPendingSale(
@@ -2495,7 +2746,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         }
       }
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+          if (!_saleCompleted) {
+            _frozenCartTotal = null;
+            _frozenIibbAmount = null;
+          }
+        });
+      }
     }
   }
 
@@ -5479,15 +5738,29 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.read<SettingsProvider>().settings;
     if (settings?.isIibbPerceptionAgent != true) return const SizedBox.shrink();
     final targetCustomer = _effectiveIibbCustomer;
+    final customerCondKey = targetCustomer != null
+        ? IibbFiscalCalculator.normalizeTaxConditionKey(
+            targetCustomer.taxCondition)
+        : 'consumidor_final';
     final qualifiesByCustomer = targetCustomer != null &&
-        targetCustomer.documentType == 80 &&
-        targetCustomer.taxCondition != 'consumidor_final' &&
-        targetCustomer.taxCondition != 'exento';
+        customerCondKey != 'consumidor_final' &&
+        (targetCustomer.appliesIibbPerception ||
+            (targetCustomer.documentType == 80 &&
+                (settings?.isTaxConditionSubjectToIibb(customerCondKey) ??
+                    customerCondKey == 'responsable_inscripto')));
     if (!qualifiesByCustomer && !_isFiscalCuitSubjectToIibb) {
       return const SizedBox.shrink();
     }
 
     final effectiveRate = _effectiveIibbRate ?? 0.0;
+    final isGrossBase = settings?.isIibbGrossBase == true &&
+        !(_isFiscalMode && _voucherType == 11);
+    final baseBadgeLabel = isGrossBase ? 'Base: Subt. c/IVA' : 'Base: Neto s/IVA';
+    final sourceLabel = _customIibbRateOverride != null
+        ? 'Manual'
+        : (targetCustomer?.appliesIibbPerception == true
+            ? 'Ficha cliente'
+            : 'Regla general');
 
     return Container(
       margin: const EdgeInsets.only(top: 10, bottom: 4),
@@ -5512,6 +5785,22 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: Colors.indigo.shade900,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.indigo.shade200),
+                ),
+                child: Text(
+                  '$baseBadgeLabel · $sourceLabel',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.indigo.shade800,
                   ),
                 ),
               ),

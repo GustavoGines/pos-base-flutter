@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/business_vertical_profile.dart';
+import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import '../../../../core/utils/image_url_resolver.dart';
 import '../../domain/entities/business_settings.dart';
 
@@ -35,6 +36,8 @@ class BusinessSettingsModel extends BusinessSettings {
     super.afipEnabled,
     super.isIibbPerceptionAgent,
     super.defaultIibbPerceptionRate,
+    super.iibbCalculationBase,
+    super.iibbSubjectTaxConditions,
     super.taxCondition,
     super.iibb,
     super.activityStartDate,
@@ -76,8 +79,15 @@ class BusinessSettingsModel extends BusinessSettings {
         .trim()
         .toLowerCase();
     final isPremiumPlan = rawPlan == 'pro' || rawPlan == 'premium';
-    final businessTypeStr =
-        (json['license_business_type'] ?? 'retail').toString().trim();
+    final rawLicenseBusinessType =
+        (json['license_business_type'] ?? '').toString().trim();
+    final rawFallbackBusinessType =
+        (json['business_type'] ?? '').toString().trim();
+    final businessTypeStr = rawLicenseBusinessType.isNotEmpty
+        ? rawLicenseBusinessType
+        : (rawFallbackBusinessType.isNotEmpty
+            ? rawFallbackBusinessType
+            : 'retail');
     final secondaryBusinessTypes = _parseStringList(
       json['license_secondary_business_types'] ??
           json['secondary_business_types'],
@@ -198,6 +208,13 @@ class BusinessSettingsModel extends BusinessSettings {
       defaultIibbPerceptionRate: double.tryParse(
               json['default_iibb_perception_rate']?.toString() ?? '0.0') ??
           0.0,
+      iibbCalculationBase: IibbFiscalCalculator.normalizeCalculationBase(
+        json['iibb_calculation_base']?.toString(),
+      ),
+      iibbSubjectTaxConditions:
+          IibbFiscalCalculator.normalizeSubjectConditions(
+        json['iibb_subject_tax_conditions'],
+      ),
       taxCondition: json['tax_condition']?.toString(),
       iibb: json['iibb']?.toString(),
       activityStartDate: json['activity_start_date']?.toString(),
@@ -303,6 +320,8 @@ class BusinessSettingsModel extends BusinessSettings {
       // Percepciones IIBB (Módulo Mayorista)
       'is_iibb_perception_agent': isIibbPerceptionAgent ? '1' : '0',
       'default_iibb_perception_rate': defaultIibbPerceptionRate.toStringAsFixed(2),
+      'iibb_calculation_base': iibbCalculationBase,
+      'iibb_subject_tax_conditions': iibbSubjectTaxConditions,
       // Datos fiscales adicionales
       if (taxCondition != null) 'tax_condition': taxCondition,
       if (iibb != null) 'iibb': iibb,

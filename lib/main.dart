@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 // Providers
+import 'features/settings/domain/entities/business_settings.dart';
 import 'features/settings/presentation/providers/settings_provider.dart';
 import 'features/catalog/presentation/providers/catalog_provider.dart';
 import 'features/cash_register/presentation/providers/cash_register_provider.dart';
@@ -1780,68 +1781,80 @@ class _MainAppState extends State<MainApp> {
               permissionKey: AppPermissions.manageSettings,
               child: SettingsScreen(),
             ),
-        '/settings/registers': (context) => const PermissionGuard(
+        '/settings/registers': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.multiCaja,
+              featureName: 'Múltiples Cajas / Terminales',
+              description:
+                  'La gestión de múltiples cajas registradoras simultáneas está disponible en el Plan Premium o como módulo adicional.',
               permissionKey: AppPermissions.manageSettings,
-              child: CashRegisterManagementScreen(),
+              child: const CashRegisterManagementScreen(),
             ),
-        '/cuentas-corrientes': (context) => const PermissionGuard(
+        '/cuentas-corrientes': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.currentAccounts,
+              featureName: 'Cuentas Corrientes',
+              description:
+                  'La gestión de clientes con cuenta corriente (fiado) y saldos deudores está disponible en el Plan Premium o como módulo adicional.',
               permissionKey: AppPermissions.viewCustomersAccount,
-              child: CustomersScreen(),
+              child: const CustomersScreen(),
             ),
-        '/checks': (context) {
-          final settings = context.watch<SettingsProvider>().settings;
-          if (settings?.features.checks != true) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              } else {
-                Navigator.of(context).pushReplacementNamed('/home');
-              }
-              PlanUpgradeDialog.show(
-                context,
-                featureName: 'Cartera de Cheques',
-                description:
-                    'El módulo de Cheques de Terceros es exclusivo del Plan Premium.',
-                onNavigateToSettings: () =>
-                    Navigator.of(context).pushNamed('/settings'),
-              );
-            });
-            return const Scaffold(
-                backgroundColor: Color(0xFF1E2D45),
-                body: Center(child: CircularProgressIndicator()));
-          }
-          return const PermissionGuard(
-            permissionKey: AppPermissions.viewChecks,
-            child: CheckWalletScreen(),
-          );
-        },
+        '/checks': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.checks,
+              featureName: 'Cartera de Cheques',
+              description:
+                  'El módulo de Cheques de Terceros es exclusivo del Plan Premium.',
+              permissionKey: AppPermissions.viewChecks,
+              child: const CheckWalletScreen(),
+            ),
         '/trash': (context) => const PermissionGuard(
               permissionKey: AppPermissions.manageTrash,
               child: TrashScreen(),
             ),
         // [hardware_store]
-        '/quotes': (context) => const PermissionGuard(
+        '/quotes': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.quotes,
+              featureName: 'Presupuestos Rápidos',
+              description:
+                  'La generación y gestión de presupuestos está disponible en el Plan Ferretería/Tecnología, Plan Premium o como módulo adicional.',
               permissionKey: AppPermissions.manageQuotes,
-              child: QuotesListScreen(),
+              child: const QuotesListScreen(),
             ),
         '/reports': (context) => const PermissionGuard(
               permissionKey: AppPermissions.viewReports,
               child: ReportsScreen(),
             ),
         // [logistics]
-        '/delivery-notes': (context) => const PermissionGuard(
+        '/delivery-notes': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.logistics,
+              featureName: 'Logística y Remitos',
+              description:
+                  'El módulo de Remitos y Despacho Logístico es exclusivo del rubro Ferretería/Corralón o como módulo adicional.',
               permissionKey: AppPermissions.manageDeliveryNotes,
-              child: LogisticsDashboardScreen(),
+              child: const LogisticsDashboardScreen(),
             ),
         // [suppliers]
-        '/suppliers': (context) => const PermissionGuard(
+        '/suppliers': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.suppliers,
+              featureName: 'Gestión de Proveedores',
+              description:
+                  'El control de proveedores, facturas de compra y saldos está disponible en el Plan Premium o como módulo adicional.',
               permissionKey: AppPermissions.viewSuppliers,
-              child: SuppliersScreen(),
+              child: const SuppliersScreen(),
             ),
         // [cash movements]
-        '/cash-movements': (context) => const PermissionGuard(
+        '/cash-movements': (context) => _buildLicensedRoute(
+              context: context,
+              isEnabled: (f) => f.expenses,
+              featureName: 'Gestión de Gastos y Movimientos',
+              description:
+                  'El módulo de Gastos Operativos y Movimientos de Caja está disponible en el Plan Premium o como módulo adicional.',
               permissionKey: AppPermissions.viewExpenses,
-              child: CashMovementsScreen(),
+              child: const CashMovementsScreen(),
             ),
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
@@ -1851,6 +1864,42 @@ class _MainAppState extends State<MainApp> {
               child: MobileDashboardScreen(),
             ),
       },
+    );
+  }
+
+  Widget _buildLicensedRoute({
+    required BuildContext context,
+    required bool Function(FeatureFlags features) isEnabled,
+    required String featureName,
+    required String description,
+    required String permissionKey,
+    required Widget child,
+  }) {
+    final settings = context.watch<SettingsProvider>().settings;
+    if (settings != null && !isEnabled(settings.features)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        } else {
+          Navigator.of(context).pushReplacementNamed('/home');
+        }
+        PlanUpgradeDialog.show(
+          context,
+          featureName: featureName,
+          description: description,
+          onNavigateToSettings: () =>
+              Navigator.of(context).pushNamed('/settings'),
+        );
+      });
+      return const Scaffold(
+        backgroundColor: Color(0xFF1E2D45),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return PermissionGuard(
+      permissionKey: permissionKey,
+      child: child,
     );
   }
 

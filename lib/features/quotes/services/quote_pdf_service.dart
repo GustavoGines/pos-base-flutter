@@ -531,6 +531,7 @@ class QuotePdfService {
     String? effectiveIibb = businessIibb;
     String? effectiveActivityStart = businessActivityStartDate;
     String? effectiveLogoUrl = logoUrl;
+    bool isIibbPerceptionAgent = false;
 
     if (businessSettings is BusinessSettings) {
       effectiveAddress ??= businessSettings.address;
@@ -540,6 +541,7 @@ class QuotePdfService {
       effectiveIibb ??= businessSettings.iibb;
       effectiveActivityStart ??= businessSettings.activityStartDate;
       effectiveLogoUrl ??= businessSettings.effectiveLogoUrl;
+      isIibbPerceptionAgent = businessSettings.isIibbPerceptionAgent;
     } else if (businessSettings is Map) {
       effectiveAddress ??= businessSettings['address']?.toString();
       effectivePhone ??= businessSettings['phone']?.toString();
@@ -551,6 +553,12 @@ class QuotePdfService {
           businessSettings['activity_start_date']?.toString();
       effectiveLogoUrl ??= businessSettings['logo_url']?.toString() ??
           businessSettings['effective_logo_url']?.toString();
+      final rawAgent = businessSettings['is_iibb_perception_agent'] ??
+          businessSettings['isIibbPerceptionAgent'];
+      isIibbPerceptionAgent = rawAgent == true ||
+          rawAgent == 1 ||
+          rawAgent == '1' ||
+          rawAgent?.toString().toLowerCase() == 'true';
     }
 
     // 1. Precarga asíncrona de miniaturas y logotipo antes del renderizado sincrónico de MultiPage
@@ -639,8 +647,22 @@ class QuotePdfService {
         footer: (pw.Context ctx) {
           return pw.Column(
             mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
-              pw.SizedBox(height: 6),
+              if (isIibbPerceptionAgent) ...[
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 4),
+                  child: pw.Text(
+                    'Precios con IVA incluido. En caso de corresponder, al facturar se adicionarán las percepciones de IIBB (DGR) vigentes según la condición fiscal del comprador.',
+                    style: pw.TextStyle(
+                      fontSize: 7.0,
+                      color: PdfColors.grey700,
+                      fontStyle: pw.FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+              pw.SizedBox(height: 4),
               pw.Divider(color: PdfColors.grey500, thickness: 0.6),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,

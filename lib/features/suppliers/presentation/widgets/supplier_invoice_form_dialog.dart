@@ -3,14 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:file_picker/file_picker.dart' as fp;
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../../../core/services/remote_scanner_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/utils/image_url_resolver.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
 import '../../providers/supplier_provider.dart';
@@ -18,6 +21,8 @@ import '../../../pos/presentation/providers/pos_provider.dart';
 import '../../../../core/config/business_vertical_profile.dart';
 import '../../../catalog/domain/entities/product.dart';
 import '../../../catalog/domain/entities/rubro.dart';
+import '../../../catalog/presentation/widgets/supplier_quick_grid_dialog.dart';
+import 'supplier_purchase_assistant_panel.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -38,6 +43,7 @@ class _InvoiceItemModel {
   double vatRate; // 21.0 | 10.5 | 27.0 | 0.0
   String priceAnchor = 'cost'; // 'cost' | 'selling'
   bool enterByPackage = false;
+  bool? linkSupplier;
   int? batchId;
   DateTime? expirationDate;
   bool showLotFields = false;
@@ -92,6 +98,7 @@ class _InvoiceItemModel {
     required this.manualPrice,
     this.updatePrice = true,
     this.vatRate = 21.0,
+    this.linkSupplier,
     this.batchId,
     String? batchCode,
     this.expirationDate,
@@ -226,14 +233,23 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   double _discountAmount = 0.0;
 
   String? _attachmentUrl;
+  String? _localAttachmentPath;
   // ignore: prefer_final_fields
   bool _isUploading = false;
+
+  List<String> _recentSearches = [];
+  SupplierPurchaseAssistantData _assistantData =
+      const SupplierPurchaseAssistantData();
+  bool _isLoadingAssistant = false;
+  bool _showAssistantPanel = false;
+  bool _didLoadAssistant = false;
 
   bool get _isEditing => widget.initialInvoice != null;
 
   @override
   void initState() {
     super.initState();
+    _loadRecentSearches();
     final inv = widget.initialInvoice;
     if (inv != null) {
       _payNow = false;
@@ -364,10 +380,20 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               '',
           costPrice: prevCost,
           sellingPrice: currentSelling,
-          stock: double.tryParse((prodMap['stock'] ?? 0).toString()) ?? 0.0,
+          stock: double.tryParse((map['stock'] ?? prodMap['stock'] ?? 0).toString()) ?? 0.0,
           active: true,
           isSoldByWeight: isWeight,
           unitType: unitType,
+          supplierSku: map['supplier_sku']?.toString() ??
+              prodMap['supplier_sku']?.toString(),
+          technicalSpec: map['technical_spec']?.toString() ??
+              prodMap['technical_spec']?.toString(),
+          purchasePackageName: map['purchase_package_name']?.toString() ??
+              prodMap['purchase_package_name']?.toString(),
+          conversionFactor: double.tryParse(
+            (map['conversion_factor'] ?? prodMap['conversion_factor'] ?? '')
+                .toString(),
+          ),
           trackBatches: map['track_batches'] == true ||
               map['track_batches'] == 1 ||
               prodMap['track_batches'] == true ||
@@ -421,6 +447,250 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           }
         }
       } catch (_) {}
+    }
+    if (!_didLoadAssistant) {
+      _didLoadAssistant = true;
+      unawaited(_loadPurchaseAssistant());
+    }
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final loaded = await SupplierSearchHistoryStore.load(widget.supplierId);
+    if (mounted) {
+      setState(() => _recentSearches = loaded);
+    }
+  }
+
+  Future<void> _recordRecentSearch(String rawTerm) async {
+    final clean = rawTerm.trim();
+    if (clean.length < 2) return;
+    final updated = await SupplierSearchHistoryStore.record(
+      widget.supplierId,
+      clean,
+    );
+    if (mounted) {
+      setState(() => _recentSearches = updated);
+    }
+  }
+
+  Future<void> _removeRecentSearch(String term) async {
+    final updated = await SupplierSearchHistoryStore.remove(
+      widget.supplierId,
+      term,
+    );
+    if (mounted) {
+      setState(() => _recentSearches = updated);
+    }
+  }
+
+  Future<void> _clearRecentSearches() async {
+    await SupplierSearchHistoryStore.clear(widget.supplierId);
+    if (mounted) {
+      setState(() => _recentSearches = const []);
+    }
+  }
+
+  SupplierPurchaseAssistantData _buildLocalAssistantFallback() {
+    final supplierProducts = <Product>[];
+    try {
+      final catalogProv = context.read<CatalogProvider?>();
+      if (catalogProv != null) {
+        for (final p in catalogProv.products) {
+          if (p.active && !p.isService && p.supplier?.id == widget.supplierId) {
+            supplierProducts.add(p);
+          }
+        }
+      }
+    } catch (_) {}
+
+    final lowStock = supplierProducts
+        .where((p) =>
+            p.stock <= 0 ||
+            (p.minStock != null && p.minStock! > 0 && p.stock <= p.minStock!))
+        .map((p) => SupplierSuggestedItem(product: p))
+        .toList();
+    final catalog = supplierProducts
+        .map((p) => SupplierSuggestedItem(product: p))
+        .toList();
+    return SupplierPurchaseAssistantData(
+      lowStock: lowStock,
+      catalog: catalog,
+    );
+  }
+
+  Future<void> _loadPurchaseAssistant() async {
+    if (_isEditing) return;
+    if (mounted) {
+      setState(() => _isLoadingAssistant = true);
+    }
+
+    SupplierPurchaseAssistantData? loaded;
+    try {
+      final apiClient = context.read<ApiClient>();
+      final supplierProv = context.read<SupplierProvider>();
+      final response = await apiClient.get(
+        Uri.parse(
+          '${supplierProv.baseUrl}/suppliers/${widget.supplierId}/purchase-assistant',
+        ),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          loaded = SupplierPurchaseAssistantData.fromJson(decoded);
+        }
+      }
+    } catch (_) {}
+
+    loaded ??= _buildLocalAssistantFallback();
+
+    if (!mounted) return;
+    setState(() {
+      _assistantData = loaded!;
+      _isLoadingAssistant = false;
+    });
+  }
+
+  void _addAllLowStockItems() {
+    final existingIds = _items.map((i) => i.product.id).toSet();
+    final toAdd = _assistantData.lowStock
+        .where((s) => !existingIds.contains(s.product.id))
+        .toList();
+    if (toAdd.isEmpty) {
+      SnackBarService.info(
+        context,
+        'Todos los artículos con stock bajo ya están en la lista.',
+      );
+      return;
+    }
+    for (final s in toAdd) {
+      _addProduct(s.product, suggestedUnitCost: s.lastUnitCost);
+    }
+    setState(() => _showAssistantPanel = false);
+    SnackBarService.success(
+      context,
+      'Se agregaron ${toAdd.length} artículos con stock bajo.',
+    );
+  }
+
+  Future<void> _cloneLastInvoice() async {
+    final last = _assistantData.lastInvoice;
+    if (last == null || last.items.isEmpty) return;
+
+    String action = 'append';
+    if (_items.isNotEmpty) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Traer comprobante ${last.invoiceNumber}'),
+          content: const Text(
+            'Ya tenés ítems cargados en este comprobante. ¿Querés sumar los de la última compra o reemplazar la lista actual?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'append'),
+              child: const Text('Sumar a los actuales'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'replace'),
+              child: const Text('Reemplazar lista'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      action = choice;
+    }
+
+    if (action == 'replace') {
+      for (final old in _items) {
+        old.dispose();
+      }
+      setState(() => _items.clear());
+    }
+
+    for (final it in last.items.reversed) {
+      final hasPkg =
+          it.product.conversionFactor != null && it.product.conversionFactor! > 1;
+      final usePkg = hasPkg &&
+          it.lastQuantity != null &&
+          it.lastQuantity! >= it.product.conversionFactor!;
+      _addProduct(
+        it.product,
+        suggestedUnitCost: it.lastUnitCost,
+        initialUnitQuantity: it.lastQuantity,
+        autoEnterPackage: usePkg,
+      );
+    }
+    if (mounted) {
+      setState(() => _showAssistantPanel = false);
+      SnackBarService.success(
+        context,
+        'Se cargaron ${last.items.length} ítems de ${last.invoiceNumber}.',
+      );
+    }
+  }
+
+  Future<void> _openQuickGridForSupplier() async {
+    CatalogProvider? catalogProv;
+    try {
+      catalogProv = context.read<CatalogProvider?>();
+    } catch (_) {}
+    if (catalogProv == null) return;
+
+    await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => SupplierQuickGridDialog(
+        provider: catalogProv!,
+        initialSupplierId: widget.supplierId,
+        initialSupplierName: widget.supplierName,
+        authorizedAdminPin: widget.authorizedAdminPin,
+        onProductsCreated: (createdList) {
+          for (final p in createdList) {
+            _addProduct(p);
+          }
+          unawaited(_loadPurchaseAssistant());
+        },
+      ),
+    );
+  }
+
+  Future<void> _openNewProductForSupplier({String initialQuery = ''}) async {
+    CatalogProvider? catalogProv;
+    try {
+      catalogProv = context.read<CatalogProvider?>();
+    } catch (_) {}
+    if (catalogProv == null) return;
+
+    final rawQuery = initialQuery.trim();
+    final looksLikeBarcode = RegExp(r'^\d{6,}$').hasMatch(rawQuery);
+    final looksLikeSupplierSku = !looksLikeBarcode &&
+        rawQuery.isNotEmpty &&
+        RegExp(r'^(?=.*\d)[A-Za-z0-9\-_./]{2,24}$').hasMatch(rawQuery);
+
+    final createdProduct = await showDialog<Product>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ProductFormDialog(
+        provider: catalogProv!,
+        initialSupplierId: widget.supplierId,
+        initialSupplierName: widget.supplierName,
+        initialName: (looksLikeBarcode || looksLikeSupplierSku)
+            ? null
+            : (rawQuery.isNotEmpty ? rawQuery : null),
+        initialBarcode: looksLikeBarcode ? rawQuery : null,
+        initialSupplierSku: looksLikeSupplierSku ? rawQuery : null,
+        lockInitialStockToZero: true,
+      ),
+    );
+    if (createdProduct != null && mounted) {
+      _addProduct(createdProduct);
+      unawaited(_loadPurchaseAssistant());
     }
   }
 
@@ -507,6 +777,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     _debounce?.cancel();
     _searchController.text = q;
     _searchController.selection = TextSelection.collapsed(offset: q.length);
+    unawaited(_recordRecentSearch(q));
     setState(() => _isSearching = true);
     try {
       final results = await _searchCatalogForInvoice(q);
@@ -560,7 +831,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           if (results.length == 1 &&
               results.first.barcode != null &&
               results.first.barcode!.trim() == query.trim()) {
-            _addProduct(results.first);
+            _addProduct(results.first, recordSearch: true);
           }
         }
       } catch (e) {
@@ -617,7 +888,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     return _canUseBatches;
   }
 
-  void _addProduct(Product product) {
+  void _addProduct(
+    Product product, {
+    double? suggestedUnitCost,
+    double? initialUnitQuantity,
+    bool autoEnterPackage = true,
+    bool recordSearch = false,
+  }) {
+    if (recordSearch && _searchController.text.trim().length >= 2) {
+      unawaited(_recordRecentSearch(_searchController.text));
+    }
     final canUseBatches = _canUseBatchesForProduct(product);
     final existingIndex = _items.indexWhere((i) => i.product.id == product.id);
     if (existingIndex >= 0) {
@@ -639,16 +919,30 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         _autoRecalculateFiscalIfNeeded();
       });
     } else {
+      final effectiveCost =
+          product.costPrice > 0 ? product.costPrice : (suggestedUnitCost ?? 0.0);
+      final qtyToUse =
+          (initialUnitQuantity != null && initialUnitQuantity > 0)
+              ? initialUnitQuantity
+              : 1.0;
+      final defaultLinkSupplier = (!_isEditing &&
+              _type != 'credit_note' &&
+              product.supplier == null)
+          ? true
+          : null;
+      final newItem = _InvoiceItemModel(
+        product: product,
+        quantity: qtyToUse,
+        newCost: effectiveCost,
+        manualPrice: product.sellingPrice,
+        autoDefaultExpiry: canUseBatches,
+        linkSupplier: defaultLinkSupplier,
+      );
+      if (autoEnterPackage && newItem.hasPackageConversion) {
+        newItem.switchInputMode(true);
+      }
       setState(() {
-        _items.insert(
-          0,
-          _InvoiceItemModel(
-            product: product,
-            newCost: product.costPrice,
-            manualPrice: product.sellingPrice,
-            autoDefaultExpiry: canUseBatches,
-          ),
-        );
+        _items.insert(0, newItem);
         _autoRecalculateFiscalIfNeeded();
       });
     }
@@ -801,6 +1095,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               if (!mounted) return;
               setState(() {
                 _attachmentUrl = (data['path'] ?? data['file_url'])?.toString();
+                _localAttachmentPath = filePath;
                 _isUploading = false;
               });
               ScaffoldMessenger.of(context).showSnackBar(
@@ -819,6 +1114,116 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         },
       );
     }
+  }
+
+  Future<void> _showAttachmentPreview() async {
+    final localPath = _localAttachmentPath;
+    final remotePath = _attachmentUrl?.trim();
+    String baseUrl = '';
+    try {
+      baseUrl = context.read<SupplierProvider>().baseUrl;
+    } catch (_) {}
+    final resolvedUrl = resolveImageUrl(remotePath, baseUrl: baseUrl);
+    final targetStr = (localPath != null && localPath.isNotEmpty)
+        ? localPath
+        : (resolvedUrl ?? remotePath ?? '');
+    if (targetStr.isEmpty) return;
+
+    final isPdf = targetStr.toLowerCase().contains('.pdf');
+    if (isPdf) {
+      final uri = (localPath != null &&
+              localPath.isNotEmpty &&
+              File(localPath).existsSync())
+          ? Uri.file(localPath)
+          : Uri.tryParse(resolvedUrl ?? targetStr);
+      if (uri != null) {
+        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!ok && mounted) {
+          SnackBarService.warning(
+            context,
+            'No se pudo abrir el PDF en el visor del sistema.',
+          );
+        }
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final hasLocalFile =
+        localPath != null && localPath.isNotEmpty && File(localPath).existsSync();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: Colors.black54,
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.receipt_long,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Comprobante Adjunto',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: 920, maxHeight: 680),
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 5.0,
+                  child: hasLocalFile
+                      ? Image.file(
+                          File(localPath),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text(
+                              'No se pudo cargar la imagen local.',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ),
+                        )
+                      : Image.network(
+                          resolvedUrl ?? targetStr,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text(
+                              'No se pudo descargar la imagen del comprobante.',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   double get _fiscalSum {
@@ -1348,6 +1753,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             'subtotal': double.parse((i.quantity * i.newCost).toStringAsFixed(2)),
             'update_price': i.updatePrice,
             'new_selling_price': i.updatePrice ? i.manualPrice : null,
+            if (i.linkSupplier != null) 'link_supplier': i.linkSupplier,
             if (itemCanUseBatches && i.batchId != null) 'batch_id': i.batchId,
             if (itemCanUseBatches && i.batchCodeCtrl.text.trim().isNotEmpty)
               'batch_code': i.batchCodeCtrl.text.trim(),
@@ -1541,8 +1947,18 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         height: MediaQuery.of(context).size.height * 0.94,
         constraints: const BoxConstraints(maxWidth: 1240, maxHeight: 880),
         padding: const EdgeInsets.all(0),
-        child: Column(
-          children: [
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.f2): () {
+              _searchFocus.requestFocus();
+              _searchController.selection = TextSelection(
+                baseOffset: 0,
+                extentOffset: _searchController.text.length,
+              );
+            },
+          },
+          child: Column(
+            children: [
             AppModalHeader(
               title: _isEditing
                   ? 'Editar Comprobante de Proveedor #${widget.initialInvoice!['id']}'
@@ -1590,18 +2006,50 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       final isWide = constraints.maxWidth > 800;
                       final isRI = context.watch<SettingsProvider>().isResponsableInscripto;
 
+                      final assistantPanel = SupplierPurchaseAssistantPanel(
+                        supplierName: widget.supplierName,
+                        data: _assistantData,
+                        isLoading: _isLoadingAssistant,
+                        addedProductIds:
+                            _items.map((i) => i.product.id).toSet(),
+                        onAddItem: (suggested) {
+                          final hasPkg =
+                              suggested.product.conversionFactor != null &&
+                                  suggested.product.conversionFactor! > 1;
+                          final usePkg = hasPkg &&
+                              (suggested.lastQuantity == null ||
+                                  suggested.lastQuantity! >=
+                                      suggested.product.conversionFactor!);
+                          _addProduct(
+                            suggested.product,
+                            suggestedUnitCost: suggested.lastUnitCost,
+                            autoEnterPackage: usePkg,
+                          );
+                        },
+                        onAddAllLowStock: _addAllLowStockItems,
+                        onCloneLastInvoice: () =>
+                            unawaited(_cloneLastInvoice()),
+                        onOpenQuickGrid: () =>
+                            unawaited(_openQuickGridForSupplier()),
+                        onOpenNewProduct: () =>
+                            unawaited(_openNewProductForSupplier()),
+                      );
+
                       final itemsTable = Container(
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey.shade300),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: _items.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'Busque y seleccione productos para agregarlos al comprobante.',
-                                  style: TextStyle(color: Colors.grey.shade600),
-                                ),
-                              )
+                            ? (_isEditing
+                                ? Center(
+                                    child: Text(
+                                      'Busque y seleccione productos para agregarlos al comprobante.',
+                                      style: TextStyle(
+                                          color: Colors.grey.shade600),
+                                    ),
+                                  )
+                                : assistantPanel)
                             : ListView.separated(
                                 itemCount: _items.length,
                                 separatorBuilder: (_, __) => const Divider(height: 1),
@@ -1634,51 +2082,136 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               child: Column(
                                 children: [
                                   TextField(
+                                    key: const ValueKey('supplier_invoice_search_field'),
                                     controller: _searchController,
                                     focusNode: _searchFocus,
                                     onSubmitted: _onSearchSubmittedOrScanned,
                                     decoration: InputDecoration(
                                       hintText: 'Buscar por nombre, EAN, PLU, Cód. Prov. o medida...',
                                       prefixIcon: const Icon(Icons.search),
-                                      suffixIcon: IconButton(
-                                        icon: const Icon(Icons.add_circle, color: Colors.blue),
-                                        tooltip: 'Nuevo Producto Rápido',
-                                        onPressed: () async {
-                                          final catalogProv = context.read<CatalogProvider>();
-                                          final rawQuery = _searchController.text.trim();
-                                          final looksLikeBarcode =
-                                              RegExp(r'^\d{6,}$').hasMatch(rawQuery);
-                                          final looksLikeSupplierSku = !looksLikeBarcode &&
-                                              rawQuery.isNotEmpty &&
-                                              RegExp(r'^(?=.*\d)[A-Za-z0-9\-_./]{2,24}$')
-                                                  .hasMatch(rawQuery);
-                                          final createdProduct = await showDialog<Product>(
-                                            context: context,
-                                            barrierDismissible: false,
-                                            builder: (_) => ProductFormDialog(
-                                              provider: catalogProv,
-                                              initialSupplierId: widget.supplierId,
-                                              initialSupplierName: widget.supplierName,
-                                              initialName: (looksLikeBarcode || looksLikeSupplierSku)
-                                                  ? null
-                                                  : (rawQuery.isNotEmpty ? rawQuery : null),
-                                              initialBarcode:
-                                                  looksLikeBarcode ? rawQuery : null,
-                                              initialSupplierSku:
-                                                  looksLikeSupplierSku ? rawQuery : null,
-                                              lockInitialStockToZero: true,
+                                      suffixIcon: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_items.isNotEmpty && !_isEditing)
+                                            IconButton(
+                                              key: const ValueKey(
+                                                'toggle_supplier_assistant_btn',
+                                              ),
+                                              icon: Icon(
+                                                _showAssistantPanel
+                                                    ? Icons.lightbulb_rounded
+                                                    : Icons.lightbulb_outline,
+                                                color: _showAssistantPanel
+                                                    ? Colors.amber.shade700
+                                                    : Colors.blueGrey.shade600,
+                                                size: 20,
+                                              ),
+                                              tooltip: _showAssistantPanel
+                                                  ? 'Ocultar sugerencias del proveedor'
+                                                  : 'Sugerencias del proveedor',
+                                              onPressed: () => setState(
+                                                () => _showAssistantPanel =
+                                                    !_showAssistantPanel,
+                                              ),
                                             ),
-                                          );
-                                          if (createdProduct != null && mounted) {
-                                            _addProduct(createdProduct);
-                                          }
-                                        },
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.add_circle,
+                                              color: Colors.blue,
+                                            ),
+                                            tooltip: 'Nuevo Producto Rápido',
+                                            onPressed: () =>
+                                                _openNewProductForSupplier(
+                                              initialQuery:
+                                                  _searchController.text,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       border: InputBorder.none,
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                     ),
                                     onChanged: _onSearchChanged,
                                   ),
+                                  if (!_isSearching &&
+                                      _searchResults.isEmpty &&
+                                      _recentSearches.isNotEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.fromLTRB(
+                                        10,
+                                        4,
+                                        10,
+                                        6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        border: Border(
+                                          top: BorderSide(
+                                            color: Colors.grey.shade200,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            'Recientes:',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                          for (final term in _recentSearches)
+                                            InputChip(
+                                              key: ValueKey(
+                                                'recent_search_chip_${widget.supplierId}_$term',
+                                              ),
+                                              label: Text(
+                                                '🕒 $term',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              materialTapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              onPressed: () =>
+                                                  _onSearchSubmittedOrScanned(
+                                                term,
+                                              ),
+                                              onDeleted: () =>
+                                                  _removeRecentSearch(term),
+                                            ),
+                                          TextButton(
+                                            style: TextButton.styleFrom(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 2,
+                                              ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                            onPressed: _clearRecentSearches,
+                                            child: const Text(
+                                              'Limpiar',
+                                              style: TextStyle(fontSize: 10.5),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   if (_isSearching || _searchResults.isNotEmpty)
                                     Container(
                                       constraints: const BoxConstraints(maxHeight: 200),
@@ -1791,7 +2324,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                                     Icons.add_shopping_cart,
                                                     color: Colors.blue,
                                                   ),
-                                                  onTap: () => _addProduct(p),
+                                                  onTap: () => _addProduct(
+                                                    p,
+                                                    recordSearch: true,
+                                                  ),
                                                 );
                                               },
                                             ),
@@ -1800,6 +2336,23 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               ),
                             ),
                           ),
+                          if (_items.isNotEmpty &&
+                              !_isEditing &&
+                              _showAssistantPanel) ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 215,
+                              child: Material(
+                                color: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(color: Colors.amber.shade200),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: assistantPanel,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 12),
 
                           // Tabla de Items
@@ -1854,6 +2407,33 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   ),
                                 ),
                               ),
+                              if ((_attachmentUrl != null &&
+                                      _attachmentUrl!.trim().isNotEmpty) ||
+                                  _localAttachmentPath != null) ...[
+                                const SizedBox(width: 4),
+                                SizedBox(
+                                  height: 28,
+                                  child: IconButton(
+                                    key: const ValueKey(
+                                      'preview_supplier_attachment_btn',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 28,
+                                      minHeight: 28,
+                                    ),
+                                    tooltip: 'Ver comprobante adjunto',
+                                    icon: const Icon(
+                                      Icons.visibility_outlined,
+                                      size: 16,
+                                      color: Color(0xFF1D4ED8),
+                                    ),
+                                    onPressed: _showAttachmentPreview,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 6),
@@ -2324,6 +2904,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             ),
           ],
         ),
+        ),
       ),
       ),
     );
@@ -2446,6 +3027,17 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         }
       }
     }
+
+    final prevCost = item.product.costPrice;
+    final double? costPctDiff = prevCost > 0.0001
+        ? ((item.newCost - prevCost) / prevCost) * 100.0
+        : null;
+    final bool isSpikeWarning =
+        !item.enterByPackage && costPctDiff != null && costPctDiff >= 150.0;
+    final currentSupplierId = item.product.supplier?.id;
+    final bool showLinkSupplierChip = !_isEditing &&
+        _type != 'credit_note' &&
+        (currentSupplierId == null || currentSupplierId != widget.supplierId);
 
     return Container(
       key: ObjectKey(item),
@@ -2606,6 +3198,86 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
+          if (costPctDiff != null || showLinkSupplierChip) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (costPctDiff != null)
+                  Container(
+                    key: ValueKey('cost_variation_badge_${item.product.id}_$index'),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: costPctDiff.abs() < 0.5
+                          ? Colors.grey.shade100
+                          : (costPctDiff <= -0.5
+                              ? Colors.green.shade50
+                              : (costPctDiff >= 30.0
+                                  ? Colors.red.shade50
+                                  : Colors.orange.shade50)),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: costPctDiff.abs() < 0.5
+                            ? Colors.grey.shade300
+                            : (costPctDiff <= -0.5
+                                ? Colors.green.shade300
+                                : (costPctDiff >= 30.0
+                                    ? Colors.red.shade300
+                                    : Colors.orange.shade300)),
+                      ),
+                    ),
+                    child: Text(
+                      costPctDiff.abs() < 0.5
+                          ? '= Sin cambio'
+                          : (costPctDiff <= -0.5
+                              ? '▼ ${costPctDiff.abs() < 10 ? costPctDiff.toStringAsFixed(1) : costPctDiff.toStringAsFixed(0)}%'
+                              : '▲ +${costPctDiff < 10 ? costPctDiff.toStringAsFixed(1) : costPctDiff.toStringAsFixed(0)}%'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: costPctDiff.abs() < 0.5
+                            ? Colors.grey.shade700
+                            : (costPctDiff <= -0.5
+                                ? Colors.green.shade800
+                                : (costPctDiff >= 30.0
+                                    ? Colors.red.shade800
+                                    : Colors.orange.shade800)),
+                      ),
+                    ),
+                  ),
+                if (showLinkSupplierChip)
+                  FilterChip(
+                    key: ValueKey('link_supplier_chip_${item.product.id}_$index'),
+                    selected: item.linkSupplier == true,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: EdgeInsets.zero,
+                    selectedColor: Colors.indigo.shade50,
+                    checkmarkColor: Colors.indigo.shade700,
+                    label: Text(
+                      currentSupplierId == null
+                          ? (item.linkSupplier == true
+                              ? 'Vincular al proveedor'
+                              : 'Sin vincular proveedor')
+                          : (item.linkSupplier == true
+                              ? 'Reasignar a este proveedor'
+                              : 'Mantener (${item.product.supplier!.name})'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: item.linkSupplier == true
+                            ? Colors.indigo.shade800
+                            : Colors.blueGrey.shade700,
+                      ),
+                    ),
+                    onSelected: (v) => setState(() => item.linkSupplier = v),
+                  ),
+              ],
+            ),
+          ],
           _buildConversionSelectorAndPreview(item, index),
           const SizedBox(height: 5),
           Row(
@@ -2718,6 +3390,76 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
             ],
           ),
+          if (isSpikeWarning)
+            Container(
+              key: ValueKey('cost_spike_warning_${item.product.id}_$index'),
+              margin: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.amber.shade400),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 16,
+                    color: Colors.amber.shade900,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      item.hasPackageConversion
+                          ? 'El costo unitario subió +${costPctDiff.round()}% respecto a \$${prevCost.toCurrency()}. ¿Cargaste el costo por ${item.packageLabel}?'
+                          : 'El costo unitario subió +${costPctDiff.round()}% respecto a \$${prevCost.toCurrency()}. Verificá que no corresponda al bulto.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                  if (item.hasPackageConversion) ...[
+                    const SizedBox(width: 6),
+                    TextButton(
+                      key: ValueKey('switch_spike_to_pkg_${item.product.id}_$index'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: Colors.amber.shade100,
+                        foregroundColor: Colors.amber.shade900,
+                      ),
+                      onPressed: () {
+                        final typedPkgQty = item.quantity > 0 ? item.quantity : 1.0;
+                        final typedPkgCost = item.newCost;
+                        setState(() {
+                          item.enterByPackage = true;
+                          item.quantity = double.parse(
+                            (typedPkgQty * item.conversionFactor).toStringAsFixed(3),
+                          );
+                          item.qtyCtrl.text =
+                              (typedPkgQty - typedPkgQty.roundToDouble()).abs() < 0.0005
+                                  ? typedPkgQty.round().toString()
+                                  : typedPkgQty.toStringAsFixed(2);
+                          item.costCtrl.text = typedPkgCost.toArsInput();
+                        });
+                        _handleCostChange(item, item.costCtrl.text);
+                      },
+                      child: Text(
+                        'Pasar a Por ${item.packageLabel}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (_canUseBatchesForProduct(item.product) &&
               !item.product.isCombo &&
               !item.product.isService) ...[

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../../core/config/business_vertical_profile.dart';
+import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import '../../../../core/utils/image_url_resolver.dart';
 
 class FeatureFlags extends Equatable {
@@ -116,7 +117,19 @@ class BusinessSettings extends Equatable {
   final bool afipEnabled;
   final bool isIibbPerceptionAgent;
   final double defaultIibbPerceptionRate;
+  final String iibbCalculationBase;
+  final List<String> iibbSubjectTaxConditions;
   final String? taxCondition;
+
+  bool get isIibbGrossBase =>
+      IibbFiscalCalculator.normalizeCalculationBase(iibbCalculationBase) ==
+      IibbFiscalCalculator.baseGrossWithVat;
+
+  bool isTaxConditionSubjectToIibb(String? rawTaxCondition) =>
+      IibbFiscalCalculator.isConditionSubjectToIibb(
+        rawTaxCondition,
+        iibbSubjectTaxConditions,
+      );
   final String? iibb;
   final String? activityStartDate;
   final int posPopularityDays;
@@ -171,9 +184,12 @@ class BusinessSettings extends Equatable {
   /// licencia activa y un plan Básico o Premium válido (SaaS o Lifetime).
   bool get canUseHardwareCalculator {
     if (!isHardwareStore) return false;
-    final rawKeyOrStatus = (licenseStatus ?? '').trim();
-    if (rawKeyOrStatus.isEmpty) return false;
-    final statusLower = rawKeyOrStatus.toLowerCase();
+    final statusLower = (licenseStatus ?? '').trim().toLowerCase();
+    final hasHydratedFeatures =
+        features.fastPos || features.quotes || features.logistics;
+    if (statusLower.isEmpty && !hasHydratedFeatures) {
+      return false;
+    }
     if (statusLower == 'suspended' ||
         statusLower == 'expired' ||
         statusLower == 'error' ||
@@ -309,6 +325,8 @@ class BusinessSettings extends Equatable {
     bool? afipEnabled,
     bool? isIibbPerceptionAgent,
     double? defaultIibbPerceptionRate,
+    String? iibbCalculationBase,
+    List<String>? iibbSubjectTaxConditions,
     String? taxCondition,
     String? iibb,
     String? activityStartDate,
@@ -349,6 +367,9 @@ class BusinessSettings extends Equatable {
       afipEnabled: afipEnabled ?? this.afipEnabled,
       isIibbPerceptionAgent: isIibbPerceptionAgent ?? this.isIibbPerceptionAgent,
       defaultIibbPerceptionRate: defaultIibbPerceptionRate ?? this.defaultIibbPerceptionRate,
+      iibbCalculationBase: iibbCalculationBase ?? this.iibbCalculationBase,
+      iibbSubjectTaxConditions:
+          iibbSubjectTaxConditions ?? this.iibbSubjectTaxConditions,
       taxCondition: taxCondition ?? this.taxCondition,
       iibb: iibb ?? this.iibb,
       activityStartDate: activityStartDate ?? this.activityStartDate,
@@ -390,6 +411,8 @@ class BusinessSettings extends Equatable {
     this.afipEnabled = false,
     this.isIibbPerceptionAgent = false,
     this.defaultIibbPerceptionRate = 0.0,
+    this.iibbCalculationBase = IibbFiscalCalculator.baseNetWithoutVat,
+    this.iibbSubjectTaxConditions = const ['responsable_inscripto'],
     this.taxCondition,
     this.iibb,
     this.activityStartDate,
@@ -431,6 +454,8 @@ class BusinessSettings extends Equatable {
         afipEnabled,
         isIibbPerceptionAgent,
         defaultIibbPerceptionRate,
+        iibbCalculationBase,
+        iibbSubjectTaxConditions,
         taxCondition,
         iibb,
         activityStartDate,
