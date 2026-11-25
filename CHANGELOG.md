@@ -2,6 +2,19 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows/Android) están documentados aquí.
 
 
+## [2.2.0] - 2026-11-25
+### Clientes Ágiles sin DNI Obligatorio y Búsqueda Inteligente
+- Alta y edición rápida de clientes Consumidor Final y Cuentas Corrientes con DNI / Documento 100% opcional y búsqueda instantánea por número de teléfono.
+- Coherencia fiscal automática ante ARCA: emisión directa de Factura B/C para clientes sin documento por debajo del tope vigente y validación estricta de CUIT para Factura A, Exentos y Percepción IIBB.
+### Modo Exploración con Datos de Ejemplo por Rubro
+- Carga guiada en un clic de catálogos, clientes, proveedores y turnos de muestra adaptados a 6 rubros (Minimercado, Ferretería, Indumentaria, Panadería, Carnicería y Gastronomía).
+- Protección fiscal automática que bloquea emisiones accidentales en ARCA mientras haya datos de ejemplo activos y limpieza integral segura para iniciar el negocio real desde cero.
+### Centro de Licencias, Pruebas Gratuitas y Actualizaciones OTA v2
+- Avisos claros de vencimiento a fin del día (`23:59:59`), verificación en un clic desde la pantalla de estado y protección inteligente frente a desajustes de reloj de Windows.
+- Nuevo canal informativo de novedades por versión para licencias de Pago Único y actualizaciones continuas autenticadas para suscripciones activas.
+### Blindaje de Servicios en Segundo Plano y Copias de Seguridad
+- Suspensión y reactivación garantizada de WebSockets Reverb, Colas y Tareas Programadas durante actualizaciones de servidor y preservación estricta del estado de licencia al restaurar respaldos.
+
 ## [2.1.2] - 2026-11-21
 ### Blindaje de Red Multi-Caja, Preservación de IP del Cliente y Reinicio de Servicios OTA
 - Preservación estricta de la IP LAN configurada por el cliente (`pos_api` / `pos_api_local`) durante actualizaciones OTA y migración de preferencias, evitando sobreescrituras con valores por defecto.

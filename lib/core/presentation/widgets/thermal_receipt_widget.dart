@@ -507,7 +507,15 @@ class ThermalReceiptWidget extends StatelessWidget {
     final recName = invoice['receiver_name']?.toString() ??
         customerName ??
         'CONSUMIDOR FINAL';
-    final recDoc = invoice['doc_number']?.toString() ?? customerDoc ?? '---';
+    final docType = int.tryParse(invoice['doc_type']?.toString() ?? '') ?? 0;
+    final rawRecDoc =
+        (invoice['doc_number']?.toString() ?? customerDoc ?? '').trim();
+    final hasValidFiscalDoc = docType != 99 &&
+        rawRecDoc.isNotEmpty &&
+        rawRecDoc.toLowerCase() != 'null' &&
+        rawRecDoc != '0' &&
+        rawRecDoc != '---';
+    final recDoc = hasValidFiscalDoc ? _formatCuit(rawRecDoc) : '---';
     final rawRecCond = invoice['receiver_tax_condition']?.toString() ?? '';
     final recCond = _formatReceiverTaxCondition(rawRecCond, letter);
     final recAddress = (invoice['receiver_address']?.toString() ?? customerAddress ?? '').trim();
@@ -522,7 +530,7 @@ class ThermalReceiptWidget extends StatelessWidget {
           _buildMultilineTextRow('CLIENTE:', recName.toUpperCase(), factor: factor, isBold: isCustomClient)
         else
           _buildKeyValueRow('CLIENTE:', recName.toUpperCase(), factor: factor, isBold: isCustomClient),
-        _buildKeyValueRow('DOC:', _formatCuit(recDoc), factor: factor),
+        _buildKeyValueRow('DOC:', recDoc, factor: factor),
         _buildKeyValueRow('IVA:', recCond, factor: factor),
         if (recAddress.isNotEmpty && recAddress != '---')
           _buildMultilineTextRow('DOMICILIO:', recAddress.toUpperCase(), factor: factor),

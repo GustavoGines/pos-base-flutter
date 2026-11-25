@@ -599,12 +599,30 @@ class AfipFiscalPdfService {
         'Cajero';
 
     // ── 4. Datos del Receptor ─────────────────────────────────────────────────
-    final rawReceiverDoc = (electronicInvoice['doc_number']?.toString() ??
-            sale['customer']?['tax_id'] ??
-            sale['customer_tax_id'] ??
-            '---')
-        .toString();
-    final receiverDoc = _formatCuit(rawReceiverDoc);
+    final resolvedDocType =
+        int.tryParse((electronicInvoice['doc_type'] ?? '').toString()) ?? 0;
+    String firstValidFiscalDoc(List<dynamic> candidates) {
+      if (resolvedDocType == 99) return '---';
+      for (final c in candidates) {
+        final s = (c ?? '').toString().trim();
+        if (s.isNotEmpty &&
+            s.toLowerCase() != 'null' &&
+            s != '0' &&
+            s != '---') {
+          return s;
+        }
+      }
+      return '---';
+    }
+
+    final rawReceiverDoc = firstValidFiscalDoc([
+      electronicInvoice['doc_number'],
+      sale['customer']?['document_number'],
+      sale['customer']?['tax_id'],
+      sale['customer_tax_id'],
+    ]);
+    final receiverDoc =
+        rawReceiverDoc == '---' ? '---' : _formatCuit(rawReceiverDoc);
     final rawReceiverTaxCondition =
         electronicInvoice['receiver_tax_condition']?.toString() ??
             (voucherLetter == 'A'

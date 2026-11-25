@@ -1,15 +1,37 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/features/settings/data/models/business_settings_model.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/repositories/settings_repository.dart';
+import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_usecase.dart';
+import 'package:frontend_desktop/features/settings/domain/usecases/update_settings_usecase.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/updater/data/models/update_info.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/upgrade_news_dialog.dart';
+
+class _StubLegacySettingsRepo implements SettingsRepository {
+  final BusinessSettings stubSettings;
+  _StubLegacySettingsRepo(this.stubSettings);
+
+  @override
+  Future<BusinessSettings> getSettings() async => stubSettings;
+
+  @override
+  Future<BusinessSettings> updateSettings(Map<String, dynamic> data) async =>
+      stubSettings;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -433,6 +455,86 @@ void main() {
       await tester.pump();
       expect(find.textContaining('Novedades'), findsNothing);
       expect(find.text('Actualizar'), findsNothing);
+    });
+
+    test(
+        'B-01: deriva localmente license_ota_token ante backend legado (< v2.2.0) con license_key en claro, pero ignora claves enmascaradas pos_****',
+        () async {
+      const rawPlainKey = 'pos_1234567890abcdef1234567890abcdef';
+      final expectedToken = sha256
+          .convert(utf8.encode('caja4u-ota-v2:$rawPlainKey'))
+          .toString();
+
+      // 1. Backend v2.1.2: sin license_ota_token, con license_key en texto plano
+      final legacyModel = BusinessSettingsModel.fromJson({
+        'company_name': 'Comercio v2.1.2',
+        'app_plan': 'pro',
+        'license_plan_mode': 'saas',
+        'license_key': rawPlainKey,
+      });
+      expect(legacyModel.licenseOtaToken, equals(expectedToken));
+
+      // 2. Clave enmascarada pos_**** sin license_ota_token jamás debe hashearse
+      final maskedWithoutToken = BusinessSettingsModel.fromJson({
+        'company_name': 'Comercio Enmascarado',
+        'license_key': 'pos_****cdef',
+      });
+      expect(maskedWithoutToken.licenseOtaToken, isNull);
+      expect(
+        BusinessSettingsModel.computeFallbackOtaToken('pos_****cdef'),
+        isNull,
+      );
+      expect(BusinessSettingsModel.computeFallbackOtaToken('   '), isNull);
+
+      // 3. Flujo completo Fase 2 Auto-Resume: SettingsProvider persiste el token derivado
+      // y UpdateService.checkUpdate() lo envía en X-Ota-Token contra /api/check-update
+      final repo = _StubLegacySettingsRepo(legacyModel);
+      final settingsProv = SettingsProvider(
+        getSettingsUseCase: GetSettingsUseCase(repo),
+        updateSettingsUseCase: UpdateSettingsUseCase(repo),
+      );
+      await settingsProv.loadSettings();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('license_ota_token'), equals(expectedToken));
+
+      final capturedHeaders = <Map<String, String>>[];
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/version-check')) {
+          return http.Response(jsonEncode({'version': '2.1.2'}), 200);
+        }
+        capturedHeaders.add(Map<String, String>.from(request.headers));
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'update_available': true,
+            'data': {
+              'version': '2.2.0',
+              'download_url': 'https://r2.example.com/backend_2.2.0.zip',
+              'changelog': 'Backend v2.2.0',
+              'is_critical': false,
+              'can_auto_update': true,
+            },
+          }),
+          200,
+        );
+      });
+
+      final service = UpdateService();
+      service.configureForTesting(
+        httpClient: client,
+        frontendVersionProvider: () async => '2.2.0',
+        forceAllowInDebug: true,
+      );
+
+      final check = await service.checkUpdate();
+      expect(check.backendUpdate?.canAutoUpdate, isTrue);
+      expect(capturedHeaders, isNotEmpty);
+      for (final h in capturedHeaders) {
+        expect(h['X-Ota-Protocol'], equals('2'));
+        expect(h['X-Ota-Token'], equals(expectedToken));
+      }
+      settingsProv.dispose();
     });
   });
 }

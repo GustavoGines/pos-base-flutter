@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/business_vertical_profile.dart';
 import '../../../../core/utils/iibb_fiscal_calculator.dart';
@@ -57,6 +58,17 @@ class BusinessSettingsModel extends BusinessSettings {
     super.posPopularityResetAt,
     super.bankTransferAccounts,
   });
+
+  /// Deriva localmente el token OTA v2 (SHA-256) cuando el cliente se conecta
+  /// contra un backend legado (< v2.2.0) que aún no devuelve `license_ota_token`
+  /// pero sí entrega `license_key` en claro. Ignora claves vacías o enmascaradas (`****`).
+  static String? computeFallbackOtaToken(dynamic rawLicenseKey) {
+    final trimmed = rawLicenseKey?.toString().trim() ?? '';
+    if (trimmed.isEmpty || trimmed.contains('****')) {
+      return null;
+    }
+    return sha256.convert(utf8.encode('caja4u-ota-v2:$trimmed')).toString();
+  }
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
     // Parser ultra-robusto para el diccionario de features
@@ -198,7 +210,9 @@ class BusinessSettingsModel extends BusinessSettings {
               : null,
       licenseOtaToken: (json['license_ota_token']?.toString().trim().isNotEmpty ?? false)
           ? json['license_ota_token'].toString().trim()
-          : null,
+          : computeFallbackOtaToken(
+              json['license_key'] ?? json['license_api_key'],
+            ),
       licenseAllowOtaUpdates: json['license_allow_ota_updates'] == null
           ? json['license_is_lifetime'] != '1'
           : (json['license_allow_ota_updates'] == '1' ||

@@ -713,5 +713,48 @@ void main() {
       expect(find.text('RECARGO LISTA:'), findsOneWidget);
       expect(find.text('+\$390.000'), findsOneWidget);
     });
+
+    testWidgets(
+        'C-01: Ticket fiscal para cliente sin DNI (doc_type=99, doc_number=0) muestra DOC: --- en lugar de 0',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(290, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final cfNoDocInvoice = {
+        ...testFiscalInvoice,
+        'voucher_type': 6,
+        'voucher_letter': 'B',
+        'doc_type': 99,
+        'doc_number': '0',
+        'receiver_name': 'JUAN SIN DNI',
+        'receiver_tax_condition': 'consumidor_final',
+      };
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm80,
+            businessSettings: testSettings,
+            items: [testItems.first],
+            payments: const [
+              {'name': 'EFECTIVO', 'amount': 125000.0},
+            ],
+            total: 125000.0,
+            electronicInvoice: cfNoDocInvoice,
+            saleNumber: '000905',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('JUAN SIN DNI'), findsOneWidget);
+      expect(find.text('---'), findsOneWidget);
+      expect(find.text('0'), findsNothing);
+    });
   });
 }

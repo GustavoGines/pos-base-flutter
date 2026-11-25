@@ -13,6 +13,7 @@ import 'package:frontend_desktop/features/settings/domain/usecases/update_settin
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
+import 'package:frontend_desktop/features/settings/data/models/business_settings_model.dart';
 import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 
@@ -140,7 +141,11 @@ class SettingsProvider with ChangeNotifier {
   Future<void> _persistOtaMetadataToPrefs(BusinessSettings? s) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = s?.licenseOtaToken?.trim() ?? '';
+      final explicitToken = s?.licenseOtaToken?.trim() ?? '';
+      final token = explicitToken.isNotEmpty
+          ? explicitToken
+          : (BusinessSettingsModel.computeFallbackOtaToken(s?.licenseStatus) ??
+              '');
       if (token.isNotEmpty) {
         await prefs.setString('license_ota_token', token);
       } else {

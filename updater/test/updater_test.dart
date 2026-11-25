@@ -430,4 +430,135 @@ void main() {
       );
     });
   });
+
+  group('Ciclo /disable + finally /enable de servicios en OTA de Backend', () {
+    late Directory tempDir;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('ota_bg_tasks_test_');
+    });
+
+    tearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test(
+        'deshabilita las 3 tareas antes de extraer y en éxito ejecuta /enable + instalar_tareas_bg.bat',
+        () async {
+      File(p.join(tempDir.path, 'artisan')).writeAsStringSync('<?php // artisan');
+      File(p.join(tempDir.path, 'instalar_tareas_bg.bat'))
+          .writeAsStringSync('@echo off');
+
+      final calls = <String>[];
+      final log = OtaLogger(tempDir.path);
+
+      final ok = await runWithBackendServicesSuspended<bool>(
+        targetDir: tempDir.path,
+        phpExe: 'php',
+        phpEnv: const {},
+        log: log,
+        postStopDelay: Duration.zero,
+        isActionSuccessful: (r) => r,
+        processRunner: (exe, args, {workingDirectory, environment}) {
+          calls.add('$exe ${args.join(' ')}');
+          return ProcessResult(1, 0, '', '');
+        },
+        action: () async {
+          calls.add('=== EXTRACT_AND_MIGRATE ===');
+          return true;
+        },
+      );
+
+      expect(ok, isTrue);
+      final extractIdx = calls.indexOf('=== EXTRACT_AND_MIGRATE ===');
+      expect(extractIdx, greaterThan(0));
+
+      // Antes de extraer, las 3 tareas deben haberse deshabilitado (/disable) y detenido (/end)
+      for (final task in kBackendScheduledTasks) {
+        final disableIdx =
+            calls.indexOf('schtasks /change /tn $task /disable');
+        final endIdx = calls.indexOf('schtasks /end /tn $task');
+        expect(disableIdx, greaterThanOrEqualTo(0));
+        expect(disableIdx, lessThan(extractIdx));
+        expect(endIdx, greaterThan(disableIdx));
+        expect(endIdx, lessThan(extractIdx));
+      }
+
+      // Después de extraer, las 3 tareas deben haberse re-habilitado (/enable) y refrescado vía bat
+      for (final task in kBackendScheduledTasks) {
+        final enableIdx = calls.indexOf('schtasks /change /tn $task /enable');
+        expect(enableIdx, greaterThan(extractIdx));
+      }
+      expect(
+        calls.any((c) => c.startsWith('cmd.exe /c ') && c.endsWith('instalar_tareas_bg.bat')),
+        isTrue,
+      );
+    });
+
+    test(
+        'garantiza /enable + schtasks /run en bloque finally incluso si la extracción/migración lanza excepción o instalar_tareas_bg.bat falla',
+        () async {
+      File(p.join(tempDir.path, 'instalar_tareas_bg.bat'))
+          .writeAsStringSync('@echo off');
+      final log = OtaLogger(tempDir.path);
+
+      // Caso A: Excepción fatal durante decodificación/extracción -> finally igual reactiva y relanza las 3 tareas
+      final callsOnThrow = <String>[];
+      await expectLater(
+        () => runWithBackendServicesSuspended<bool>(
+          targetDir: tempDir.path,
+          phpExe: 'php',
+          phpEnv: const {},
+          log: log,
+          postStopDelay: Duration.zero,
+          processRunner: (exe, args, {workingDirectory, environment}) {
+            callsOnThrow.add('$exe ${args.join(' ')}');
+            return ProcessResult(1, 0, '', '');
+          },
+          action: () async {
+            callsOnThrow.add('=== FATAL_ZIP_ERROR ===');
+            throw const FormatException('ZIP truncado');
+          },
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      final errIdx = callsOnThrow.indexOf('=== FATAL_ZIP_ERROR ===');
+      for (final task in kBackendScheduledTasks) {
+        final enableIdx =
+            callsOnThrow.indexOf('schtasks /change /tn $task /enable');
+        final runIdx = callsOnThrow.indexOf('schtasks /run /tn $task');
+        expect(enableIdx, greaterThan(errIdx),
+            reason: '$task no puede quedar deshabilitada tras fallo fatal');
+        expect(runIdx, greaterThan(enableIdx),
+            reason: '$task debe relanzarse tras re-habilitarse');
+      }
+
+      // Caso B: Acción exitosa pero instalar_tareas_bg.bat retorna exitCode=1 -> fallback ejecuta /enable + /run directo
+      final callsOnBatFail = <String>[];
+      final resBatFail = await runWithBackendServicesSuspended<bool>(
+        targetDir: tempDir.path,
+        phpExe: 'php',
+        phpEnv: const {},
+        log: log,
+        postStopDelay: Duration.zero,
+        isActionSuccessful: (r) => r,
+        processRunner: (exe, args, {workingDirectory, environment}) {
+          callsOnBatFail.add('$exe ${args.join(' ')}');
+          if (exe == 'cmd.exe') {
+            return ProcessResult(1, 1, '', 'Access denied');
+          }
+          return ProcessResult(1, 0, '', '');
+        },
+        action: () async => true,
+      );
+
+      expect(resBatFail, isTrue);
+      for (final task in kBackendScheduledTasksStartOrder) {
+        expect(callsOnBatFail, contains('schtasks /run /tn $task'));
+      }
+    });
+  });
 }
