@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/iibb_fiscal_calculator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -2496,26 +2497,38 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     return totalNet;
   }
 
-  bool get _isFiscalCuitSubjectToIibb =>
-      _voucherType == 1 ||
-      (_docType == 80 &&
-          _taxCondition != 'consumidor_final' &&
-          _taxCondition != 'exento');
+  bool _isFiscalCuitSubjectToIibb(BusinessSettings? settings) {
+    final normalizedCond =
+        IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition);
+    if (normalizedCond == 'consumidor_final') return false;
+    final subjectConditions = settings?.iibbSubjectTaxConditions ??
+        IibbFiscalCalculator.defaultSubjectConditions;
+    if (!subjectConditions.contains(normalizedCond)) return false;
+    return _voucherType == 1 || _docType == 80;
+  }
 
   bool get _qualifiesByCustomer {
     if (_selectedCustomer != null) {
+      final cond = IibbFiscalCalculator.normalizeTaxConditionKey(
+        _selectedCustomer!.taxCondition,
+      );
+      if (cond == 'consumidor_final') return false;
       return _selectedCustomer!.appliesIibbPerception ||
-          (_selectedCustomer!.documentType == 80 &&
-              _selectedCustomer!.taxCondition != 'consumidor_final' &&
-              _selectedCustomer!.taxCondition != 'exento');
+          _selectedCustomer!.documentType == 80;
     }
     return widget.sale.customerAppliesIibbPerception == true;
+  }
+
+  double _tributeBaseForSettings(BusinessSettings? settings) {
+    if (_voucherType == 11) return _baseGrossTotal;
+    if (settings?.isIibbGrossBase == true) return _baseGrossTotal;
+    return _taxableNetBase;
   }
 
   bool _showIibbSelectorBar(BusinessSettings? settings) {
     if (_existingSaleIibb > 0.009) return true;
     if (settings?.isIibbPerceptionAgent != true) return false;
-    return _qualifiesByCustomer || _isFiscalCuitSubjectToIibb;
+    return _qualifiesByCustomer || _isFiscalCuitSubjectToIibb(settings);
   }
 
   double _effectiveIibbRate(BusinessSettings? settings) {
@@ -2528,7 +2541,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     if (_existingSaleIibb > 0.009) {
       final savedRate = widget.sale.iibbPerceptionRate ?? 0.0;
       if (savedRate > 0.0) return savedRate;
-      final base = _taxableNetBase;
+      final base = _tributeBaseForSettings(settings);
       if (base > 0.0) return _round2((_existingSaleIibb / base) * 100.0);
       return 0.0;
     }
@@ -2548,7 +2561,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
           !_selectedCustomer!.appliesIibbPerception &&
               (_selectedCustomer!.iibbPerceptionRate ?? 0.0) > 0;
       if (hasExplicitlyDisabledCustomRate) return 0.0;
-      if (_isFiscalCuitSubjectToIibb) return defaultRate;
+      if (_isFiscalCuitSubjectToIibb(settings)) return defaultRate;
       return 0.0;
     }
 
@@ -2561,7 +2574,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
             (widget.sale.customerIibbPerceptionRate ?? 0.0) > 0;
     if (hasExplicitlyDisabledSaleCustRate) return 0.0;
 
-    if (_isFiscalCuitSubjectToIibb) return defaultRate;
+    if (_isFiscalCuitSubjectToIibb(settings)) return defaultRate;
     return 0.0;
   }
 
@@ -2574,7 +2587,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     }
     final rate = _effectiveIibbRate(settings);
     if (rate <= 0.0) return 0.0;
-    return _round2(_taxableNetBase * (rate / 100.0));
+    return _round2(_tributeBaseForSettings(settings) * (rate / 100.0));
   }
 
   double _totalToInvoice(BusinessSettings? settings) =>
