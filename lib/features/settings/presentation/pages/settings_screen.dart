@@ -12,6 +12,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/demo_environment_widgets.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/license_commercial_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -4959,8 +4960,148 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 48),
         const Divider(),
         const SizedBox(height: 24),
+        _buildDemoEnvironmentSection(provider),
         _buildBackupSection(provider),
         const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildDemoEnvironmentSection(SettingsProvider provider) {
+    bool isAdmin = false;
+    try {
+      isAdmin = context.read<AuthProvider>().isAdmin;
+    } catch (_) {}
+    final bool isDemoActive = provider.safeIsDemoModeActive;
+    final bool isEmptyTrial = (provider.settings?.isTrial == true) &&
+        provider.safeIsFreshEmptyTrialStore;
+
+    if (!isAdmin || (!isDemoActive && !isEmptyTrial)) {
+      return const SizedBox.shrink();
+    }
+
+    final Color accentColor =
+        isDemoActive ? const Color(0xFFB45309) : AppColors.indigo;
+    final Color bgColor =
+        isDemoActive ? const Color(0xFFFFFBEB) : const Color(0xFFEEF2FF);
+    final Color borderColor =
+        isDemoActive ? const Color(0xFFFCD34D) : const Color(0xFFC7D2FE);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          elevation: 0,
+          color: bgColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: borderColor),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isDemoActive
+                        ? Icons.cleaning_services_rounded
+                        : Icons.auto_awesome_rounded,
+                    color: accentColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isDemoActive
+                            ? 'Modo Exploración (Datos de Ejemplo Activos)'
+                            : 'Modo Exploración con Datos de Ejemplo',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: accentColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isDemoActive
+                            ? 'Cuando termines de evaluar el sistema podés limpiar los datos ficticios y empezar con tu negocio real en limpio (conservando tu licencia, usuarios e impresoras).'
+                            : 'Tu licencia de prueba todavía no tiene productos ni ventas cargadas. Podés poblar el sistema en segundos con ejemplos reales de tu rubro para explorar reportes, stock y caja.',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                if (isDemoActive)
+                  ElevatedButton.icon(
+                    key: const Key('settings_demo_reset_btn'),
+                    onPressed: provider.safeIsDemoActionBusy
+                        ? null
+                        : () => DemoResetConfirmDialog.show(context),
+                    icon: const Icon(Icons.cleaning_services_rounded, size: 17),
+                    label: const Text('Limpiar datos de ejemplo'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD97706),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    key: const Key('settings_demo_seed_btn'),
+                    onPressed: provider.safeIsDemoActionBusy
+                        ? null
+                        : () => DemoEnvironmentCoordinator.seedAndHydrate(
+                              context,
+                            ),
+                    icon: provider.safeIsDemoActionBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.auto_awesome_rounded, size: 17),
+                    label: Text(
+                      provider.safeIsDemoActionBusy
+                          ? 'Cargando...'
+                          : 'Cargar datos de ejemplo',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.indigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 24),
       ],
     );
   }

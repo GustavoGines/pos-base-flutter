@@ -259,19 +259,21 @@ class _LicenseCommercialDialogState extends State<LicenseCommercialDialog> {
                 color: const Color(0xFF10B981).withValues(alpha: 0.35),
               ),
             ),
-            child: const Row(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
+                const Icon(
                   Icons.verified_user_rounded,
                   color: Color(0xFF059669),
                   size: 20,
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Todos tus productos, precios, clientes, caja, ventas y configuración fiscal quedan 100% guardados en este equipo cuando actives tu plan.',
-                    style: TextStyle(
+                    settings?.demoModeActive == true
+                        ? 'Tu configuración, usuarios e impresoras quedan 100% guardados al activar tu plan, y podrás limpiar los datos de ejemplo con 1 clic cuando quieras empezar en real.'
+                        : 'Todos tus productos, precios, clientes, caja, ventas y configuración fiscal quedan 100% guardados en este equipo cuando actives tu plan.',
+                    style: const TextStyle(
                       fontSize: 13,
                       height: 1.4,
                       fontWeight: FontWeight.w600,

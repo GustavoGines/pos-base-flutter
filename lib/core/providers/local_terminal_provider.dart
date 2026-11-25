@@ -468,6 +468,20 @@ class LocalTerminalProvider extends ChangeNotifier {
 
   Future<void> clearRecentSearches() =>
       _clearRecentSearchesForScopeInternal(scopePosCounter);
+
+  /// Limpia pines locales y búsquedas recientes tras reiniciar un entorno Demo.
+  Future<void> clearDemoExplorationState() async {
+    _pinnedProductIds.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pinnedProductsKey);
+    for (final scope in _knownSearchScopes) {
+      _scopedRecentSearchTerms[scope] = [];
+      _scopedRecentSearchProductIds[scope] = [];
+      await prefs.remove(_termsKeyForScope(scope));
+      await prefs.remove(_productIdsKeyForScope(scope));
+    }
+    notifyListeners();
+  }
 }
 
 /// Extensión segura para múltiples scopes (`pos_counter`, `quotes`, `hardware_calc`, `catalog`).

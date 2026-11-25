@@ -94,6 +94,10 @@ class BusinessSettings extends Equatable {
   final bool licenseAllowOtaUpdates;
   final DateTime? licenseOtaUnlockedUntil;
   final String? licenseMaxUnlockedVersion;
+  final bool demoModeActive;
+  final bool demoOnboardingDismissed;
+  final bool isFreshEmptyStore;
+  final String? demoSeededAt;
 
   DateTime? get localLicenseExpiresAt => licenseExpiresAt?.toLocal();
 
@@ -349,6 +353,10 @@ class BusinessSettings extends Equatable {
     bool? licenseAllowOtaUpdates,
     DateTime? licenseOtaUnlockedUntil,
     String? licenseMaxUnlockedVersion,
+    bool? demoModeActive,
+    bool? demoOnboardingDismissed,
+    bool? isFreshEmptyStore,
+    String? demoSeededAt,
     String? logoPath,
     String? logoUrl,
     double? globalWholesalePercentage,
@@ -399,6 +407,11 @@ class BusinessSettings extends Equatable {
           licenseOtaUnlockedUntil ?? this.licenseOtaUnlockedUntil,
       licenseMaxUnlockedVersion:
           licenseMaxUnlockedVersion ?? this.licenseMaxUnlockedVersion,
+      demoModeActive: demoModeActive ?? this.demoModeActive,
+      demoOnboardingDismissed:
+          demoOnboardingDismissed ?? this.demoOnboardingDismissed,
+      isFreshEmptyStore: isFreshEmptyStore ?? this.isFreshEmptyStore,
+      demoSeededAt: demoSeededAt ?? this.demoSeededAt,
       logoPath: logoPath ?? this.logoPath,
       logoUrl: logoUrl ?? this.logoUrl,
       globalWholesalePercentage: globalWholesalePercentage ?? this.globalWholesalePercentage,
@@ -450,6 +463,10 @@ class BusinessSettings extends Equatable {
     this.licenseAllowOtaUpdates = true,
     this.licenseOtaUnlockedUntil,
     this.licenseMaxUnlockedVersion,
+    this.demoModeActive = false,
+    this.demoOnboardingDismissed = false,
+    this.isFreshEmptyStore = false,
+    this.demoSeededAt,
     this.logoPath,
     this.logoUrl,
     this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
@@ -499,6 +516,10 @@ class BusinessSettings extends Equatable {
         licenseAllowOtaUpdates,
         licenseOtaUnlockedUntil,
         licenseMaxUnlockedVersion,
+    demoModeActive,
+    demoOnboardingDismissed,
+    isFreshEmptyStore,
+    demoSeededAt,
         logoPath,
         logoUrl,
         globalWholesalePercentage,

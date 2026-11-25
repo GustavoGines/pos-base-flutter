@@ -33,6 +33,7 @@ import 'core/theme/app_theme.dart';
 import 'features/updater/data/services/ota_startup_checker.dart';
 
 import 'core/presentation/widgets/app_modal_shell.dart';
+import 'core/presentation/widgets/demo_environment_widgets.dart';
 import 'core/presentation/widgets/license_guard.dart';
 import 'core/presentation/widgets/caja4u_startup_splash.dart';
 import 'core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -1658,7 +1659,11 @@ class _MainAppState extends State<MainApp> {
         final Widget guardedChild = LicenseGuard(
           routeNotifier: _currentRoute,
           navigatorKey: navigatorKey,
-          child: child!,
+          child: _DemoModeViewportFrame(
+            routeNotifier: _currentRoute,
+            navigatorKey: navigatorKey,
+            child: child!,
+          ),
         );
 
         // Protección GLOBAL anti-overflow para ventanas estrechas
@@ -1923,7 +1928,7 @@ class _MainAppState extends State<MainApp> {
   }
 
   Widget _buildHomeScreen() {
-    return Consumer<CashRegisterProvider>(
+    final content = Consumer<CashRegisterProvider>(
       builder: (ctx, cashProv, _) {
         if (AppConfig.isMobile) {
           return const MobileMenuScreen();
@@ -1981,6 +1986,11 @@ class _MainAppState extends State<MainApp> {
           },
         );
       },
+    );
+    if (AppConfig.isMobile) return content;
+    return _HomeDemoOnboardingGate(
+      navigatorKey: navigatorKey,
+      child: content,
     );
   }
 }
@@ -2093,5 +2103,95 @@ class _NetworkSettingsDialogState extends State<_NetworkSettingsDialog> {
         ),
       ],
     );
+  }
+}
+
+class _DemoModeViewportFrame extends StatelessWidget {
+  final ValueNotifier<String?> routeNotifier;
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget child;
+
+  const _DemoModeViewportFrame({
+    required this.routeNotifier,
+    required this.navigatorKey,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppConfig.isMobile) return child;
+    return ValueListenableBuilder<String?>(
+      valueListenable: routeNotifier,
+      builder: (ctx, route, _) {
+        final settingsProv = ctx.watch<SettingsProvider>();
+        final authProv = ctx.watch<AuthProvider>();
+        final bool showBanner = authProv.isAuthenticated &&
+            settingsProv.safeIsDemoModeActive &&
+            route != '/login';
+        if (!showBanner) return child;
+        return Column(
+          children: [
+            DemoModeBanner(
+              isAdmin: authProv.isAdmin,
+              navigatorKey: navigatorKey,
+            ),
+            Expanded(child: child),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HomeDemoOnboardingGate extends StatefulWidget {
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget child;
+
+  const _HomeDemoOnboardingGate({
+    required this.navigatorKey,
+    required this.child,
+  });
+
+  @override
+  State<_HomeDemoOnboardingGate> createState() =>
+      _HomeDemoOnboardingGateState();
+}
+
+class _HomeDemoOnboardingGateState extends State<_HomeDemoOnboardingGate> {
+  bool _dialogTriggered = false;
+
+  void _maybeTriggerOnboarding(
+    BuildContext context,
+    SettingsProvider settingsProv,
+    AuthProvider authProv,
+  ) {
+    if (_dialogTriggered || AppConfig.isMobile) return;
+    final settings = settingsProv.settings;
+    if (!authProv.isAuthenticated ||
+        !authProv.isAdmin ||
+        settings == null ||
+        !settings.isTrial ||
+        !settings.isFreshEmptyStore ||
+        settings.demoOnboardingDismissed ||
+        settings.demoModeActive) {
+      return;
+    }
+    _dialogTriggered = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final targetCtx = widget.navigatorKey.currentContext ?? context;
+      DemoOnboardingDialog.show(
+        targetCtx,
+        verticalProfile: settingsProv.safeVerticalProfile,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsProv = context.watch<SettingsProvider>();
+    final authProv = context.watch<AuthProvider>();
+    _maybeTriggerOnboarding(context, settingsProv, authProv);
+    return widget.child;
   }
 }

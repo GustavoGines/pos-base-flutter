@@ -27,6 +27,10 @@ class BusinessSettingsModel extends BusinessSettings {
     super.licenseAllowOtaUpdates,
     super.licenseOtaUnlockedUntil,
     super.licenseMaxUnlockedVersion,
+    super.demoModeActive = false,
+    super.demoOnboardingDismissed = false,
+    super.isFreshEmptyStore = false,
+    super.demoSeededAt,
     super.logoPath,
     super.logoUrl,
     super.globalWholesalePercentage,
@@ -206,6 +210,17 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseMaxUnlockedVersion:
           (json['license_max_unlocked_version']?.toString().trim().isNotEmpty ?? false)
               ? json['license_max_unlocked_version'].toString().trim()
+              : null,
+      demoModeActive: json['demo_mode_active']?.toString() == '1' ||
+          json['demo_mode_active'] == true,
+      demoOnboardingDismissed:
+          json['demo_onboarding_dismissed']?.toString() == '1' ||
+              json['demo_onboarding_dismissed'] == true,
+      isFreshEmptyStore: json['is_fresh_empty_store']?.toString() == '1' ||
+          json['is_fresh_empty_store'] == true,
+      demoSeededAt:
+          (json['demo_seeded_at']?.toString().trim().isNotEmpty ?? false)
+              ? json['demo_seeded_at'].toString().trim()
               : null,
       logoPath: json['logo_path']?.toString(),
       logoUrl: resolveImageUrl(json['logo_url']?.toString()) ??

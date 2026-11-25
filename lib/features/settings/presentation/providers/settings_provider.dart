@@ -799,6 +799,77 @@ class SettingsProvider with ChangeNotifier {
       });
     }
   }
+
+  Map<String, dynamic>? _demoStatus;
+  bool _isDemoActionBusy = false;
+
+  Map<String, dynamic>? get demoStatus => _demoStatus;
+  bool get isDemoActionBusy => _isDemoActionBusy;
+  bool get isDemoModeActive => _settings?.demoModeActive == true;
+  bool get isFreshEmptyTrialStore => _settings?.isFreshEmptyStore == true;
+  bool get isDemoOnboardingDismissed => _settings?.demoOnboardingDismissed == true;
+
+  Future<Map<String, dynamic>> fetchDemoStatus({bool silent = false}) async {
+    final res = await getSettingsUseCase.repository.fetchDemoStatus();
+    if (res['success'] == true) {
+      _demoStatus = Map<String, dynamic>.from(res);
+      if (!silent) notifyListeners();
+    }
+    return res;
+  }
+
+  Future<Map<String, dynamic>> seedDemoEnvironment() async {
+    _isDemoActionBusy = true;
+    notifyListeners();
+    try {
+      final res = await getSettingsUseCase.repository.seedDemoEnvironment();
+      if (res['success'] == true) {
+        if (res['status'] is Map<String, dynamic>) {
+          _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+        }
+        await loadSettings(isSilent: true);
+      }
+      return res;
+    } finally {
+      _isDemoActionBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> dismissDemoOnboarding() async {
+    final res = await getSettingsUseCase.repository.dismissDemoOnboarding();
+    if (res['success'] == true) {
+      if (res['status'] is Map<String, dynamic>) {
+        _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+      }
+      await loadSettings(isSilent: true);
+    }
+    return res;
+  }
+
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  }) async {
+    _isDemoActionBusy = true;
+    notifyListeners();
+    try {
+      final res = await getSettingsUseCase.repository.resetDemoEnvironment(
+        adminPin: adminPin,
+        confirmationText: confirmationText,
+      );
+      if (res['success'] == true) {
+        if (res['status'] is Map<String, dynamic>) {
+          _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+        }
+        await loadSettings(isSilent: true);
+      }
+      return res;
+    } finally {
+      _isDemoActionBusy = false;
+      notifyListeners();
+    }
+  }
 }
 
 extension SettingsProviderHardwareCalcX on SettingsProvider {
@@ -919,6 +990,39 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
           : BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     } catch (_) {
       return BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    }
+  }
+
+  /// Getters seguros para Modo Exploración Demo compatibles con mocks heredados.
+  bool get safeIsDemoModeActive {
+    try {
+      return settings?.demoModeActive == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsFreshEmptyTrialStore {
+    try {
+      return settings?.isFreshEmptyStore == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsDemoOnboardingDismissed {
+    try {
+      return settings?.demoOnboardingDismissed == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsDemoActionBusy {
+    try {
+      return isDemoActionBusy;
+    } catch (_) {
+      return false;
     }
   }
 }

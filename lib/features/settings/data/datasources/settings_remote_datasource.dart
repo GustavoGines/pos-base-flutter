@@ -40,6 +40,13 @@ abstract class SettingsRemoteDataSource {
   Future<EcommerceIntegrationModel> toggleEcommerceActive(int id);
   Future<Map<String, dynamic>> importEcommerceCatalog(int id);
   Future<Map<String, dynamic>> exportEcommerceCatalog(int id);
+  Future<Map<String, dynamic>> fetchDemoStatus();
+  Future<Map<String, dynamic>> seedDemoEnvironment();
+  Future<Map<String, dynamic>> dismissDemoOnboarding();
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  });
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -818,4 +825,84 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
       };
     }
   }
+
+  Future<Map<String, dynamic>> _callDemoEndpoint(
+    String path, {
+    bool isPost = false,
+    Map<String, dynamic>? body,
+    required String fallbackError,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$path');
+      final headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      };
+      final response = isPost
+          ? await client.post(uri, headers: headers, body: json.encode(body ?? {}))
+          : await client.get(uri, headers: headers);
+
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {
+          'success': true,
+          ...decoded,
+        };
+      }
+      return {
+        'success': false,
+        'status_code': response.statusCode,
+        'message': decoded['message']?.toString() ?? fallbackError,
+        ...decoded,
+      };
+    } on FormatException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      return {
+        'success': false,
+        'message': '$fallbackError: $e',
+      };
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchDemoStatus() => _callDemoEndpoint(
+        '/system/demo/status',
+        fallbackError: 'No se pudo consultar el estado del modo demo',
+      );
+
+  @override
+  Future<Map<String, dynamic>> seedDemoEnvironment() => _callDemoEndpoint(
+        '/system/demo/seed',
+        isPost: true,
+        fallbackError: 'Error al cargar los datos de ejemplo',
+      );
+
+  @override
+  Future<Map<String, dynamic>> dismissDemoOnboarding() => _callDemoEndpoint(
+        '/system/demo/dismiss-onboarding',
+        isPost: true,
+        fallbackError: 'No se pudo omitir la invitación inicial',
+      );
+
+  @override
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  }) =>
+      _callDemoEndpoint(
+        '/system/demo/reset',
+        isPost: true,
+        body: {
+          'admin_pin': adminPin,
+          'confirmation_text': confirmationText,
+        },
+        fallbackError: 'No se pudieron limpiar los datos de ejemplo',
+      );
 }
