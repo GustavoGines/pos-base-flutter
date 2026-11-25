@@ -1000,14 +1000,18 @@ class _AppBootstrapState extends State<AppBootstrap> {
                 ),
                 const SizedBox(height: 24),
                 if (_isBootstrapping && _bootstrapError == null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: const SizedBox(
-                      width: 180,
-                      height: 4,
-                      child: LinearProgressIndicator(
-                        backgroundColor: Colors.white12,
-                        color: Color(0xFF10B981),
+                  RepaintBoundary(
+                    child: ExcludeSemantics(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: const SizedBox(
+                          width: 180,
+                          height: 4,
+                          child: LinearProgressIndicator(
+                            backgroundColor: Colors.white12,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1539,14 +1543,18 @@ class _MainAppState extends State<MainApp> {
                   ),
                   const SizedBox(height: 24),
                   if (_initError == null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: const SizedBox(
-                        width: 180,
-                        height: 4,
-                        child: LinearProgressIndicator(
-                          backgroundColor: Colors.white12,
-                          color: Color(0xFF10B981),
+                    RepaintBoundary(
+                      child: ExcludeSemantics(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: const SizedBox(
+                            width: 180,
+                            height: 4,
+                            child: LinearProgressIndicator(
+                              backgroundColor: Colors.white12,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
                         ),
                       ),
                     ),

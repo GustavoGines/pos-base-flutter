@@ -2508,6 +2508,10 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
   }
 
   bool get _qualifiesByCustomer {
+    if (IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition) ==
+        'consumidor_final') {
+      return false;
+    }
     if (_selectedCustomer != null) {
       final cond = IibbFiscalCalculator.normalizeTaxConditionKey(
         _selectedCustomer!.taxCondition,
@@ -2532,6 +2536,11 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
   }
 
   double _effectiveIibbRate(BusinessSettings? settings) {
+    if (_existingSaleIibb <= 0.009 &&
+        IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition) ==
+            'consumidor_final') {
+      return 0.0;
+    }
     if (!_showIibbSelectorBar(settings) && _existingSaleIibb <= 0.009) {
       return 0.0;
     }
@@ -2579,6 +2588,11 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
   }
 
   double _currentIibbAmount(BusinessSettings? settings) {
+    if (_existingSaleIibb <= 0.009 &&
+        IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition) ==
+            'consumidor_final') {
+      return 0.0;
+    }
     if (!_showIibbSelectorBar(settings) && _existingSaleIibb <= 0.009) {
       return 0.0;
     }
@@ -3404,27 +3418,44 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                     ),
                     SegmentedButton<int>(
                       showSelectedIcon: false,
-                      style: const ButtonStyle(
+                      style: SegmentedButton.styleFrom(
                         visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 0),
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF334155),
+                        selectedBackgroundColor: Colors.indigo.shade800,
+                        selectedForegroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFF1F5F9),
+                        disabledForegroundColor: const Color(0xFF94A3B8),
+                        side: BorderSide(color: Colors.indigo.shade300),
+                      ).copyWith(
+                        textStyle: WidgetStateProperty.resolveWith((states) {
+                          final isSelected =
+                              states.contains(WidgetState.selected);
+                          return TextStyle(
+                            fontSize: 12,
+                            fontWeight:
+                                isSelected ? FontWeight.w700 : FontWeight.w600,
+                          );
+                        }),
                       ),
                       segments: [
                         ButtonSegment<int>(
                           value: 1,
                           enabled: !isIssuerMonotributo,
-                          label: const Text('Factura A',
-                              style: TextStyle(fontSize: 12)),
+                          label: const Text('Factura A'),
                         ),
                         ButtonSegment<int>(
                           value: 6,
                           enabled: !isIssuerMonotributo,
-                          label: const Text('Factura B',
-                              style: TextStyle(fontSize: 12)),
+                          label: const Text('Factura B'),
                         ),
                         ButtonSegment<int>(
                           value: 11,
                           enabled: !isIssuerInscripto,
-                          label: const Text('Factura C',
-                              style: TextStyle(fontSize: 12)),
+                          label: const Text('Factura C'),
                         ),
                       ],
                       selected: {_voucherType},

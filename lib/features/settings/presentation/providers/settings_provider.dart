@@ -740,27 +740,90 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
       (settings?.canUseHardwareCalculator == true) &&
       !LicenseHeartbeatService().isBlocked;
 
-  /// Verifica acceso contextual a Calculadora F7 considerando licencia,
-  /// producto con `calcConfig` o Rubro `hardware_store` en modo `multi_rubro`.
+  /// Verifica acceso contextual a Calculadora F7 respetando estrictamente la licencia,
+  /// el rubro comercial licenciado y el módulo `multi_rubro`:
+  /// - Sin `multi_rubro` (ej. Plan Básico): exige rubro `hardware_store` activo; jamás habilita
+  ///   la calculadora en `apparel`, `retail`, `butcher`, `tech` o `general` aunque el producto
+  ///   tenga `calcConfig` o categorías demo/legadas en BD.
+  /// - Con `multi_rubro` (Plan PRO / Premium): habilita globalmente si hay rubro ferretero, y por
+  ///   producto únicamente cuando el artículo pertenece a un rubro `hardware_store` o tiene `calcConfig`.
   bool canUseHardwareCalculatorFor({
     Product? product,
     Iterable<Rubro> rubros = const [],
   }) {
     if (LicenseHeartbeatService().isBlocked) return false;
-    if (canUseHardwareCalculator) return true;
-    if (product != null && product.hasHardwareCalcAccess) return true;
+
+    BusinessSettings? s;
+    try {
+      s = settings;
+    } catch (_) {
+      s = null;
+    }
+
+    if (s != null && !s.hasValidCalculatorLicense) {
+      return false;
+    }
+
     bool hasMultiRubro = false;
     try {
-      hasMultiRubro = settings?.features.multiRubro == true;
-    } catch (_) {}
-    if (hasMultiRubro) {
-      for (final r in rubros) {
-        final vt = r.verticalType?.trim().toLowerCase() ?? '';
-        final rName = r.name.trim().toLowerCase();
-        if (vt == BusinessVerticalProfile.hardwareStore ||
-            RegExp(r'ferret|mader|corral').hasMatch(rName)) {
-          return true;
+      hasMultiRubro = s?.features.multiRubro ?? features.multiRubro;
+    } catch (_) {
+      hasMultiRubro = false;
+    }
+
+    String? resolveRubroVertical(Rubro? r) {
+      if (r == null) return null;
+      final vt = r.verticalType?.trim().toLowerCase() ?? '';
+      if (BusinessVerticalProfile.allVerticalCodes.contains(vt)) {
+        return vt;
+      }
+      return BusinessVerticalProfile.inferVerticalCodeFromRubroName(r.name);
+    }
+
+    Rubro? resolveProductRubro(Product p) {
+      final rId = p.category?.rubroId ?? p.category?.rubro?.id;
+      if (rId != null) {
+        for (final r in rubros) {
+          if (r.id == rId) return r;
         }
+      }
+      return p.category?.rubro;
+    }
+
+    final storeHasHardware =
+        s != null ? s.canUseHardwareCalculator : safeIsHardwareStore;
+
+    if (!hasMultiRubro) {
+      if (!storeHasHardware) return false;
+      // En Polirrubro Mixto (secondaryBusinessTypes sin multi_rubro), ocultar en ítems de otro rubro explícito
+      if (product != null &&
+          (s?.secondaryBusinessTypes.isNotEmpty ?? false) &&
+          (product.calcConfig == null || product.calcConfig!.isEmpty)) {
+        final itemVert = resolveRubroVertical(resolveProductRubro(product));
+        if (itemVert != null &&
+            itemVert != BusinessVerticalProfile.hardwareStore) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Modo Multi-Rubro (Plan PRO / Premium)
+    if (product != null) {
+      if (product.calcConfig != null && product.calcConfig!.isNotEmpty) {
+        return true;
+      }
+      final itemVert = resolveRubroVertical(resolveProductRubro(product));
+      if (itemVert != null) {
+        return itemVert == BusinessVerticalProfile.hardwareStore;
+      }
+      return storeHasHardware;
+    }
+
+    if (storeHasHardware) return true;
+    for (final r in rubros) {
+      if (resolveRubroVertical(r) == BusinessVerticalProfile.hardwareStore) {
+        return true;
       }
     }
     return false;

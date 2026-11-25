@@ -379,6 +379,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
     final settings = context.read<SettingsProvider>().settings;
     if (settings?.isIibbPerceptionAgent != true) return 0.0;
+    if (_isFiscalMode &&
+        IibbFiscalCalculator.normalizeTaxConditionKey(_fiscalTaxCondition) ==
+            'consumidor_final') {
+      return 0.0;
+    }
 
     final customer = _effectiveIibbCustomer;
     if (customer?.appliesIibbPerception == true) {
@@ -1655,6 +1660,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   double get _currentIibbAmount {
     if (_frozenIibbAmount != null) return _frozenIibbAmount!;
+    if (_isFiscalMode &&
+        IibbFiscalCalculator.normalizeTaxConditionKey(_fiscalTaxCondition) ==
+            'consumidor_final') {
+      return 0.0;
+    }
     // FINDING-SALES-09: Si es una venta diferida cobrada desde la lista (widget.saleId != null)
     // o el carrito fue limpiado en fondo, usar overrideTotal: widget.total para no caer a $0.
     final posProvider = context.read<PosProvider>();
@@ -2922,22 +2932,38 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               SegmentedButton<bool>(
                 key: const Key('fiscal_mode_segmented_button'),
                 showSelectedIcon: false,
-                style: const ButtonStyle(
+                style: SegmentedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF334155),
+                  selectedBackgroundColor: _isFiscalMode
+                      ? Colors.indigo.shade800
+                      : const Color(0xFF334155),
+                  selectedForegroundColor: Colors.white,
+                  side: BorderSide(
+                    color: _isFiscalMode
+                        ? Colors.indigo.shade300
+                        : const Color(0xFFCBD5E1),
                   ),
+                ).copyWith(
+                  textStyle: WidgetStateProperty.resolveWith((states) {
+                    final isSelected = states.contains(WidgetState.selected);
+                    return TextStyle(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                    );
+                  }),
                 ),
                 segments: const [
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text('Ticket Común', style: TextStyle(fontSize: 11)),
+                    label: Text('Ticket Común'),
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text('Factura Fiscal ARCA',
-                        style: TextStyle(fontSize: 11)),
+                    label: Text('Factura Fiscal ARCA'),
                   ),
                 ],
                 selected: {_isFiscalMode},
@@ -3006,31 +3032,41 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 SegmentedButton<int>(
                   key: const Key('voucher_type_segmented_button'),
                   showSelectedIcon: false,
-                  style: const ButtonStyle(
+                  style: SegmentedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF334155),
+                    selectedBackgroundColor: Colors.indigo.shade800,
+                    selectedForegroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFF1F5F9),
+                    disabledForegroundColor: const Color(0xFF94A3B8),
+                    side: BorderSide(color: Colors.indigo.shade300),
+                  ).copyWith(
+                    textStyle: WidgetStateProperty.resolveWith((states) {
+                      final isSelected = states.contains(WidgetState.selected);
+                      return TextStyle(
+                        fontSize: 11,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                      );
+                    }),
                   ),
                   segments: [
                     ButtonSegment<int>(
                       value: 1,
                       enabled: !isIssuerMonotributo,
-                      label:
-                          const Text('Factura A', style: TextStyle(fontSize: 11)),
+                      label: const Text('Factura A'),
                     ),
                     ButtonSegment<int>(
                       value: 6,
                       enabled: !isIssuerMonotributo,
-                      label:
-                          const Text('Factura B', style: TextStyle(fontSize: 11)),
+                      label: const Text('Factura B'),
                     ),
                     ButtonSegment<int>(
                       value: 11,
                       enabled: !isIssuerInscripto,
-                      label:
-                          const Text('Factura C', style: TextStyle(fontSize: 11)),
+                      label: const Text('Factura C'),
                     ),
                   ],
                   selected: {_voucherType},
@@ -5748,7 +5784,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             (targetCustomer.documentType == 80 &&
                 (settings?.isTaxConditionSubjectToIibb(customerCondKey) ??
                     customerCondKey == 'responsable_inscripto')));
-    if (!qualifiesByCustomer && !_isFiscalCuitSubjectToIibb) {
+    final hasActivePerception = _currentIibbAmount > 0.009;
+    final hasCustomOverride = _customIibbRateOverride != null;
+    if (!hasActivePerception &&
+        !hasCustomOverride &&
+        !qualifiesByCustomer &&
+        !_isFiscalCuitSubjectToIibb) {
       return const SizedBox.shrink();
     }
 

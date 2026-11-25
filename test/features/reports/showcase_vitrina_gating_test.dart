@@ -32,6 +32,7 @@ import 'package:frontend_desktop/features/pos/domain/usecases/search_products_us
 import 'package:frontend_desktop/features/pos/presentation/pages/pos_screen.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
+import 'package:frontend_desktop/features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'package:frontend_desktop/features/reports/data/datasources/reports_remote_datasource.dart';
 import 'package:frontend_desktop/features/reports/presentation/pages/reports_screen.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
@@ -152,10 +153,12 @@ class _FakeInventoryAlertsProvider extends ChangeNotifier
 }
 
 class _FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
-  _FakeCatalogProvider();
+  final List<Product> _products;
+  _FakeCatalogProvider({List<Product> products = const []})
+      : _products = products;
 
   @override
-  List<Product> get products => const [];
+  List<Product> get products => _products;
   @override
   List<Category> get categories => const [];
   @override
@@ -322,6 +325,30 @@ PosProvider _buildPosProvider() {
 
 ReportsProvider _buildReportsProvider() {
   final client = MockClient((req) async {
+    if (req.url.path.contains('/reports/monthly-balance')) {
+      return http.Response(
+        jsonEncode({
+          'months': [
+            {
+              'period': '2026-11',
+              'label': 'Nov 2026',
+              'total_revenue': 85000,
+              'total_cost': 60000,
+              'total_profit': 25000,
+              'margin_pct': 29.4,
+            },
+          ],
+          'totals': {
+            'total_revenue': 85000,
+            'total_cost': 60000,
+            'total_profit': 25000,
+            'avg_margin_pct': 29.4,
+          },
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    }
     if (req.url.path.contains('/reports/vat-sales')) {
       return http.Response(
         jsonEncode({
@@ -367,6 +394,7 @@ ReportsProvider _buildReportsProvider() {
   });
   return ReportsProvider(
     dataSource: ReportsRemoteDataSource(baseUrl: 'http://localhost/api', client: client),
+    balanceDataSource: InventoryAlertsDataSource(baseUrl: 'http://localhost/api', client: client),
   );
 }
 
@@ -430,7 +458,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('2. ReportsScreen en Plan Básico muestra ventas básicas y bloquea métricas/exportaciones/pestañas PRO en 1366x768 y 960x720', (tester) async {
+    testWidgets('2. ReportsScreen en Plan Básico habilita Reportes Generales (con Ganancia/Margen/Exportaciones) y Balance Mensual, dejando en vitrina PRO Rubro/Gastos/Consumo', (tester) async {
       for (final viewport in [const Size(1366, 768), const Size(960, 720)]) {
         await tester.binding.setSurfaceSize(viewport);
 
@@ -438,7 +466,7 @@ void main() {
           const BusinessSettings(
             licensePlanType: 'basic',
             features: FeatureFlags(
-              advancedReports: false,
+              advancedReports: true,
               expenses: false,
               currentAccounts: false,
               multiRubro: false,
@@ -468,30 +496,40 @@ void main() {
         expect(reportsProv.error, isNull, reason: 'ReportsProvider error: ${reportsProv.error}');
         expect(reportsProv.reportData, isNotEmpty);
         expect(find.text('Facturación Total'), findsOneWidget);
+        expect(find.text('Ganancia Neta'), findsOneWidget);
+        expect(find.text('Margen Promedio'), findsOneWidget);
         expect(find.text('\$85.000'), findsWidgets);
-        expect(find.text('Plan PRO'), findsNWidgets(2));
+        expect(find.text('\$25.000'), findsWidgets);
+        expect(find.text('Exportar Excel'), findsOneWidget);
+        expect(find.text('Generar PDF'), findsOneWidget);
         expect(find.text('Balance Mensual'), findsOneWidget);
         expect(find.text('Análisis de Gastos'), findsOneWidget);
         expect(find.text('Consumo Interno'), findsOneWidget);
 
-        // Exportar Excel bloqueado abre PlanUpgradeDialog
-        await tester.tap(find.text('Exportar Excel'));
+        // Por Rubro sigue bloqueado con PRO cuando multiRubro == false
+        await tester.tap(find.text('Por Rubro'));
         await tester.pumpAndSettle();
         expect(find.byType(PlanUpgradeDialog), findsOneWidget);
         await tester.tap(find.text('Cerrar'));
         await tester.pumpAndSettle();
 
-        // Pestaña Balance Mensual muestra PremiumShowcaseCard
+        // Pestaña Balance Mensual habilitada en Básico con nota sutil de Gastos PRO
         await tester.tap(find.text('Balance Mensual'));
         await tester.pumpAndSettle();
+        expect(find.byType(PremiumShowcaseCard), findsNothing);
+        expect(find.byKey(const ValueKey('monthly_balance_expenses_pro_hint')), findsOneWidget);
+
+        // Análisis de Gastos muestra vitrina PremiumShowcaseCard
+        await tester.tap(find.text('Análisis de Gastos'));
+        await tester.pumpAndSettle();
         expect(find.byType(PremiumShowcaseCard), findsOneWidget);
-        expect(find.text('Balance Mensual y Rentabilidad'), findsOneWidget);
+        expect(find.text('Análisis Inteligente de Gastos'), findsOneWidget);
         expect(tester.takeException(), isNull);
       }
       await tester.binding.setSurfaceSize(null);
     });
 
-    testWidgets('3. VatManagementTab en Básico RI aterriza en Libro IVA Ventas con exportaciones bloqueadas y vitrina en Posición/Compras', (tester) async {
+    testWidgets('3. VatManagementTab en Básico RI habilita Libro IVA Ventas + Excel/PDF contador, dejando Libro IVA Digital (PREMIUM) y Posición/Compras en vitrina', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1366, 768));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -502,7 +540,7 @@ void main() {
           features: FeatureFlags(
             arcaAfip: true,
             suppliers: false,
-            advancedReports: false,
+            advancedReports: true,
           ),
         ),
       );
@@ -519,9 +557,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Inicia automáticamente en Libro IVA Ventas
+      // Inicia automáticamente en Libro IVA Ventas con Excel y PDF habilitados
       expect(find.byType(VatSalesReportView), findsOneWidget);
+      expect(find.text('Exportar Excel Contador'), findsOneWidget);
+      expect(find.text('Exportar PDF'), findsOneWidget);
       expect(find.text('Libro IVA Digital'), findsOneWidget);
+      // En VatSalesReportView básico solo Libro IVA Digital lleva el pill PREMIUM
+      expect(
+        find.descendant(
+          of: find.byType(VatSalesReportView),
+          matching: find.text('PREMIUM'),
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Libro IVA Digital'));
       await tester.pumpAndSettle();
@@ -636,13 +684,39 @@ void main() {
           findsOneWidget,
           reason: 'Debe mostrar Producción 🔒 ADDON en $foodType',
         );
+        // Botón Rubros bloqueado con PRO en Básico y abre PlanUpgradeDialog con WhatsApp
+        final rubrosBtn = find.byKey(const ValueKey('catalog_rubros_btn'));
+        expect(rubrosBtn, findsOneWidget);
+        expect(
+          find.descendant(of: rubrosBtn, matching: find.text('PRO')),
+          findsOneWidget,
+          reason: 'Rubros debe mostrarse bloqueado PRO en Básico ($foodType)',
+        );
+        await tester.tap(rubrosBtn);
+        await tester.pumpAndSettle();
+        expect(find.byType(PlanUpgradeDialog), findsOneWidget);
+        expect(find.textContaining('+54 9 3704 36-7202'), findsOneWidget);
+        await tester.tap(find.text('Cerrar'));
+        await tester.pumpAndSettle();
+
         await tester.tap(find.byKey(const ValueKey('catalog_toggle_filters_btn')));
         await tester.pumpAndSettle();
+        final lockedSupplierFinder =
+            find.byKey(const ValueKey('catalog_locked_supplier_filter'));
         expect(
-          find.byKey(const ValueKey('catalog_locked_supplier_filter')),
+          lockedSupplierFinder,
           findsOneWidget,
           reason: 'Debe mostrar Proveedor 🔒 PRO en $foodType',
         );
+        final decorator = tester.widget<InputDecorator>(
+          find.descendant(
+            of: lockedSupplierFinder,
+            matching: find.byType(InputDecorator),
+          ),
+        );
+        expect(decorator.isEmpty, isFalse,
+            reason: 'isEmpty debe ser false para que la etiqueta Proveedor flote sin superponerse');
+        expect(decorator.decoration.labelText, 'Proveedor');
         expect(tester.takeException(), isNull);
       }
 
@@ -653,6 +727,20 @@ void main() {
           findsNothing,
           reason: 'Nunca debe mostrar Producción en $nonFoodType',
         );
+        final rubrosBtn = find.byKey(const ValueKey('catalog_rubros_btn'));
+        expect(rubrosBtn, findsOneWidget);
+        expect(
+          find.descendant(of: rubrosBtn, matching: find.text('PRO')),
+          findsOneWidget,
+          reason: 'Rubros debe mostrarse bloqueado PRO en Básico ($nonFoodType)',
+        );
+        await tester.tap(rubrosBtn);
+        await tester.pumpAndSettle();
+        expect(find.byType(PlanUpgradeDialog), findsOneWidget);
+        expect(find.textContaining('+54 9 3704 36-7202'), findsOneWidget);
+        await tester.tap(find.text('Cerrar'));
+        await tester.pumpAndSettle();
+
         await tester.tap(find.byKey(const ValueKey('catalog_toggle_filters_btn')));
         await tester.pumpAndSettle();
         expect(
@@ -662,6 +750,111 @@ void main() {
         );
         expect(tester.takeException(), isNull);
       }
+    });
+
+    testWidgets('5b. CatalogScreen muestra Proveedor bloqueado PRO tanto en Clasificación Rápida individual como en selección por Lote múltiple', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1366, 768));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final sampleProducts = [
+        Product(
+          id: 101,
+          name: 'Canelones de Verdura y Ricota x2',
+          internalCode: 'ROT-101',
+          costPrice: 12000,
+          sellingPrice: 28500,
+          stock: 15,
+          active: true,
+          isSoldByWeight: false,
+        ),
+        Product(
+          id: 102,
+          name: 'Sorrentinos de Jamón y Queso x12',
+          internalCode: 'ROT-102',
+          costPrice: 14000,
+          sellingPrice: 31000,
+          stock: 10,
+          active: true,
+          isSoldByWeight: false,
+        ),
+      ];
+
+      final settingsProv = _FakeSettingsProvider(
+        const BusinessSettings(
+          licensePlanType: 'basic',
+          businessType: 'retail',
+          features: FeatureFlags(
+            suppliers: false,
+            multiRubro: false,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<CatalogProvider>.value(
+              value: _FakeCatalogProvider(products: sampleProducts),
+            ),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settingsProv),
+            ChangeNotifierProvider<SupplierProvider>.value(value: _FakeSupplierProvider()),
+            ChangeNotifierProvider<LocalTerminalProvider>.value(value: _FakeLocalTerminalProvider()),
+            ChangeNotifierProvider<AuthProvider>.value(value: _FakeAuthProvider()),
+            ChangeNotifierProvider<InventoryAlertsProvider>.value(value: _FakeInventoryAlertsProvider()),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: CatalogScreen()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Acción rápida individual (menú ⋮ -> Clasificación rápida) muestra caja Proveedor bloqueada PRO
+      await tester.tap(find.byKey(const ValueKey('catalog_row_actions_101')));
+      await tester.pumpAndSettle();
+      expect(find.text('Clasificación rápida (Cat. / Marca / Prov.)'), findsOneWidget);
+
+      await tester.tap(find.text('Clasificación rápida (Cat. / Marca / Prov.)'));
+      await tester.pumpAndSettle();
+
+      final quickLockedSup =
+          find.byKey(const ValueKey('quick_classify_locked_supplier_field'));
+      expect(quickLockedSup, findsOneWidget);
+      await tester.tap(quickLockedSup);
+      await tester.pumpAndSettle();
+      expect(find.byType(PlanUpgradeDialog), findsOneWidget);
+      expect(find.textContaining('+54 9 3704 36-7202'), findsOneWidget);
+      await tester.tap(find.text('Cerrar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+
+      // 2. Selección por lote múltiple (seleccionar todos -> menú contextual y botón Lote (2)) muestra Asignar Proveedor PRO
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Lote (2)'), findsOneWidget);
+
+      // Menú contextual de lote (⋮ sobre fila con 2 seleccionados)
+      await tester.tap(find.byKey(const ValueKey('catalog_row_actions_101')));
+      await tester.pumpAndSettle();
+      expect(find.text('Asignar Proveedor'), findsOneWidget);
+      await tester.tap(find.text('Asignar Proveedor'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlanUpgradeDialog), findsOneWidget);
+      await tester.tap(find.text('Cerrar'));
+      await tester.pumpAndSettle();
+
+      // Menú superior Lote (2)
+      await tester.tap(find.text('Lote (2)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Asignar Proveedor'), findsOneWidget);
+      await tester.tap(find.text('Asignar Proveedor'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlanUpgradeDialog), findsOneWidget);
+      await tester.tap(find.text('Cerrar'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('6. PosScreen muestra indicador Lista de Precios 🔒 PRO cuando multiplePrices es false y lo oculta cuando es true', (tester) async {

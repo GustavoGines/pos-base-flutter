@@ -868,12 +868,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           }
         } catch (_) {}
       }
-      final hasExplicitVertical = itemRubro?.verticalType != null &&
-          BusinessVerticalProfile.allVerticalCodes
-              .contains(itemRubro!.verticalType!.trim().toLowerCase());
-      final itemProfile = (s.features.multiRubro || hasExplicitVertical)
-          ? baseProfile.forCategoryRubro(itemRubro)
-          : baseProfile;
+      final itemProfile = baseProfile.resolveItemProfile(
+        itemRubro,
+        hasMultiRubro: s.features.multiRubro,
+      );
       final storeHasNativeBatch =
           BusinessVerticalProfile.isNativeBatchVertical(
         baseProfile.primaryType,

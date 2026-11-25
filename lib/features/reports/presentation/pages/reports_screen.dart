@@ -142,9 +142,8 @@ class _ReportsScreenState extends State<ReportsScreen>
     final settingsProv = context.watch<SettingsProvider>();
     final features = settingsProv.features;
     final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
-    final hasAdvancedReports = features.advancedReports;
-    final hasExpenses = hasAdvancedReports && features.expenses;
-    final hasInternalConsumption = hasAdvancedReports && features.currentAccounts;
+    final hasExpenses = features.expenses;
+    final hasInternalConsumption = features.currentAccounts;
     final hasMultiRubro = features.multiRubro;
 
     return Scaffold(
@@ -174,12 +173,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                       tabs: [
                         // 1° Operativo y Catálogo (Por Categoría, Por Marcas, Por Rubro y Ranking POS)
                         const Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: 'Reportes Generales'),
-                        // 2°, 3°, 4° Gestión Financiera Mensual (siempre visibles en vitrina)
-                        _buildReportTab(
-                          icon: Icons.calendar_month,
-                          label: 'Balance Mensual',
-                          isLocked: !hasAdvancedReports,
-                        ),
+                        // 2°, 3°, 4° Gestión Financiera Mensual (Balance habilitado en todos los planes; Gastos y Consumo en vitrina PRO)
+                        const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
                         _buildReportTab(
                           icon: Icons.pie_chart,
                           label: 'Análisis de Gastos',
@@ -204,7 +199,6 @@ class _ReportsScreenState extends State<ReportsScreen>
                             provider: provider,
                             isBrand: provider.generalViewMode == 'brand',
                             hasMultiRubro: hasMultiRubro,
-                            hasAdvancedReports: hasAdvancedReports,
                             onDateTap: () => _selectDateRange(context),
                             onRefresh: () {
                               if (isRubroSubView) {
@@ -236,22 +230,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 : _DashboardContent(
                                     provider: provider,
                                     isBrand: provider.generalViewMode == 'brand',
-                                    hasAdvancedReports: hasAdvancedReports,
                                   )),
-                    // Tab 2: Balance Mensual
-                    hasAdvancedReports
-                        ? _MonthlyBalanceTab(provider: provider)
-                        : const PremiumShowcaseCard(
-                            icon: Icons.calendar_month_rounded,
-                            title: 'Balance Mensual y Rentabilidad',
-                            subtitle:
-                                'Visualizá el resultado real mes a mes cruzando facturación, costos, gastos operativos y márgenes netos.',
-                            highlights: [
-                              'Estado de resultados mensual con evolución histórica',
-                              'Cruce automático entre ventas, mercadería y egresos de caja',
-                              'Exportación ejecutiva a Excel y PDF para gerencia o contador',
-                            ],
-                          ),
+                    // Tab 2: Balance Mensual (habilitado en Plan Básico con costos/bruta y en PRO/Premium con gastos)
+                    _MonthlyBalanceTab(provider: provider),
                     // Tab 3: Análisis de Gastos
                     hasExpenses
                         ? const ExpenseAnalysisTab()
@@ -301,7 +282,6 @@ class _FiltersBar extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
   final bool hasMultiRubro;
-  final bool hasAdvancedReports;
   final VoidCallback onDateTap;
   final VoidCallback onRefresh;
 
@@ -309,7 +289,6 @@ class _FiltersBar extends StatelessWidget {
     required this.provider,
     this.isBrand = false,
     this.hasMultiRubro = false,
-    this.hasAdvancedReports = true,
     required this.onDateTap,
     required this.onRefresh,
   });
@@ -470,85 +449,36 @@ class _FiltersBar extends StatelessWidget {
                   ),
                 ),
                 if (provider.generalViewMode != 'ranking') ...[
-                  if (hasAdvancedReports) ...[
-                    FilledButton.icon(
-                      onPressed: provider.isExporting
-                          ? null
-                          : () => isRubroMode
-                              ? provider.exportRubroToExcel()
-                              : provider.exportToExcel(isBrand: isBrand),
-                      icon: provider.isExporting
-                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.file_download, size: 15),
-                      label: const Text('Exportar Excel'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      ),
+                  FilledButton.icon(
+                    onPressed: provider.isExporting
+                        ? null
+                        : () => isRubroMode
+                            ? provider.exportRubroToExcel()
+                            : provider.exportToExcel(isBrand: isBrand),
+                    icon: provider.isExporting
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.file_download, size: 15),
+                    label: const Text('Exportar Excel'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
-                    FilledButton.icon(
-                      onPressed: provider.isExportingPdf
-                          ? null
-                          : () => isRubroMode
-                              ? provider.exportRubroToPdf()
-                              : provider.exportToPdf(isBrand: isBrand),
-                      icon: provider.isExportingPdf
-                          ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.picture_as_pdf, size: 15),
-                      label: const Text('Generar PDF'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.red.shade600,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: provider.isExportingPdf
+                        ? null
+                        : () => isRubroMode
+                            ? provider.exportRubroToPdf()
+                            : provider.exportToPdf(isBrand: isBrand),
+                    icon: provider.isExportingPdf
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.picture_as_pdf, size: 15),
+                    label: const Text('Generar PDF'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
-                  ] else ...[
-                    OutlinedButton.icon(
-                      onPressed: () => PlanUpgradeDialog.show(
-                        context,
-                        featureName: 'Exportación a Excel y PDF Gerencial',
-                        description:
-                            'Descargá tus reportes generales, balances y estadísticas en Excel y PDF listos para analizar o enviar a tu contador con el Plan Premium.',
-                      ),
-                      icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),
-                      label: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('Exportar Excel'),
-                          SizedBox(width: 6),
-                          _ProPillBadge(label: 'PRO'),
-                        ],
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blueGrey.shade700,
-                        side: BorderSide(color: Colors.amber.shade300),
-                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.45),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => PlanUpgradeDialog.show(
-                        context,
-                        featureName: 'Exportación a Excel y PDF Gerencial',
-                        description:
-                            'Descargá tus reportes generales, balances y estadísticas en Excel y PDF listos para analizar o enviar a tu contador con el Plan Premium.',
-                      ),
-                      icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),
-                      label: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('Generar PDF'),
-                          SizedBox(width: 6),
-                          _ProPillBadge(label: 'PRO'),
-                        ],
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blueGrey.shade700,
-                        side: BorderSide(color: Colors.amber.shade300),
-                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.45),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
                 IconButton(
                   onPressed: onRefresh,
@@ -650,11 +580,9 @@ class _FiscalFilterSegment extends StatelessWidget {
 class _DashboardContent extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  final bool hasAdvancedReports;
   const _DashboardContent({
     required this.provider,
     this.isBrand = false,
-    this.hasAdvancedReports = true,
   });
 
   @override
@@ -672,10 +600,7 @@ class _DashboardContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Hero Cards
-          _HeroCardsRow(
-            provider: provider,
-            hasAdvancedReports: hasAdvancedReports,
-          ),
+          _HeroCardsRow(provider: provider),
           const SizedBox(height: 24),
           if (isRankingView) ...[
             _PosQuickAccessRankingSection(provider: provider),
@@ -692,7 +617,6 @@ class _DashboardContent extends StatelessWidget {
                         child: _ChartCard(
                           provider: provider,
                           isBrand: isBrand,
-                          hasAdvancedReports: hasAdvancedReports,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -701,7 +625,6 @@ class _DashboardContent extends StatelessWidget {
                         child: _DetailTableCard(
                           provider: provider,
                           isBrand: isBrand,
-                          hasAdvancedReports: hasAdvancedReports,
                         ),
                       ),
                     ],
@@ -713,13 +636,11 @@ class _DashboardContent extends StatelessWidget {
                     _ChartCard(
                       provider: provider,
                       isBrand: isBrand,
-                      hasAdvancedReports: hasAdvancedReports,
                     ),
                     const SizedBox(height: 16),
                     _DetailTableCard(
                       provider: provider,
                       isBrand: isBrand,
-                      hasAdvancedReports: hasAdvancedReports,
                     ),
                   ],
                 );
@@ -739,11 +660,7 @@ class _DashboardContent extends StatelessWidget {
 
 class _HeroCardsRow extends StatelessWidget {
   final ReportsProvider provider;
-  final bool hasAdvancedReports;
-  const _HeroCardsRow({
-    required this.provider,
-    this.hasAdvancedReports = true,
-  });
+  const _HeroCardsRow({required this.provider});
 
   @override
   Widget build(BuildContext context) {
@@ -781,52 +698,30 @@ class _HeroCardsRow extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: hasAdvancedReports
-              ? _HeroCard(
-                  title: 'Ganancia Neta',
-                  value: '\$${provider.totalProfit.toCurrency()}',
-                  icon: Icons.trending_up,
-                  color: Colors.green.shade600,
-                  bgColor: Colors.green.shade50,
-                  trend: provider.profitTrendPercentage,
-                  subtitle: provider.hasMissingCostData
-                      ? 'Basado en $coverage% de ítems con costo registrado'
-                      : null,
-                )
-              : _LockedHeroCard(
-                  title: 'Ganancia Neta',
-                  subtitle: 'Tocá para desbloquear costos y rentabilidad',
-                  onTap: () => PlanUpgradeDialog.show(
-                    context,
-                    featureName: 'Ganancia Neta y Rentabilidad Real',
-                    description:
-                        'Calculá automáticamente cuánto ganás descontando el costo de reposición de cada venta con el Plan Premium.',
-                  ),
-                ),
+          child: _HeroCard(
+            title: 'Ganancia Neta',
+            value: '\$${provider.totalProfit.toCurrency()}',
+            icon: Icons.trending_up,
+            color: Colors.green.shade600,
+            bgColor: Colors.green.shade50,
+            trend: provider.profitTrendPercentage,
+            subtitle: provider.hasMissingCostData
+                ? 'Basado en $coverage% de ítems con costo registrado'
+                : null,
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: hasAdvancedReports
-              ? _HeroCard(
-                  title: 'Margen Promedio',
-                  value: '${provider.marginPercentage.toStringAsFixed(1)}%',
-                  icon: Icons.pie_chart,
-                  color: Colors.purple.shade600,
-                  bgColor: Colors.purple.shade50,
-                  subtitle: provider.hasMissingCostData
-                      ? 'Calculado sobre ventas con costo cargado'
-                      : null,
-                )
-              : _LockedHeroCard(
-                  title: 'Margen Promedio',
-                  subtitle: 'Tocá para analizar márgenes por categoría',
-                  onTap: () => PlanUpgradeDialog.show(
-                    context,
-                    featureName: 'Margen Promedio y Análisis de Rentabilidad',
-                    description:
-                        'Identificá qué categorías y marcas te dejan mayor porcentaje de margen con el Plan Premium.',
-                  ),
-                ),
+          child: _HeroCard(
+            title: 'Margen Promedio',
+            value: '${provider.marginPercentage.toStringAsFixed(1)}%',
+            icon: Icons.pie_chart,
+            color: Colors.purple.shade600,
+            bgColor: Colors.purple.shade50,
+            subtitle: provider.hasMissingCostData
+                ? 'Calculado sobre ventas con costo cargado'
+                : null,
+          ),
         ),
         if (checksEnabled) ...[
           const SizedBox(width: 16),
@@ -842,91 +737,6 @@ class _HeroCardsRow extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _LockedHeroCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _LockedHeroCard({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.amber.shade200),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.lock_outline_rounded,
-                  color: Colors.amber.shade800,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const _ProPillBadge(label: 'PRO'),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Plan PRO',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.amber.shade900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1027,11 +837,9 @@ class _HeroCard extends StatelessWidget {
 class _ChartCard extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  final bool hasAdvancedReports;
   const _ChartCard({
     required this.provider,
     this.isBrand = false,
-    this.hasAdvancedReports = true,
   });
 
   @override
@@ -1042,7 +850,7 @@ class _ChartCard extends StatelessWidget {
       return p > m ? p : m;
     });
     
-    final bool useRevenue = !hasAdvancedReports || maxOverallProfit <= 0;
+    final bool useRevenue = maxOverallProfit <= 0;
 
     final topData = List.of(dataList)
       ..sort((a, b) {
@@ -1164,11 +972,9 @@ class _ChartCard extends StatelessWidget {
 class _DetailTableCard extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
-  final bool hasAdvancedReports;
   const _DetailTableCard({
     required this.provider,
     this.isBrand = false,
-    this.hasAdvancedReports = true,
   });
 
   @override
@@ -1210,7 +1016,6 @@ class _DetailTableCard extends StatelessWidget {
                 margin: '${margin.toStringAsFixed(1)}%',
                 profitColor: profit > 0 ? Colors.green.shade700 : Colors.red.shade600,
                 products: item['products'] as List<dynamic>? ?? [],
-                hasAdvancedReports: hasAdvancedReports,
               );
             }),
           ],
@@ -1251,7 +1056,6 @@ class _TableRow extends StatelessWidget {
   final String margin;
   final Color profitColor;
   final List<dynamic> products;
-  final bool hasAdvancedReports;
 
   const _TableRow({
     required this.category,
@@ -1261,27 +1065,7 @@ class _TableRow extends StatelessWidget {
     required this.margin,
     required this.profitColor,
     required this.products,
-    this.hasAdvancedReports = true,
   });
-
-  Widget _lockedMetricCell(BuildContext context, double width) {
-    return SizedBox(
-      width: width,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: InkWell(
-          onTap: () => PlanUpgradeDialog.show(
-            context,
-            featureName: 'Ganancia y Margen por Producto',
-            description:
-                'Consultá la ganancia neta y margen porcentual desglosado por categoría, marca y producto con el Plan Premium.',
-          ),
-          borderRadius: BorderRadius.circular(6),
-          child: const _ProPillBadge(label: 'PRO', showLock: true),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1294,13 +1078,8 @@ class _TableRow extends StatelessWidget {
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
             SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            if (hasAdvancedReports) ...[
-              SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-              SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            ] else ...[
-              _lockedMetricCell(context, 120),
-              _lockedMetricCell(context, 75),
-            ],
+            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             const SizedBox(width: 24),
           ],
         ),
@@ -1318,13 +1097,8 @@ class _TableRow extends StatelessWidget {
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
             SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            if (hasAdvancedReports) ...[
-              SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-              SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            ] else ...[
-              _lockedMetricCell(context, 120),
-              _lockedMetricCell(context, 75),
-            ],
+            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
           ],
         ),
         children: products.map((prod) {
@@ -1355,13 +1129,8 @@ class _TableRow extends StatelessWidget {
                 ),
                 SizedBox(width: 60, child: Text(pQty.toQty(), style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
                 SizedBox(width: 120, child: Text('\$${pRev.toCurrency()}', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
-                if (hasAdvancedReports) ...[
-                  SizedBox(width: 120, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
-                  SizedBox(width: 75, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
-                ] else ...[
-                  _lockedMetricCell(context, 120),
-                  _lockedMetricCell(context, 75),
-                ],
+                SizedBox(width: 120, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
+                SizedBox(width: 75, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
               ],
             ),
           );
@@ -1373,11 +1142,9 @@ class _TableRow extends StatelessWidget {
 
 class _ProPillBadge extends StatelessWidget {
   final String label;
-  final bool showLock;
 
   const _ProPillBadge({
     required this.label,
-    this.showLock = false,
   });
 
   @override
@@ -1389,22 +1156,13 @@ class _ProPillBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
         border: Border.all(color: Colors.amber.shade400),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showLock) ...[
-            Icon(Icons.lock_outline_rounded, size: 10, color: Colors.amber.shade900),
-            const SizedBox(width: 3),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: Colors.amber.shade900,
-            ),
-          ),
-        ],
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          color: Colors.amber.shade900,
+        ),
       ),
     );
   }
@@ -1697,6 +1455,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
   @override
   Widget build(BuildContext context) {
     final provider = widget.provider;
+    final hasExpenses = context.watch<SettingsProvider>().features.expenses;
     final mf = DateFormat('MMM yyyy');
 
     return SingleChildScrollView(
@@ -1973,7 +1732,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                 const SizedBox(width: 16),
                 Expanded(
                     child: _HeroCard(
-                  title: 'Egresos Totales',
+                  title: hasExpenses ? 'Egresos Totales' : 'Costo de Mercadería',
                   value: '\$${provider.balanceTotalCost.toCurrency()}',
                   icon: Icons.shopping_cart_checkout,
                   color: Colors.red.shade600,
@@ -2007,6 +1766,41 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                   bgColor: Colors.purple.shade50,
                 )),
               ],
+            ),
+          ],
+          if (!provider.isLoadingBalance && !hasExpenses) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              key: const ValueKey('monthly_balance_expenses_pro_hint'),
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => PlanUpgradeDialog.show(
+                context,
+                featureName: 'Gastos Operativos y Análisis de Egresos',
+                description:
+                    'Registrá alquileres, sueldos y servicios en Gastos PRO para descontarlos automáticamente en el Balance Mensual.',
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 16, color: Colors.amber.shade900),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'En Plan Básico este balance contempla Ventas, Costos y Ganancia Bruta. La deducción automática de Gastos Operativos requiere el módulo Gastos PRO.',
+                        style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade800),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const _ProPillBadge(label: 'GASTOS PRO'),
+                  ],
+                ),
+              ),
             ),
           ],
         ],

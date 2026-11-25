@@ -237,6 +237,66 @@ class BusinessVerticalProfile {
     return isTech && rawUnitType.trim().toLowerCase() == 'mt';
   }
 
+  /// Controla si en `Editar Línea en Carrito (Ctrl+E)` se muestra el selector
+  /// rápido de fracciones/porciones (`1/x`). Se habilita en rubros fraccionables
+  /// (`retail`, `butcher`, `hardware_store`), o en unidades `docena` / `mt`.
+  bool canUseCartQuickFractionsForUnit(String rawUnitType) {
+    if (showFractionSwitchForUnit(rawUnitType)) return true;
+    final norm = rawUnitType.trim().toLowerCase();
+    if (norm == 'docena') return true;
+    if (norm == 'mt' && allowedUnitKeys.contains('mt')) return true;
+    return false;
+  }
+
+  /// Usa terminología de material/corte ("Fracción") en lugar de gastronómica ("Porción").
+  bool get usesFractionalMaterialTerminology =>
+      primaryType == hardwareStore || primaryType == tech;
+
+  /// Sugerencia contextual para el campo `Notas en línea (Opcional)` del carrito.
+  String get cartLineNotesHint {
+    switch (primaryType) {
+      case apparel:
+        return 'Ej: Talle, color, cambio...';
+      case hardwareStore:
+        return 'Ej: Corte a medida, color, detalle...';
+      case tech:
+        return 'Ej: N° de serie, IMEI, modelo...';
+      case butcher:
+        return 'Ej: Corte milanesa, picada, envasado...';
+      case general:
+        return 'Ej: Variante, color, p/regalo...';
+      case retail:
+      default:
+        return 'Ej: Sabores, cocción, detalle...';
+    }
+  }
+
+  /// Determina si un [Rubro] de categoría puede cambiar el perfil operativo activo.
+  /// En Plan Básico (`hasMultiRubro == false`), solo permite cambiar a verticales
+  /// explícitamente incluidos en la licencia (`primaryType` o `secondaryTypes`),
+  /// impidiendo que productos demo/legados filtren herramientas de otros rubros.
+  bool canScopeToRubro(Rubro? rubro, {required bool hasMultiRubro}) {
+    if (rubro == null) return false;
+    if (hasMultiRubro) return true;
+    final explicit = rubro.verticalType?.trim().toLowerCase();
+    final resolved = (explicit != null && allVerticalCodes.contains(explicit))
+        ? explicit
+        : inferVerticalCodeFromRubroName(rubro.name);
+    if (resolved == null) return false;
+    return resolved == primaryType || secondaryTypes.contains(resolved);
+  }
+
+  /// Resuelve el perfil efectivo de un ítem/categoría respetando `multi_rubro` y el rubro licenciado.
+  BusinessVerticalProfile resolveItemProfile(
+    Rubro? rubro, {
+    required bool hasMultiRubro,
+  }) {
+    if (!canScopeToRubro(rubro, hasMultiRubro: hasMultiRubro)) {
+      return this;
+    }
+    return forCategoryRubro(rubro);
+  }
+
   /// Controla si se habilita Vencimientos/Lotes según la licencia y, en Polirrubro,
   /// restringido al vertical del rubro del producto (aislando Ferretería/Indumentaria/Tech).
   bool canUseBatchExpiration({

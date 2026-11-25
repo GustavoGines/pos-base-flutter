@@ -11,6 +11,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -126,6 +127,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
   bool _showBarcodeEditor = false;
   bool _barcodeCapturedByScanner = false;
   bool _showPortionsBar = false;
+  bool _useMaterialFractionTerms = false;
   double? _manualSubtotalOverride;
   late double _ivaRate;
 
@@ -363,16 +365,21 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     _onQuantityChanged(_qtyController.text);
   }
 
-  void _applyQuickPortion(String label, double fractionQty) {
+  void _applyQuickPortion(
+    String label,
+    double fractionQty, {
+    bool useMaterialTerminology = false,
+  }) {
     final cleanedBase = _descController.text
-        .replaceFirst(RegExp(r'^Porción\s*\([^)]+\)\s*-\s*'), '')
+        .replaceFirst(RegExp(r'^(Porción|Fracción)\s*\([^)]+\)\s*-\s*'), '')
         .trim();
     final targetName =
         cleanedBase.isNotEmpty ? cleanedBase : widget.item.product.name;
     if (label == '1' && (fractionQty - 1.0).abs() < 0.0005) {
       _descController.text = targetName;
     } else {
-      _descController.text = 'Porción ($label) - $targetName';
+      final prefix = useMaterialTerminology ? 'Fracción' : 'Porción';
+      _descController.text = '$prefix ($label) - $targetName';
     }
     _qtyController.text = _formatQtyForInput(fractionQty);
     _onQuantityChanged(_qtyController.text);
@@ -386,7 +393,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     });
   }
 
-  void _applyCustomParts() {
+  void _applyCustomParts({bool useMaterialTerminology = false}) {
     final parts = int.tryParse(_customPartsController.text.trim());
     if (parts == null || parts < 2 || parts > 100) {
       SnackBarService.warning(
@@ -395,7 +402,11 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
       );
       return;
     }
-    _applyQuickPortion('1/$parts', 1.0 / parts);
+    _applyQuickPortion(
+      '1/$parts',
+      1.0 / parts,
+      useMaterialTerminology: useMaterialTerminology,
+    );
   }
 
   Future<void> _readWeightFromScale(String comPort) async {
@@ -776,7 +787,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         key == LogicalKeyboardKey.numpadEnter) {
       if (HardwareKeyboard.instance.isShiftPressed) return false;
       if (_customPartsFocus.hasFocus) {
-        _applyCustomParts();
+        _applyCustomParts(useMaterialTerminology: _useMaterialFractionTerms);
         return true;
       }
       if (_barcodeFocus.hasFocus) {
@@ -929,9 +940,45 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     final rubros =
         Provider.of<CatalogProvider?>(context, listen: false)?.safeRubros ??
             const [];
-    final profile = settingsProv?.safeVerticalProfile ??
+    final baseProfile = settingsProv?.safeVerticalProfile ??
         BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    bool hasMultiRubro = false;
+    try {
+      hasMultiRubro = settingsProv?.settings?.features.multiRubro ??
+          settingsProv?.features.multiRubro ??
+          false;
+    } catch (_) {
+      hasMultiRubro = false;
+    }
+    Rubro? itemRubro = widget.item.product.category?.rubro;
+    final itemRubroId =
+        widget.item.product.category?.rubroId ?? widget.item.product.category?.rubro?.id;
+    if (itemRubroId != null) {
+      for (final r in rubros) {
+        if (r.id == itemRubroId) {
+          itemRubro = r;
+          break;
+        }
+      }
+    }
+    final profile = baseProfile.resolveItemProfile(
+      itemRubro,
+      hasMultiRubro: hasMultiRubro,
+    );
     final isHardwareStore = profile.isHardwareStore;
+    final useMaterialFractionTerms = profile.usesFractionalMaterialTerminology;
+    _useMaterialFractionTerms = useMaterialFractionTerms;
+    final hasExistingFraction = !_isSoldByWeight &&
+        !widget.item.product.isService &&
+        ((_currentQty - _currentQty.roundToDouble()).abs() >= 0.0005 ||
+            (widget.item.product.stock -
+                        widget.item.product.stock.roundToDouble())
+                    .abs() >=
+                0.0005);
+    final canShowQuickFractions = !_isSoldByWeight &&
+        !widget.item.product.isService &&
+        (profile.canUseCartQuickFractionsForUnit(widget.item.product.unitType) ||
+            hasExistingFraction);
     final canRecalcHardware = widget.onOpenHardwareCalculator != null &&
         !_isTempOrUnregistered &&
         (settingsProv?.canUseHardwareCalculatorFor(
@@ -1045,11 +1092,15 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                               child: TextFormField(
                                 controller: _qtyController,
                                 focusNode: _qtyFocus,
-                                keyboardType: widget.item.product.isService
+                                keyboardType: (widget.item.product.isService ||
+                                        (!_isSoldByWeight &&
+                                            !canShowQuickFractions))
                                     ? TextInputType.number
                                     : const TextInputType.numberWithOptions(
                                         decimal: true),
-                                inputFormatters: widget.item.product.isService
+                                inputFormatters: (widget.item.product.isService ||
+                                        (!_isSoldByWeight &&
+                                            !canShowQuickFractions))
                                     ? [
                                         FilteringTextInputFormatter.digitsOnly,
                                       ]
@@ -1176,7 +1227,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           maxLines: 1,
                           decoration: InputDecoration(
                             labelText: 'Notas en línea (Opcional)',
-                            hintText: 'Ej: N° de serie, color...',
+                            hintText: profile.cartLineNotesHint,
                             prefixIcon:
                                 const Icon(Icons.notes_rounded, size: 19),
                             border: OutlineInputBorder(
@@ -1186,7 +1237,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           ),
                         ),
                       ),
-                      if (!_isSoldByWeight && !widget.item.product.isService) ...[
+                      if (canShowQuickFractions) ...[
                         const SizedBox(width: 8),
                         Tooltip(
                           message: _showPortionsBar
@@ -1195,6 +1246,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           child: SizedBox(
                             height: 42,
                             child: OutlinedButton(
+                              key: const Key('rename_quick_fractions_toggle_btn'),
                               onPressed: () => setState(
                                 () => _showPortionsBar = !_showPortionsBar,
                               ),
@@ -1229,18 +1281,18 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                       ],
                     ],
                   ),
-                  if (!_isSoldByWeight &&
-                      !widget.item.product.isService &&
-                      _showPortionsBar) ...[
+                  if (canShowQuickFractions && _showPortionsBar) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Text(
-                          'Porción rápida:',
-                          style: TextStyle(
+                        Text(
+                          useMaterialFractionTerms
+                              ? 'Fracción rápida:'
+                              : 'Porción rápida:',
+                          style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF475569),
@@ -1256,8 +1308,11 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                         ])
                           InkWell(
                             borderRadius: BorderRadius.circular(7),
-                            onTap: () =>
-                                _applyQuickPortion(chip.label, chip.qty),
+                            onTap: () => _applyQuickPortion(
+                              chip.label,
+                              chip.qty,
+                              useMaterialTerminology: useMaterialFractionTerms,
+                            ),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 9, vertical: 4),
@@ -1270,7 +1325,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                                 chip.label != '1') ||
                                             (chip.label == '1' &&
                                                 !_descController.text
-                                                    .contains('Porción ('))))
+                                                    .contains('Porción (') &&
+                                                !_descController.text
+                                                    .contains('Fracción ('))))
                                     ? const Color(0xFFEDE9FE)
                                     : const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(7),
@@ -1283,7 +1340,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                                   chip.label != '1') ||
                                               (chip.label == '1' &&
                                                   !_descController.text
-                                                      .contains('Porción ('))))
+                                                      .contains('Porción (') &&
+                                                  !_descController.text
+                                                      .contains('Fracción ('))))
                                       ? const Color(0xFF7C3AED)
                                       : const Color(0xFFCBD5E1),
                                 ),
@@ -1303,7 +1362,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                                   chip.label != '1') ||
                                               (chip.label == '1' &&
                                                   !_descController.text
-                                                      .contains('Porción ('))))
+                                                      .contains('Porción (') &&
+                                                  !_descController.text
+                                                      .contains('Fracción ('))))
                                       ? const Color(0xFF5B21B6)
                                       : const Color(0xFF334155),
                                 ),
@@ -1335,7 +1396,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                             ),
-                            onSubmitted: (_) => _applyCustomParts(),
+                            onSubmitted: (_) => _applyCustomParts(
+                              useMaterialTerminology: useMaterialFractionTerms,
+                            ),
                             decoration: InputDecoration(
                               hintText: '16',
                               hintStyle: const TextStyle(
@@ -1356,7 +1419,9 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                         InkWell(
                           key: const Key('rename_apply_custom_parts_btn'),
                           borderRadius: BorderRadius.circular(7),
-                          onTap: _applyCustomParts,
+                          onTap: () => _applyCustomParts(
+                            useMaterialTerminology: useMaterialFractionTerms,
+                          ),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 9,
@@ -2501,6 +2566,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
             ),
             footerLeading: canRecalcHardware
                 ? OutlinedButton.icon(
+                    key: const Key('rename_recalc_hardware_btn'),
                     onPressed: () {
                       Navigator.of(context).pop();
                       widget.onOpenHardwareCalculator!();
