@@ -36,6 +36,7 @@ import '../widgets/product_image_preview_dialog.dart';
 import '../widgets/product_hardware_fields_section.dart';
 import '../widgets/product_f7_calc_config_panel.dart';
 import '../../../pos/domain/services/hardware_calculator_engine.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/services/remote_scanner_service.dart';
@@ -1504,13 +1505,31 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13));
   }
 
+  bool _canPreloadSuppliers(BuildContext ctx) {
+    final settingsProv = ctx.read<SettingsProvider?>();
+    final authProv = ctx.read<AuthProvider?>();
+    final licensed = () {
+      try {
+        return settingsProv?.features.suppliers;
+      } catch (_) {
+        return settingsProv?.settings?.features.suppliers;
+      }
+    }() ?? false;
+    if (!licensed) return false;
+    if (authProv == null) return true;
+    try {
+      return authProv.isAdmin ||
+          authProv.hasPermission(AppPermissions.viewSuppliers);
+    } catch (_) {
+      return true;
+    }
+  }
+
   void _ensureFiltersMetadataLoaded(CatalogProvider provider) {
     if (provider.categories.isEmpty || provider.brands.isEmpty) {
       provider.loadMetadata();
     }
-    final canSeeSupplier =
-        context.read<SettingsProvider?>()?.features.suppliers ?? false;
-    if (canSeeSupplier) {
+    if (_canPreloadSuppliers(context)) {
       try {
         final supProv = context.read<SupplierProvider?>();
         if (supProv != null &&
@@ -4125,8 +4144,27 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _supplierId = source?.supplier?.id ?? widget.initialSupplierId;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
-      if (canSeeSupplier) {
+      if (!mounted) return;
+      final settingsProv = context.read<SettingsProvider?>();
+      final authProv = context.read<AuthProvider?>();
+      final licensed = () {
+        try {
+          return settingsProv?.features.suppliers;
+        } catch (_) {
+          return settingsProv?.settings?.features.suppliers;
+        }
+      }() ?? false;
+      final allowed = licensed &&
+          (authProv == null ||
+              (() {
+                try {
+                  return authProv.isAdmin ||
+                      authProv.hasPermission(AppPermissions.viewSuppliers);
+                } catch (_) {
+                  return true;
+                }
+              })());
+      if (allowed) {
         context.read<SupplierProvider>().fetchSuppliers();
       }
     });
@@ -9338,7 +9376,26 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
     Future.microtask(() {
       if (!mounted) return;
       widget.provider.fetchPriceHistory();
-      if (context.read<SettingsProvider>().features.suppliers) {
+      final settingsProv = context.read<SettingsProvider?>();
+      final authProv = context.read<AuthProvider?>();
+      final licensed = () {
+        try {
+          return settingsProv?.features.suppliers;
+        } catch (_) {
+          return settingsProv?.settings?.features.suppliers;
+        }
+      }() ?? false;
+      final allowed = licensed &&
+          (authProv == null ||
+              (() {
+                try {
+                  return authProv.isAdmin ||
+                      authProv.hasPermission(AppPermissions.viewSuppliers);
+                } catch (_) {
+                  return true;
+                }
+              })());
+      if (allowed) {
         final supplierProv = context.read<SupplierProvider>();
         if (supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
           supplierProv.fetchSuppliers();

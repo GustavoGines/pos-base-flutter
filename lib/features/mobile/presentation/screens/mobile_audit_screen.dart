@@ -26,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../../core/presentation/widgets/app_modal_shell.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class MobileAuditScreen extends StatefulWidget {
@@ -436,8 +437,24 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       );
     }
 
-    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
-    if (canSeeSupplier) {
+    final authProv = context.read<AuthProvider?>();
+    final suppliersLicensed = () {
+      try {
+        return settingsProv?.features.suppliers;
+      } catch (_) {
+        return settingsProv?.settings?.features.suppliers;
+      }
+    }() ?? false;
+    final hasSupplierPerm = authProv == null ||
+        (() {
+          try {
+            return authProv.isAdmin ||
+                authProv.hasPermission(AppPermissions.viewSuppliers);
+          } catch (_) {
+            return true;
+          }
+        })();
+    if (suppliersLicensed && hasSupplierPerm) {
       context.read<SupplierProvider>().fetchSuppliers();
     }
 

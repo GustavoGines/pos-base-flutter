@@ -362,16 +362,50 @@ void main(List<String> args) async {
       }
     }
 
-    // Asegurar que las tareas programadas de Windows (Reverb, Queue, Schedule) vuelvan a
-    // levantar inmediatamente tras la actualización.
-    for (final taskName in [
-      'SistemaPOS_Reverb',
-      'SistemaPOS_Queue',
-      'SistemaPOS_Schedule',
-    ]) {
+    // Refrescar `instalar_tareas_bg.bat` durante la OTA elevada de Backend para garantizar
+    // `-RestartCount 999` en equipos migrados desde v1.8.5 y relanzar las tareas SYSTEM
+    // (`SistemaPOS_Reverb`, `SistemaPOS_Queue`, `SistemaPOS_Schedule`) sin Access Denied.
+    bool tasksStartedByScript = false;
+    final bgTasksScript = File(p.join(targetDir, 'instalar_tareas_bg.bat'));
+    if (!hasError && bgTasksScript.existsSync()) {
+      log.log(
+          'Refrescando configuración de tareas en segundo plano (instalar_tareas_bg.bat)...');
       try {
-        Process.runSync('schtasks', ['/run', '/tn', taskName]);
-      } catch (_) {}
+        final bgScriptResult = Process.runSync(
+          'cmd.exe',
+          ['/c', bgTasksScript.path],
+          workingDirectory: targetDir,
+          environment: phpEnv.isNotEmpty ? phpEnv : null,
+        );
+        if (bgScriptResult.exitCode == 0) {
+          tasksStartedByScript = true;
+          log.log(
+              '  instalar_tareas_bg.bat ejecutado correctamente (Reverb/Queue/Schedule activos).');
+        } else {
+          log.log(
+              '  Advertencia: instalar_tareas_bg.bat retornó exitCode=${bgScriptResult.exitCode}. Intentando schtasks /run directo...');
+        }
+      } catch (e) {
+        log.log('  Advertencia ejecutando instalar_tareas_bg.bat: $e');
+      }
+    }
+
+    if (!tasksStartedByScript) {
+      for (final taskName in [
+        'SistemaPOS_Reverb',
+        'SistemaPOS_Queue',
+        'SistemaPOS_Schedule',
+      ]) {
+        try {
+          final runRes = Process.runSync('schtasks', ['/run', '/tn', taskName]);
+          if (runRes.exitCode == 0) {
+            log.log('  schtasks /run $taskName: OK');
+          } else {
+            log.log(
+                '  Advertencia: schtasks /run $taskName retornó exitCode=${runRes.exitCode}');
+          }
+        } catch (_) {}
+      }
     }
 
     final success = extractionOk && !hasError;
@@ -620,19 +654,15 @@ void _migrateBrandingAndPrefs(String targetDir, OtaLogger log) {
       log.log('Advertencia escaneando perfiles de usuario: $e');
     }
 
-    // Si en esta PC existe instalar_tareas_bg.bat y la tarea SistemaPOS_Queue aún no fue registrada
-    // (ej. cliente v1.8.5 que actualiza sólo por OTA), registrarla automáticamente aprovechando el UAC de Frontend.
+    // Si en esta PC existe instalar_tareas_bg.bat, refrescarlo durante la migración inicial a Caja4U
+    // aprovechando el UAC de Frontend (garantiza -RestartCount 999 incluso si ya existían tareas de v1.8.5).
     try {
       final bgScript =
           File(r'C:\laragon\www\Sistema_POS\pos-backend\instalar_tareas_bg.bat');
       if (bgScript.existsSync()) {
-        final qCheck = Process.runSync(
-            'schtasks', ['/query', '/tn', 'SistemaPOS_Queue']);
-        if (qCheck.exitCode != 0) {
-          log.log(
-              'Registrando tareas en segundo plano de Laravel (Reverb/Queue/Schedule)...');
-          Process.runSync('cmd.exe', ['/c', bgScript.path]);
-        }
+        log.log(
+            'Registrando/actualizando tareas en segundo plano de Laravel (Reverb/Queue/Schedule)...');
+        Process.runSync('cmd.exe', ['/c', bgScript.path]);
       }
     } catch (_) {}
   }

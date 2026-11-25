@@ -2,10 +2,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import '../domain/entities/cash_register_shift.dart';
 
 class ZClosePdfService {
@@ -43,23 +43,31 @@ class ZClosePdfService {
     }
   }
 
+  @visibleForTesting
+  static Future<Uint8List> generateZCloseBytesForTest({
+    required CashRegisterShift shift,
+    required String businessName,
+    String? businessTaxId,
+    required bool isPremium,
+  }) =>
+      _generateZCloseBytes(
+        shift: shift,
+        businessName: businessName,
+        businessTaxId: businessTaxId,
+        isPremium: isPremium,
+      );
+
   static Future<Uint8List> _generateZCloseBytes({
     required CashRegisterShift shift,
     required String businessName,
     required String? businessTaxId,
     required bool isPremium,
   }) async {
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
-    } catch (_) {
-      theme = pw.ThemeData.withFont(
-        base: pw.Font.helvetica(),
-        bold: pw.Font.helveticaBold(),
-      );
-    }
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
     final pdf = pw.Document(theme: theme);
     final currencyFmt = NumberFormat.currency(symbol: '\$');

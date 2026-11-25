@@ -4,8 +4,8 @@ import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart'
 import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/utils/afip_fiscal_pdf_service.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
 class SupplierStatementPdfService {
@@ -59,6 +59,28 @@ class SupplierStatementPdfService {
     }
   }
 
+  @visibleForTesting
+  static Future<Uint8List> generateStatementBytesForTest({
+    required String supplierName,
+    String? supplierCuit,
+    required List<dynamic> history,
+    required double currentBalance,
+    required String businessName,
+    String? businessTaxId,
+    DateTimeRange? dateRange,
+    String paperSize = 'a4',
+  }) =>
+      _generateStatementBytes(
+        supplierName: supplierName,
+        supplierCuit: supplierCuit,
+        history: history,
+        currentBalance: currentBalance,
+        businessName: businessName,
+        businessTaxId: businessTaxId,
+        dateRange: dateRange,
+        paperSize: paperSize,
+      );
+
   static Future<Uint8List> _generateStatementBytes({
     required String supplierName,
     required String? supplierCuit,
@@ -69,17 +91,11 @@ class SupplierStatementPdfService {
     DateTimeRange? dateRange,
     String paperSize = 'a4',
   }) async {
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
-    } catch (_) {
-      theme = pw.ThemeData.withFont(
-        base: pw.Font.helvetica(),
-        bold: pw.Font.helveticaBold(),
-      );
-    }
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
     final pdf = pw.Document(theme: theme);
     final dateFmt = DateFormat('dd/MM/yyyy');

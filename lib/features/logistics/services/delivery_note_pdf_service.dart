@@ -304,12 +304,11 @@ class DeliveryNotePdfService {
       logoBytes: logoBytes,
       businessSettings: businessSettings,
     );
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
-    } catch (_) {}
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
     final doc = pw.Document(theme: theme);
 

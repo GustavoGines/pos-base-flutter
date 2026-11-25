@@ -337,10 +337,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
         targetDir: targetDir,
         zipPath: zipPath,
         // FRONTEND: necesita admin para escribir en C:\Program Files\
-        // BACKEND:  NO necesita admin (C:\laragon\www\ es escribible por el usuario).
-        //           Pedir UAC desde un proceso DETACHED cancela silenciosamente
-        //           porque no hay ventana padre para mostrar el dialogo UAC.
-        requireElevation: _isFrontend,
+        // BACKEND:  también solicita elevación UAC en la PC Servidor para poder refrescar
+        //           `instalar_tareas_bg.bat` (-RestartCount 999) y relanzar las tareas
+        //           programadas bajo SYSTEM (`SistemaPOS_Reverb` y `SistemaPOS_Queue`)
+        //           sin error de Access Denied.
+        requireElevation: true,
       );
 
       if (_isFrontend) {
@@ -526,10 +527,17 @@ class _UpdateDialogState extends State<UpdateDialog> {
     String psQ(String s) => s.replaceAll("'", "''");
 
     final String ps1Content = [
-      '# OTA Launcher — Frontend (elevado con UAC, consola visible con QuickEdit desactivado por FFI)',
+      '# OTA Launcher — Elevado con UAC (Frontend y Backend), consola visible con QuickEdit desactivado por FFI',
       "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
       "try {",
       "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -WorkingDirectory '${psQ(updaterDir)}' -WindowStyle Normal -Verb RunAs -ErrorAction Stop",
+      "} catch {",
+      "  if ('$componentArg' -eq 'backend') {",
+      "    \$logTarget = Join-Path '${psQ(targetDir)}' 'updater_log.txt'",
+      "    \$resTarget = Join-Path '${psQ(targetDir)}' 'ota_result.txt'",
+      "    Add-Content -LiteralPath \$logTarget -Value '[ERROR] Permiso de Administrador (UAC) cancelado o denegado al iniciar updater.exe.' -Encoding UTF8 -ErrorAction SilentlyContinue",
+      "    Set-Content -LiteralPath \$resTarget -Value '{\"status\":\"FAILED\",\"component\":\"backend\"}' -Encoding UTF8 -ErrorAction SilentlyContinue",
+      "  }",
       "} finally {",
       "  Remove-Item -LiteralPath \$MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
       "}",

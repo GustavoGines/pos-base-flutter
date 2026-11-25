@@ -23,6 +23,7 @@ import 'package:frontend_desktop/features/settings/domain/entities/business_sett
 
 class FakeCheckProvider extends ChangeNotifier implements CheckProvider {
   List<ThirdPartyCheck> _checks = [];
+  int loadChecksCallCount = 0;
   @override
   List<ThirdPartyCheck> get checks => _checks;
 
@@ -32,7 +33,9 @@ class FakeCheckProvider extends ChangeNotifier implements CheckProvider {
   }
 
   @override
-  Future<void> loadChecks() async {}
+  Future<void> loadChecks() async {
+    loadChecksCallCount++;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -40,6 +43,7 @@ class FakeCheckProvider extends ChangeNotifier implements CheckProvider {
 
 class FakeSupplierProvider extends ChangeNotifier implements SupplierProvider {
   List<Supplier> _suppliers = [];
+  int fetchSuppliersCallCount = 0;
   @override
   List<Supplier> get suppliers => _suppliers;
 
@@ -49,7 +53,9 @@ class FakeSupplierProvider extends ChangeNotifier implements SupplierProvider {
   }
 
   @override
-  Future<void> fetchSuppliers({String? search}) async {}
+  Future<void> fetchSuppliers({String? search}) async {
+    fetchSuppliersCallCount++;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -57,8 +63,11 @@ class FakeSupplierProvider extends ChangeNotifier implements SupplierProvider {
 
 class FakeExpenseCategoryProvider extends ChangeNotifier implements ExpenseCategoryProvider {
   List<ExpenseCategory> _categories = [];
+  int fetchCategoriesCallCount = 0;
   @override
   List<ExpenseCategory> get categories => _categories;
+  @override
+  bool get isLoading => false;
 
   void setCategories(List<ExpenseCategory> list) {
     _categories = list;
@@ -66,7 +75,9 @@ class FakeExpenseCategoryProvider extends ChangeNotifier implements ExpenseCateg
   }
 
   @override
-  Future<void> fetchCategories() async {}
+  Future<void> fetchCategories() async {
+    fetchCategoriesCallCount++;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -112,6 +123,9 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
   BusinessSettings? get settings => _settings;
 
+  @override
+  FeatureFlags get features => _settings?.features ?? const FeatureFlags();
+
   void setSettings(BusinessSettings? settings) {
     _settings = settings;
     notifyListeners();
@@ -123,11 +137,16 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 
 class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   bool _isAdmin = true;
+  Set<String> grantedPermissions = {};
   @override
   bool get isAdmin => _isAdmin;
 
   @override
   Map<String, dynamic>? get currentUser => const {'id': 1, 'name': 'Admin'};
+
+  @override
+  bool hasPermission(String permission) =>
+      _isAdmin || grantedPermissions.contains(permission);
 
   void setIsAdmin(bool value) {
     _isAdmin = value;
@@ -741,6 +760,51 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(fakeCashMovementProvider.createMovementCallCount, 1);
+    });
+
+    testWidgets('Audit #4: initState skips fetchSuppliers/loadChecks when employee lacks permissions or plan lacks features', (tester) async {
+      setDesktopSize(tester);
+
+      // Caso A: Licencia Premium con features activos, pero empleado sin permisos view_suppliers / view_checks
+      fakeSettingsProvider.setSettings(
+        const BusinessSettings(
+          features: FeatureFlags(
+            suppliers: true,
+            checks: true,
+            expenses: true,
+          ),
+        ),
+      );
+      fakeAuthProvider.setIsAdmin(false);
+      fakeAuthProvider.grantedPermissions = {'manage_cash_movements'};
+
+      await tester.pumpWidget(buildTestDialog(initialType: 'expense'));
+      await tester.pumpAndSettle();
+
+      expect(fakeSupplierProvider.fetchSuppliersCallCount, 0);
+      expect(fakeCheckProvider.loadChecksCallCount, 0);
+      expect(fakeExpenseCategoryProvider.fetchCategoriesCallCount, 1);
+
+      // Caso B: Licencia Básica sin suppliers/checks/expenses, incluso siendo Admin
+      fakeAuthProvider.setIsAdmin(true);
+      fakeSettingsProvider.setSettings(
+        const BusinessSettings(
+          features: FeatureFlags(
+            suppliers: false,
+            checks: false,
+            expenses: false,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(buildTestDialog(initialType: 'withdrawal'));
+      await tester.pumpAndSettle();
+
+      expect(fakeSupplierProvider.fetchSuppliersCallCount, 0);
+      expect(fakeCheckProvider.loadChecksCallCount, 0);
+      expect(fakeExpenseCategoryProvider.fetchCategoriesCallCount, 1); // sin incremento adicional
     });
   });
 }

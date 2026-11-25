@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,10 +7,24 @@ import 'package:frontend_desktop/core/presentation/widgets/app_pdf_preview.dart'
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
+import 'package:frontend_desktop/features/cash_movements/services/cash_movement_pdf_service.dart';
+import 'package:frontend_desktop/features/cash_register/domain/entities/cash_register_shift.dart';
+import 'package:frontend_desktop/features/cash_register/services/z_close_pdf_service.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/suppliers/services/supplier_statement_pdf_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:printing/printing.dart';
+
+class _StrictlyOfflineHttpOverrides extends HttpOverrides {
+  int attemptedConnections = 0;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    attemptedConnections++;
+    throw const SocketException('Red externa bloqueada (modo 100% offline)');
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -186,6 +201,74 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('pdf_save_btn')));
       await tester.pumpAndSettle();
       expect(savedBytes, equals(vectorPdfBytes));
+    });
+
+    test('Hallazgo #7: Cierre Z (con viñetas Unicode •), Comprobantes de Caja y Estado de Proveedor generan PDF 100% offline sin llamar a Google Fonts', () async {
+      final offlineOverrides = _StrictlyOfflineHttpOverrides();
+
+      await HttpOverrides.runZoned(() async {
+        final shift = CashRegisterShift(
+          id: 42,
+          cashRegisterId: 1,
+          userId: 1,
+          openedAt: DateTime(2026, 11, 25, 8, 0),
+          closedAt: DateTime(2026, 11, 25, 20, 0),
+          openingBalance: 10000.0,
+          expectedBalance: 35000.0,
+          actualBalance: 35000.0,
+          difference: 0.0,
+          cashSales: 25000.0,
+          transferSales: 18500.0,
+          transferByAlias: const {'caja4u.mp': 18500.0},
+          status: 'closed',
+          userName: 'Cajero Principal',
+          cashRegisterName: 'Caja Principal',
+        );
+
+        final zBytes = await ZClosePdfService.generateZCloseBytesForTest(
+          shift: shift,
+          businessName: 'Minimercado Offline',
+          businessTaxId: '20304050607',
+          isPremium: true,
+        );
+
+        final movementBytes = await CashMovementPdfService.generateSupplierPdfBytesForTest(
+          type: 'supplier_payment',
+          supplierName: 'Proveedor Mayorista S.A.',
+          totalAmount: 45000.0,
+          balanceBefore: 60000.0,
+          payments: const [
+            {
+              'method': 'cash',
+              'funding_source': 'cash_register',
+              'amount': 45000.0,
+            },
+          ],
+          businessName: 'Minimercado Offline',
+          businessTaxId: '20304050607',
+          movementIds: const [101],
+          issuedAt: DateTime(2026, 11, 25, 14, 30),
+        );
+
+        final statementBytes = await SupplierStatementPdfService.generateStatementBytesForTest(
+          supplierName: 'Proveedor Mayorista S.A.',
+          supplierCuit: '30711223344',
+          history: const [],
+          currentBalance: 15000.0,
+          businessName: 'Minimercado Offline',
+          businessTaxId: '20304050607',
+        );
+
+        expect(zBytes.length, greaterThan(1000));
+        expect(movementBytes.length, greaterThan(1000));
+        expect(statementBytes.length, greaterThan(1000));
+      }, createHttpClient: offlineOverrides.createHttpClient);
+
+      expect(
+        offlineOverrides.attemptedConnections,
+        0,
+        reason: 'Ningún generador PDF debe abrir conexiones HTTP externas (ej. Google Fonts).',
+      );
     });
   });
 }
