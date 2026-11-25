@@ -584,65 +584,69 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   const SizedBox(height: 8),
                                   KeyedSubtree(
                                     key: _logoSlotKey,
-                                    child: Transform.translate(
-                                      offset: Offset(0, startDy * (1.0 - logoT)),
-                                      child: Transform.scale(
-                                        scale: startScale - ((startScale - 1.0) * logoT),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(22 * logoT),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: const Color(0xFF10B981).withValues(
-                                                    alpha: 0.18 * logoT * (1.0 - logoT) * 4),
-                                                blurRadius: 28 * cardT,
-                                                spreadRadius: 1.5 * cardT,
+                                    child: RepaintBoundary(
+                                      child: ExcludeSemantics(
+                                        child: Transform.translate(
+                                          offset: Offset(0, startDy * (1.0 - logoT)),
+                                          child: Transform.scale(
+                                            scale: startScale - ((startScale - 1.0) * logoT),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(22 * logoT),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: const Color(0xFF10B981).withValues(
+                                                        alpha: 0.18 * logoT * (1.0 - logoT) * 4),
+                                                    blurRadius: 28 * cardT,
+                                                    spreadRadius: 1.5 * cardT,
+                                                  ),
+                                                  BoxShadow(
+                                                    color: const Color(0xFF121A2D)
+                                                        .withValues(alpha: 0.25 * cardT),
+                                                    blurRadius: 16 * cardT,
+                                                    offset: Offset(0, 8 * cardT),
+                                                  ),
+                                                ],
                                               ),
-                                              BoxShadow(
-                                                color: const Color(0xFF121A2D)
-                                                    .withValues(alpha: 0.25 * cardT),
-                                                blurRadius: 16 * cardT,
-                                                offset: Offset(0, 8 * cardT),
-                                              ),
-                                            ],
+                                              child: () {
+                                                Widget logoImage = ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(22 * logoT),
+                                                  child: Image.asset(
+                                                    'assets/caja4u_logo_full.png',
+                                                    width: 184,
+                                                    height: 156,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, __, ___) => const Icon(
+                                                      Icons.point_of_sale_rounded,
+                                                      size: 64,
+                                                      color: Color(0xFF3B82F6),
+                                                    ),
+                                                  ),
+                                                );
+                                                // Al inicio (logoT=0) suaviza las esquinas del PNG sobre #121C33;
+                                                // al subir hacia la tarjeta blanca, descubre el borde nítido.
+                                                if (logoT < 0.35) {
+                                                  final double t = (logoT / 0.35).clamp(0.0, 1.0);
+                                                  logoImage = ShaderMask(
+                                                    blendMode: BlendMode.dstIn,
+                                                    shaderCallback: (bounds) => RadialGradient(
+                                                      radius: 0.72 + (0.60 * t),
+                                                      colors: const [
+                                                        Colors.white,
+                                                        Colors.white,
+                                                        Colors.transparent,
+                                                      ],
+                                                      stops: [0.0, 0.74 + (0.26 * t), 1.0],
+                                                    ).createShader(bounds),
+                                                    child: logoImage,
+                                                  );
+                                                }
+                                                return logoImage;
+                                              }(),
+                                            ),
                                           ),
-                                          child: () {
-                                            Widget logoImage = ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(22 * logoT),
-                                              child: Image.asset(
-                                                'assets/caja4u_logo_full.png',
-                                                width: 184,
-                                                height: 156,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) => const Icon(
-                                                  Icons.point_of_sale_rounded,
-                                                  size: 64,
-                                                  color: Color(0xFF3B82F6),
-                                                ),
-                                              ),
-                                            );
-                                            // Al inicio (logoT=0) suaviza las esquinas del PNG sobre #121C33;
-                                            // al subir hacia la tarjeta blanca, descubre el borde nítido.
-                                            if (logoT < 0.35) {
-                                              final double t = (logoT / 0.35).clamp(0.0, 1.0);
-                                              logoImage = ShaderMask(
-                                                blendMode: BlendMode.dstIn,
-                                                shaderCallback: (bounds) => RadialGradient(
-                                                  radius: 0.72 + (0.60 * t),
-                                                  colors: const [
-                                                    Colors.white,
-                                                    Colors.white,
-                                                    Colors.transparent,
-                                                  ],
-                                                  stops: [0.0, 0.74 + (0.26 * t), 1.0],
-                                                ).createShader(bounds),
-                                                child: logoImage,
-                                              );
-                                            }
-                                            return logoImage;
-                                          }(),
                                         ),
                                       ),
                                     ),
@@ -660,73 +664,82 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         const SizedBox(height: 32),
 
                         // ── Indicadores de PIN ────────────────────────
-                        SizedBox(
-                          height: 24,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: List.generate(_pinLength, (index) {
-                              final isAccepted = _isNavigating;
-                              final isActive = isAccepted || index < _pin.length;
-                              final activeColor = isAccepted
-                                  ? const Color(0xFF10B981)
-                                  : const Color(0xFF3B82F6);
-                              final dotSize = isActive ? 24.0 : 20.0;
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                child: SizedBox(
-                                  width: 24,
+                        RepaintBoundary(
+                          child: ExcludeSemantics(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
                                   height: 24,
-                                  child: Center(
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 150),
-                                      curve: Curves.easeOutCubic,
-                                      width: dotSize,
-                                      height: dotSize,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: isActive ? activeColor : Colors.grey.shade200,
-                                        border: Border.all(
-                                          color: isActive ? activeColor : Colors.grey.shade400,
-                                          width: 2,
-                                        ),
-                                        boxShadow: isActive
-                                            ? [
-                                                BoxShadow(
-                                                  color: activeColor.withAlpha(isAccepted ? 90 : 56),
-                                                  blurRadius: isAccepted ? 10 : 6,
-                                                  spreadRadius: isAccepted ? 1 : 0,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: List.generate(_pinLength, (index) {
+                                      final isAccepted = _isNavigating;
+                                      final isActive = isAccepted || index < _pin.length;
+                                      final activeColor = isAccepted
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFF3B82F6);
+                                      final dotSize = isActive ? 24.0 : 20.0;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        child: SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: Center(
+                                            child: AnimatedContainer(
+                                              duration: const Duration(milliseconds: 150),
+                                              curve: Curves.easeOutCubic,
+                                              width: dotSize,
+                                              height: dotSize,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: isActive ? activeColor : Colors.grey.shade200,
+                                                border: Border.all(
+                                                  color: isActive ? activeColor : Colors.grey.shade400,
+                                                  width: 2,
                                                 ),
-                                              ]
-                                            : null,
+                                                boxShadow: isActive
+                                                    ? [
+                                                        BoxShadow(
+                                                          color: activeColor.withAlpha(isAccepted ? 90 : 56),
+                                                          blurRadius: isAccepted ? 10 : 6,
+                                                          spreadRadius: isAccepted ? 1 : 0,
+                                                        ),
+                                                      ]
+                                                    : null,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                ),
+                                SizedBox(
+                                  height: 16,
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 128,
+                                      height: 3,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(999),
+                                        child: _isNavigating
+                                            ? const ColoredBox(color: Color(0xFF10B981))
+                                            : (provider.isLoading || _isSubmitting)
+                                                ? const LinearProgressIndicator(
+                                                    minHeight: 3,
+                                                    backgroundColor: Color(0xFFE2E8F0),
+                                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                                      Color(0xFF3B82F6),
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
                                       ),
                                     ),
                                   ),
                                 ),
-                              );
-                            }),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 16,
-                          child: Center(
-                            child: SizedBox(
-                              width: 128,
-                              height: 3,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: _isNavigating
-                                    ? const ColoredBox(color: Color(0xFF10B981))
-                                    : (provider.isLoading || _isSubmitting)
-                                        ? const LinearProgressIndicator(
-                                            minHeight: 3,
-                                            backgroundColor: Color(0xFFE2E8F0),
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              Color(0xFF3B82F6),
-                                            ),
-                                          )
-                                        : const SizedBox.shrink(),
-                              ),
+                              ],
                             ),
                           ),
                         ),

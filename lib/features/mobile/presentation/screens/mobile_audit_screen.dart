@@ -356,14 +356,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             catalogProv.safeRubros.where((r) => r.id == rId).firstOrNull ??
                 itemRubro;
       }
-      final hasExplicitVertical = itemRubro?.verticalType != null &&
-          BusinessVerticalProfile.allVerticalCodes
-              .contains(itemRubro!.verticalType!.trim().toLowerCase());
-      if (!(settingsProv?.features.multiRubro ?? false) &&
-          !hasExplicitVertical) {
-        return profile;
-      }
-      return profile.forCategoryRubro(itemRubro);
+      return profile.resolveItemProfile(
+        itemRubro,
+        hasMultiRubro: settingsProv?.features.multiRubro ?? false,
+      );
     }
 
     final storeHasNativeBatch = settingsProv == null

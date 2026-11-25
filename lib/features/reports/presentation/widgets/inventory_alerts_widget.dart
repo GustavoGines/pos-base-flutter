@@ -309,58 +309,62 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   (hasPredictive &&
                       provider.predictiveCriticalAlerts.isNotEmpty);
 
-              return TweenAnimationBuilder<double>(
-                key: ValueKey(count > 0 ? count : 0),
-                tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.elasticOut,
-                builder: (context, value, child) {
-                  return Badge(
-                    isLabelVisible: count > 0,
-                    label: Text(count > 9 ? '9+' : count.toString(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
-                    backgroundColor: hasCritical ? Colors.red.shade600 : Colors.orange.shade600,
-                    offset: const Offset(2, -2),
-                    child: Transform.rotate(
-                      angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
-                      child: IconButton(
-                        tooltip: count == 0
-                            ? 'Sin alertas'
-                            : '$count alerta${count > 1 ? 's' : ''} activa${count > 1 ? 's' : ''}',
-                        constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                        padding: EdgeInsets.zero,
-                        style: IconButton.styleFrom(
-                          backgroundColor: hasCritical
-                              ? Colors.redAccent.withValues(alpha: 0.18)
-                              : count > 0
-                                  ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
-                                  : Colors.white.withValues(alpha: 0.07),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(
-                              color: hasCritical
-                                  ? Colors.redAccent.withValues(alpha: 0.45)
-                                  : count > 0
-                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
-                                      : Colors.white.withValues(alpha: 0.14),
-                            ),
-                          ),
-                        ),
-                        icon: Icon(
-                          count > 0
-                              ? Icons.notifications_active
-                              : Icons.notifications_none,
-                          size: 19,
-                          color: hasCritical
-                              ? const Color(0xFFFF6B6B)
-                              : count > 0
-                                  ? const Color(0xFFFBBF24)
-                                  : const Color(0xFFCBD5E1),
-                        ),
-                        onPressed: _toggleOverlay,
+              return Badge(
+                isLabelVisible: count > 0,
+                label: Text(count > 9 ? '9+' : count.toString(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                backgroundColor: hasCritical ? Colors.red.shade600 : Colors.orange.shade600,
+                offset: const Offset(2, -2),
+                child: IconButton(
+                  tooltip: count == 0
+                      ? 'Sin alertas'
+                      : '$count alerta${count > 1 ? 's' : ''} activa${count > 1 ? 's' : ''}',
+                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    backgroundColor: hasCritical
+                        ? Colors.redAccent.withValues(alpha: 0.18)
+                        : count > 0
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
+                            : Colors.white.withValues(alpha: 0.07),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: hasCritical
+                            ? Colors.redAccent.withValues(alpha: 0.45)
+                            : count > 0
+                                ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
+                                : Colors.white.withValues(alpha: 0.14),
                       ),
                     ),
-                  );
-                },
+                  ),
+                  icon: RepaintBoundary(
+                    child: ExcludeSemantics(
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(count > 0 ? count : 0),
+                        tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                        duration: const Duration(milliseconds: 1000),
+                        curve: Curves.elasticOut,
+                        builder: (context, value, _) {
+                          return Transform.rotate(
+                            angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
+                            child: Icon(
+                              count > 0
+                                  ? Icons.notifications_active
+                                  : Icons.notifications_none,
+                              size: 19,
+                              color: hasCritical
+                                  ? const Color(0xFFFF6B6B)
+                                  : count > 0
+                                      ? const Color(0xFFFBBF24)
+                                      : const Color(0xFFCBD5E1),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  onPressed: _toggleOverlay,
+                ),
               );
             },
           ),

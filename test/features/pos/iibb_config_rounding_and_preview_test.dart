@@ -677,6 +677,153 @@ void main() {
       expect(find.text('Monto Excedido:'), findsNothing);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('Cambiar comprobante fiscal a Factura B (Consumidor Final) fuerza percepción IIBB a \$0 incluso con cliente marcado', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final posProvider = _createPreviewGatePosProvider();
+      final pintProduct = Product(
+        id: 11,
+        name: 'Pintura Test FB',
+        internalCode: 'P-FB',
+        costPrice: 12000,
+        sellingPrice: 22900,
+        ivaRate: 21.0,
+        stock: 20,
+        active: true,
+        isSoldByWeight: false,
+      );
+      final riCustomer = Customer(
+        id: 78,
+        name: 'Cliente RI Switch B',
+        documentNumber: '30500010912',
+        documentType: 80,
+        taxCondition: 'responsable_inscripto',
+        creditLimit: 0.0,
+        balance: 0.0,
+        isActive: true,
+        appliesIibbPerception: true,
+        iibbPerceptionRate: 3.0,
+      );
+
+      posProvider.requestAddToCartWithPromo(pintProduct);
+      posProvider.selectCustomer(riCustomer, isPerceptionAgent: true);
+      posProvider.setDefaultIibbPerceptionRate(3.0);
+
+      final settingsProvider = _FakeIibbSettingsProvider(
+        const BusinessSettings(
+          companyName: 'Corralón Test',
+          taxId: '30-50001091-2',
+          taxCondition: 'IVA Responsable Inscripto',
+          afipEnabled: true,
+          isIibbPerceptionAgent: true,
+          defaultIibbPerceptionRate: 3.0,
+          licenseStatus: 'LIC-TEST',
+          licensePlanType: 'premium',
+          features: FeatureFlags(fastPos: true, arcaAfip: true),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<PosProvider>.value(value: posProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settingsProvider),
+            ChangeNotifierProvider<LocalTerminalProvider>.value(value: _FakeLocalTerminalProvider()),
+            ChangeNotifierProvider<AuthProvider>.value(value: _FakeAuthProvider()),
+            ChangeNotifierProvider<CustomerProvider>.value(value: _FakeCustomerProvider()),
+            ChangeNotifierProvider<CashRegisterProvider>.value(value: _FakeCashRegisterProvider()),
+            ChangeNotifierProvider<CatalogProvider>.value(value: _FakeCatalogProvider()),
+            Provider<ApiClient>.value(
+              value: ApiClient(MockClient((_) async => http.Response('{}', 200))),
+            ),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (ctx) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      showDialog<bool>(
+                        context: ctx,
+                        builder: (_) => const CheckoutDialog(total: 22900.0),
+                      );
+                    },
+                    child: const Text('ABRIR'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('ABRIR'));
+      await tester.pumpAndSettle();
+
+      // En modo Ticket Común con cliente RI marcado -> $23.467,77
+      expect(find.textContaining('23.467,77'), findsWidgets);
+
+      // Activar modo Factura Fiscal ARCA (inicia en Factura B -> Consumidor Final -> IIBB $0)
+      final fiscalArcaFinder = find.text('Factura Fiscal ARCA').first;
+      await tester.ensureVisible(fiscalArcaFinder);
+      await tester.tap(fiscalArcaFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('23.467,77'), findsNothing);
+      expect(find.textContaining('22.900'), findsWidgets);
+
+      // Cambiar a Factura A -> restaura percepción IIBB $567,77 ($23.467,77)
+      final factAFinder = find.text('Factura A').first;
+      await tester.ensureVisible(factAFinder);
+      await tester.tap(factAFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('23.467,77'), findsWidgets);
+
+      // Verificar alto contraste en los SegmentedButton fiscales (seleccionado oscuro + texto blanco, no seleccionado blanco)
+      final fiscalModeSeg = tester.widget<SegmentedButton<bool>>(
+        find.byKey(const Key('fiscal_mode_segmented_button')),
+      );
+      final voucherTypeSeg = tester.widget<SegmentedButton<int>>(
+        find.byKey(const Key('voucher_type_segmented_button')),
+      );
+      expect(
+        fiscalModeSeg.style?.backgroundColor?.resolve({WidgetState.selected}),
+        Colors.indigo.shade800,
+      );
+      expect(
+        fiscalModeSeg.style?.foregroundColor?.resolve({WidgetState.selected}),
+        Colors.white,
+      );
+      expect(
+        fiscalModeSeg.style?.backgroundColor?.resolve(<WidgetState>{}),
+        Colors.white,
+      );
+      expect(
+        voucherTypeSeg.style?.backgroundColor?.resolve({WidgetState.selected}),
+        Colors.indigo.shade800,
+      );
+      expect(
+        voucherTypeSeg.style?.foregroundColor?.resolve({WidgetState.selected}),
+        Colors.white,
+      );
+      expect(
+        voucherTypeSeg.style?.backgroundColor?.resolve(<WidgetState>{}),
+        Colors.white,
+      );
+
+      // Volver a Factura B -> _fiscalTaxCondition pasa a consumidor_final -> IIBB cae a $0
+      final factBFinder = find.text('Factura B').first;
+      await tester.ensureVisible(factBFinder);
+      await tester.tap(factBFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('23.467,77'), findsNothing);
+      expect(find.textContaining('22.900'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('QuotePdfService Leyenda Condicional IIBB', () {
@@ -791,6 +938,79 @@ void main() {
           IibbFiscalCalculator.baseGrossWithVat);
       expect(settingsProvider.savedPayload?['iibb_subject_tax_conditions'],
           containsAll(['responsable_inscripto', 'monotributo']));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Cambiar Condición frente al IVA sincroniza en vivo subtítulo, base automática Factura C y etiquetas de chips IIBB', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final settingsProvider = _FakeIibbSettingsProvider(
+        const BusinessSettings(
+          companyName: 'Comercio Dual IVA',
+          taxId: '20-30405060-7',
+          taxCondition: 'IVA Responsable Inscripto',
+          afipEnabled: true,
+          isIibbPerceptionAgent: true,
+          defaultIibbPerceptionRate: 3.0,
+          licenseStatus: 'LIC-PREM',
+          licensePlanType: 'premium',
+          features: FeatureFlags(fastPos: true, arcaAfip: true),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsProvider>.value(value: settingsProvider),
+            ChangeNotifierProvider<AuthProvider>.value(value: _FakeAuthProvider()),
+            ChangeNotifierProvider<LocalTerminalProvider>.value(value: _FakeLocalTerminalProvider()),
+            ChangeNotifierProvider<InventoryAlertsProvider>.value(value: _FakeAlertsProvider()),
+            ChangeNotifierProvider<CashRegisterProvider>.value(value: _FakeCashRegisterProvider()),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      await tester.tap(find.text('General').first);
+      await tester.pumpAndSettle();
+
+      // Estado inicial: IVA Responsable Inscripto
+      expect(find.textContaining('en Facturas A y B.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('iibb_base_net_option')), findsOneWidget);
+      expect(find.byKey(const ValueKey('iibb_base_gross_option')), findsOneWidget);
+      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsNothing);
+      expect(find.text('Responsable Inscripto (Fact. A)'), findsOneWidget);
+      expect(find.text('Monotributista (Fact. B)'), findsOneWidget);
+      expect(find.text('IVA Exento (Fact. B)'), findsOneWidget);
+
+      // Cambiar dropdown a Responsable Monotributo
+      final dropdown = find.byType(DropdownButtonFormField<String>).first;
+      await tester.ensureVisible(dropdown);
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Responsable Monotributo').last);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('en Factura C.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('iibb_base_net_option')), findsNothing);
+      expect(find.byKey(const ValueKey('iibb_base_gross_option')), findsNothing);
+      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsOneWidget);
+      expect(find.text('Responsable Inscripto (Fact. C)'), findsOneWidget);
+      expect(find.text('Monotributista (Fact. C)'), findsOneWidget);
+      expect(find.text('IVA Exento (Fact. C)'), findsOneWidget);
+
+      // Cambiar dropdown a IVA Exento mantiene modo Factura C
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('IVA Exento').last);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('en Factura C.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

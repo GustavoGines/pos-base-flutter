@@ -2496,14 +2496,15 @@ class _PosScreenState extends State<PosScreen> {
         // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
         SnackBarService.success(context, '¡Venta registrada con éxito!');
 
-        // 2. ACTUALIZAR LOGÍSTICA EN BACKGROUND (SOLO SI TIENE PERMISO)
+        // 2. ACTUALIZAR LOGÍSTICA EN BACKGROUND (SOLO SI EL MÓDULO Y EL PERMISO ESTÁN ACTIVOS)
         final authProv = context.read<AuthProvider>();
-        if (authProv.hasPermission(AppPermissions.manageDeliveryNotes)) {
+        final settingsProvider =
+            Provider.of<SettingsProvider>(context, listen: false);
+        if (settingsProvider.features.logistics &&
+            authProv.hasPermission(AppPermissions.manageDeliveryNotes)) {
           Provider.of<LogisticsProvider>(context, listen: false).refreshAll(force: true);
         }
 
-        final settingsProvider =
-            Provider.of<SettingsProvider>(context, listen: false);
         final localTerminalProvider =
             Provider.of<LocalTerminalProvider>(context, listen: false);
         final localFormat = localTerminalProvider.printerFormat;
@@ -3117,36 +3118,40 @@ class _PosScreenState extends State<PosScreen> {
   // ────────────────────────────────────────────────────────────────
 
   Widget _buildPendingBadge(int count) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.8, end: 1.05),
-      duration: const Duration(seconds: 1),
-      curve: Curves.easeInOut,
-      builder: (context, scale, _) {
-        return Transform.scale(
-          scale: scale,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.redAccent,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.redAccent.withValues(alpha: 0.4),
-                    blurRadius: 4,
-                    spreadRadius: 1),
-              ],
-            ),
-            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-            child: Text('$count',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center),
-          ),
-        );
-      },
+    return RepaintBoundary(
+      child: ExcludeSemantics(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.8, end: 1.05),
+          duration: const Duration(seconds: 1),
+          curve: Curves.easeInOut,
+          builder: (context, scale, _) {
+            return Transform.scale(
+              scale: scale,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.redAccent.withValues(alpha: 0.4),
+                        blurRadius: 4,
+                        spreadRadius: 1),
+                  ],
+                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                child: Text('$count',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -3738,63 +3743,69 @@ class _PosScreenState extends State<PosScreen> {
                     controller: _pendingOrdersPortalController,
                     overlayChildBuilder: (context, info) =>
                         _buildPendingOrdersOverlay(pos, info),
-                    child: TweenAnimationBuilder<double>(
-                      key: ValueKey(count > 0),
-                      tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-                      duration: const Duration(milliseconds: 1500),
-                      curve: Curves.elasticOut,
-                      builder: (context, value, child) {
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.center,
-                          children: [
-                            Transform.rotate(
-                              angle: count > 0
-                                  ? (0.15 *
-                                      (1.0 - value) *
-                                      (DateTime.now().second % 5 == 0
-                                          ? 1
-                                          : 0))
-                                  : 0,
-                              child: IconButton(
-                                tooltip: 'Órdenes en Espera',
-                                constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                                padding: EdgeInsets.zero,
-                                style: IconButton.styleFrom(
-                                  backgroundColor: count > 0
-                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
-                                      : Colors.white.withValues(alpha: 0.07),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    side: BorderSide(
-                                      color: count > 0
-                                          ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
-                                          : Colors.white.withValues(alpha: 0.14),
-                                    ),
-                                  ),
-                                ),
-                                icon: Icon(
-                                  Icons.pending_actions_rounded,
-                                  color: count > 0
-                                      ? const Color(0xFFFBBF24)
-                                      : const Color(0xFFCBD5E1),
-                                  size: 19,
-                                ),
-                                onPressed: () =>
-                                    _pendingOrdersPortalController.toggle(),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: count > 0
+                              ? 'Órdenes en Espera ($count)'
+                              : 'Órdenes en Espera',
+                          constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                          padding: EdgeInsets.zero,
+                          style: IconButton.styleFrom(
+                            backgroundColor: count > 0
+                                ? const Color(0xFFF59E0B).withValues(alpha: 0.18)
+                                : Colors.white.withValues(alpha: 0.07),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(
+                                color: count > 0
+                                    ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
+                                    : Colors.white.withValues(alpha: 0.14),
                               ),
                             ),
-                            if (count > 0)
-                              Positioned(
-                                right: -4,
-                                top: -4,
-                                child: IgnorePointer(
-                                  child: _buildPendingBadge(count),
-                                ),
+                          ),
+                          icon: RepaintBoundary(
+                            child: ExcludeSemantics(
+                              child: TweenAnimationBuilder<double>(
+                                key: ValueKey(count > 0),
+                                tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                                duration: const Duration(milliseconds: 1500),
+                                curve: Curves.elasticOut,
+                                builder: (context, value, _) {
+                                  return Transform.rotate(
+                                    angle: count > 0
+                                        ? (0.15 *
+                                            (1.0 - value) *
+                                            (DateTime.now().second % 5 == 0
+                                                ? 1
+                                                : 0))
+                                        : 0,
+                                    child: Icon(
+                                      Icons.pending_actions_rounded,
+                                      color: count > 0
+                                          ? const Color(0xFFFBBF24)
+                                          : const Color(0xFFCBD5E1),
+                                      size: 19,
+                                    ),
+                                  );
+                                },
                               ),
-                          ],
-                        );
-                      },
+                            ),
+                          ),
+                          onPressed: () =>
+                              _pendingOrdersPortalController.toggle(),
+                        ),
+                        if (count > 0)
+                          Positioned(
+                            right: -4,
+                            top: -4,
+                            child: IgnorePointer(
+                              child: _buildPendingBadge(count),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 );

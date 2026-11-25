@@ -77,8 +77,12 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
       settingsProv = context.watch<SettingsProvider?>();
     } catch (_) {}
     final settings = settingsProv?.settings;
-    final bool canExportVatSales =
-        settings == null ? true : settings.features.advancedReports;
+    final rawPlan = (settings?.licensePlanType ?? '').trim().toLowerCase();
+    final bool isPremiumPlan = settings == null
+        ? true
+        : (rawPlan == 'pro' ||
+            rawPlan == 'premium' ||
+            (settings.features.suppliers && settings.features.expenses));
 
     return Consumer<ReportsProvider>(
       builder: (context, provider, _) {
@@ -261,72 +265,68 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: canExportVatSales
-                        ? [
-                            ElevatedButton.icon(
-                              onPressed: provider.isExportingVatExcel
-                                  ? null
-                                  : () async {
-                                      await provider.exportVatSalesToExcel();
-                                      if (!context.mounted) return;
-                                      if (provider.vatSalesError != null) {
-                                        SnackBarService.error(context, provider.vatSalesError!);
-                                      } else {
-                                        SnackBarService.success(
-                                          context,
-                                          'Libro IVA Ventas exportado a Excel (listo para enviar al contador).',
-                                        );
-                                      }
-                                    },
-                              icon: provider.isExportingVatExcel
-                                  ? const SizedBox(
-                                      width: 15,
-                                      height: 15,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Icon(Icons.table_view_rounded, size: 17),
-                              label: Text(provider.isExportingVatExcel ? 'Exportando...' : 'Exportar Excel Contador'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.shade700,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: provider.isExportingVatPdf
-                                  ? null
-                                  : () async {
-                                      await provider.exportVatSalesToPdf();
-                                      if (!context.mounted) return;
-                                      if (provider.vatSalesError != null) {
-                                        SnackBarService.error(context, provider.vatSalesError!);
-                                      } else {
-                                        SnackBarService.success(
-                                          context,
-                                          'Subdiario Libro IVA Ventas exportado a PDF.',
-                                        );
-                                      }
-                                    },
-                              icon: provider.isExportingVatPdf
-                                  ? const SizedBox(
-                                      width: 15,
-                                      height: 15,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Icon(Icons.picture_as_pdf_rounded, size: 17),
-                              label: Text(provider.isExportingVatPdf ? 'Generando...' : 'Exportar PDF'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.shade700,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              ),
-                            ),
-                          ]
-                        : [
-                            _buildLockedExportButton(context, 'Exportar Excel Contador'),
-                            _buildLockedExportButton(context, 'Exportar PDF'),
-                            _buildLockedExportButton(context, 'Libro IVA Digital'),
-                          ],
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: provider.isExportingVatExcel
+                            ? null
+                            : () async {
+                                await provider.exportVatSalesToExcel();
+                                if (!context.mounted) return;
+                                if (provider.vatSalesError != null) {
+                                  SnackBarService.error(context, provider.vatSalesError!);
+                                } else {
+                                  SnackBarService.success(
+                                    context,
+                                    'Libro IVA Ventas exportado a Excel (listo para enviar al contador).',
+                                  );
+                                }
+                              },
+                        icon: provider.isExportingVatExcel
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.table_view_rounded, size: 17),
+                        label: Text(provider.isExportingVatExcel ? 'Exportando...' : 'Exportar Excel Contador'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: provider.isExportingVatPdf
+                            ? null
+                            : () async {
+                                await provider.exportVatSalesToPdf();
+                                if (!context.mounted) return;
+                                if (provider.vatSalesError != null) {
+                                  SnackBarService.error(context, provider.vatSalesError!);
+                                } else {
+                                  SnackBarService.success(
+                                    context,
+                                    'Subdiario Libro IVA Ventas exportado a PDF.',
+                                  );
+                                }
+                              },
+                        icon: provider.isExportingVatPdf
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.picture_as_pdf_rounded, size: 17),
+                        label: Text(provider.isExportingVatPdf ? 'Generando...' : 'Exportar PDF'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      if (!isPremiumPlan)
+                        _buildLockedExportButton(context, 'Libro IVA Digital'),
+                    ],
                   ),
                 ],
               ),
@@ -921,9 +921,9 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
         PlanUpgradeDialog.show(
           context,
           title: 'Plan Premium Requerido',
-          featureName: 'Exportación Contable e Impositiva (Excel / PDF / Digital)',
+          featureName: 'Libro IVA Digital (ARCA / AFIP)',
           description:
-              'La descarga del Libro IVA Ventas para estudio contable y presentación ARCA / AFIP está disponible en el Plan Premium.',
+              'La generación del Libro IVA Digital para presentación impositiva ante ARCA / AFIP está disponible en el Plan Premium.',
         );
       },
       icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),

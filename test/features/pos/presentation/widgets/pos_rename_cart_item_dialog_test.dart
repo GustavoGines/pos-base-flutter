@@ -1,9 +1,63 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/rubro.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/widgets/pos_rename_cart_item_dialog.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+
+class _RenameFakeSettingsProvider extends ChangeNotifier
+    implements SettingsProvider {
+  final BusinessSettings _settings;
+
+  _RenameFakeSettingsProvider({
+    required String businessType,
+    List<String> secondaryBusinessTypes = const [],
+    String planType = 'basic',
+    bool multiRubro = false,
+    String taxCondition = 'monotributo',
+  }) : _settings = BusinessSettings(
+          businessType: businessType,
+          secondaryBusinessTypes: secondaryBusinessTypes,
+          licenseStatus: 'active',
+          licensePlanType: planType,
+          taxCondition: taxCondition,
+          features: FeatureFlags(
+            fastPos: true,
+            multiRubro: multiRubro,
+          ),
+        );
+
+  @override
+  BusinessSettings? get settings => _settings;
+
+  @override
+  bool get isHardwareStore => _settings.isHardwareStore;
+
+  @override
+  FeatureFlags get features => _settings.features;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RenameFakeCatalogProvider extends ChangeNotifier
+    implements CatalogProvider {
+  final List<Rubro> _rubros;
+  _RenameFakeCatalogProvider({List<Rubro> rubros = const []}) : _rubros = rubros;
+
+  @override
+  List<Rubro> get rubros => _rubros;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   Product buildCatalogProduct({
@@ -427,6 +481,232 @@ void main() {
         expect(dialogResult!.newQuantity, closeTo(0.0625, 0.00001));
         expect(dialogResult!.newShelfStockBeforeSale, 10.0);
         expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('PosRenameCartItemDialog - Aislamiento estricto por Rubro y Plan', () {
+    final hwRubro = Rubro(
+      id: 1,
+      name: 'Ferretería y Pinturería',
+      verticalType: 'hardware_store',
+    );
+    final apparelRubro = Rubro(
+      id: 2,
+      name: 'Indumentaria',
+      verticalType: 'apparel',
+    );
+    final paintDemoProduct = Product(
+      id: 201,
+      name: 'Pintura Látex Exterior Lavable Alba 20L',
+      internalCode: 'HW201',
+      sellingPrice: 89500,
+      costPrice: 58000,
+      stock: 12,
+      active: true,
+      isSoldByWeight: false,
+      unitType: 'un',
+      calcConfig: const {'type': 'paint', 'liters': 20.0, 'yield_m2_l': 10.0},
+      category: Category(
+        id: 11,
+        name: 'Pinturas',
+        rubroId: 1,
+        rubro: hwRubro,
+      ),
+    );
+    final shirtProduct = Product(
+      id: 202,
+      name: 'Remera Oversize Algodón',
+      internalCode: 'IND202',
+      sellingPrice: 18000,
+      costPrice: 9500,
+      stock: 25,
+      active: true,
+      isSoldByWeight: false,
+      unitType: 'un',
+      category: Category(
+        id: 22,
+        name: 'Remeras',
+        rubroId: 2,
+        rubro: apparelRubro,
+      ),
+    );
+
+    Future<void> pumpDialogForVertical(
+      WidgetTester tester, {
+      required Product product,
+      required String businessType,
+      bool multiRubro = false,
+      String planType = 'basic',
+    }) async {
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: _RenameFakeSettingsProvider(
+                businessType: businessType,
+                planType: planType,
+                multiRubro: multiRubro,
+              ),
+            ),
+            ChangeNotifierProvider<CatalogProvider>.value(
+              value: _RenameFakeCatalogProvider(
+                rubros: [hwRubro, apparelRubro],
+              ),
+            ),
+            ChangeNotifierProvider<LocalTerminalProvider>(
+              create: (_) => LocalTerminalProvider(),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: PosRenameCartItemDialog(
+                item: CartItem(product: product, quantity: 1),
+                onOpenHardwareCalculator: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'Plan Básico: Indumentaria, Minimercado, Carnicería, Tecnología y Bazar JAMÁS muestran "Recalcular por m² / Medidas" aunque el producto demo tenga calcConfig',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        for (final vertical in const [
+          'apparel',
+          'retail',
+          'butcher',
+          'tech',
+          'general',
+        ]) {
+          await pumpDialogForVertical(
+            tester,
+            product: paintDemoProduct,
+            businessType: vertical,
+            multiRubro: false,
+            planType: 'basic',
+          );
+
+          expect(
+            find.text('Recalcular por m² / Medidas'),
+            findsNothing,
+            reason:
+                'Rubro $vertical en Plan Básico no debe mostrar calculadora ferretera m²',
+          );
+
+          // Fracciones rápidas 1/x: ocultas para unidad entera en apparel/tech/general; visibles en retail/butcher
+          if (vertical == 'retail' || vertical == 'butcher') {
+            expect(
+              find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+              findsOneWidget,
+              reason: 'Rubro $vertical debe conservar 1/x para porciones',
+            );
+          } else {
+            expect(
+              find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+              findsNothing,
+              reason:
+                  'Rubro $vertical con unidad entera (un) no debe mostrar porciones 1/x',
+            );
+          }
+
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        }
+      },
+    );
+
+    testWidgets(
+      'Plan Básico Ferretería SÍ muestra "Recalcular por m² / Medidas" y "Fracción rápida" en 1/x; Tecnología muestra 1/x solo en cables por metro (mt)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await pumpDialogForVertical(
+          tester,
+          product: paintDemoProduct,
+          businessType: 'hardware_store',
+          multiRubro: false,
+          planType: 'basic',
+        );
+
+        expect(find.text('Recalcular por m² / Medidas'), findsOneWidget);
+        expect(
+          find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Fracción rápida:'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+
+        // Cable UTP por metro (unitType: 'mt') en Tecnología Básico -> habilita 1/x pero sin m²
+        final cableMt = shirtProduct.copyWith(
+          name: 'Cable UTP Cat6 Exterior',
+          unitType: 'mt',
+          clearCategory: true,
+        );
+        await pumpDialogForVertical(
+          tester,
+          product: cableMt,
+          businessType: 'tech',
+          multiRubro: false,
+          planType: 'basic',
+        );
+        expect(find.text('Recalcular por m² / Medidas'), findsNothing);
+        expect(
+          find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Plan PRO Multi-Rubro: habilita "Recalcular por m² / Medidas" y 1/x en ítems de Ferretería y los oculta en ítems de Indumentaria',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        // 1. Ítem de Ferretería en tienda PRO Multi-Rubro (incluso con rubro primario retail)
+        await pumpDialogForVertical(
+          tester,
+          product: paintDemoProduct,
+          businessType: 'retail',
+          multiRubro: true,
+          planType: 'premium',
+        );
+        expect(find.text('Recalcular por m² / Medidas'), findsOneWidget);
+        expect(
+          find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+          findsOneWidget,
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+
+        // 2. Ítem de Indumentaria en tienda PRO Multi-Rubro (incluso con rubro primario hardware_store)
+        await pumpDialogForVertical(
+          tester,
+          product: shirtProduct,
+          businessType: 'hardware_store',
+          multiRubro: true,
+          planType: 'premium',
+        );
+        expect(find.text('Recalcular por m² / Medidas'), findsNothing);
+        expect(
+          find.byKey(const Key('rename_quick_fractions_toggle_btn')),
+          findsNothing,
+        );
       },
     );
   });

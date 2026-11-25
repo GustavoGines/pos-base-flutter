@@ -194,47 +194,51 @@ class _Caja4uStartupSplashState extends State<Caja4uStartupSplash>
                     ((constraints.maxHeight / 2) + (logoSize * 0.36))
                         .clamp(0.0, (constraints.maxHeight - 96).clamp(0.0, double.infinity));
 
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Center(
-                      child: _buildAnimatedLogo(logoSize),
-                    ),
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      top: indicatorTop,
-                      child: AnimatedOpacity(
-                        opacity: waitingForSystem ? 1 : 0,
-                        duration: const Duration(milliseconds: 300),
-                        child: waitingForSystem
-                            ? const _WaitingIndicator()
-                            : const SizedBox.shrink(),
-                      ),
-                    ),
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      bottom: 24,
-                      child: AnimatedOpacity(
-                        opacity: _showSkipHint ? 1 : 0,
-                        duration: const Duration(milliseconds: 400),
-                        child: Text(
-                          _isMobile
-                              ? 'Tocá para continuar'
-                              : 'Hacé clic o presioná una tecla para continuar',
-                          key: const ValueKey('caja4u_splash_skip_hint'),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white38,
+                return RepaintBoundary(
+                  child: ExcludeSemantics(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Center(
+                          child: _buildAnimatedLogo(logoSize),
+                        ),
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          top: indicatorTop,
+                          child: AnimatedOpacity(
+                            opacity: waitingForSystem ? 1 : 0,
+                            duration: const Duration(milliseconds: 300),
+                            child: waitingForSystem
+                                ? const _WaitingIndicator()
+                                : const SizedBox.shrink(),
                           ),
                         ),
-                      ),
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 24,
+                          child: AnimatedOpacity(
+                            opacity: _showSkipHint ? 1 : 0,
+                            duration: const Duration(milliseconds: 400),
+                            child: Text(
+                              _isMobile
+                                  ? 'Tocá para continuar'
+                                  : 'Hacé clic o presioná una tecla para continuar',
+                              key: const ValueKey('caja4u_splash_skip_hint'),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white38,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 );
               },
             ),

@@ -4619,6 +4619,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Builder(builder: (context) {
           final isAfipLocked = !provider.features.arcaAfip;
           final isIibbActive = _isIibbPerceptionAgent && !isAfipLocked;
+          final normalizedIssuerCond =
+              (_selectedTaxCondition ?? '').trim().toLowerCase();
+          final isIssuerResponsableInscripto =
+              normalizedIssuerCond.contains('inscripto');
 
           return Container(
             decoration: BoxDecoration(
@@ -4696,7 +4700,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         isAfipLocked
                             ? 'Requiere el módulo de Facturación Electrónica ARCA/AFIP habilitado en su licencia.'
-                            : 'Habilita el cálculo automático de percepciones de Ingresos Brutos en las facturas A y B.',
+                            : (isIssuerResponsableInscripto
+                                ? 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Facturas A y B.'
+                                : 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Factura C.'),
                         style: TextStyle(fontSize: 12, color: isAfipLocked ? Colors.grey.shade600 : null),
                       ),
                       value: isIibbActive,
@@ -4774,21 +4780,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _buildIibbBaseOptionCard(
-                      key: const ValueKey('iibb_base_net_option'),
-                      value: IibbFiscalCalculator.baseNetWithoutVat,
-                      title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
-                      subtitle:
-                          'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto). En Monotributo (Factura C) coincide con el total.',
-                    ),
-                    const SizedBox(height: 8),
-                    _buildIibbBaseOptionCard(
-                      key: const ValueKey('iibb_base_gross_option'),
-                      value: IibbFiscalCalculator.baseGrossWithVat,
-                      title: 'Sobre Subtotal con IVA incluido',
-                      subtitle:
-                          'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
-                    ),
+                    if (isIssuerResponsableInscripto) ...[
+                      _buildIibbBaseOptionCard(
+                        key: const ValueKey('iibb_base_net_option'),
+                        value: IibbFiscalCalculator.baseNetWithoutVat,
+                        title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
+                        subtitle:
+                            'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto). En Monotributo (Factura C) coincide con el total.',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildIibbBaseOptionCard(
+                        key: const ValueKey('iibb_base_gross_option'),
+                        value: IibbFiscalCalculator.baseGrossWithVat,
+                        title: 'Sobre Subtotal con IVA incluido',
+                        subtitle:
+                            'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
+                      ),
+                    ] else
+                      Container(
+                        key: const ValueKey('iibb_base_factura_c_auto_note'),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.amber.shade300),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.lock_clock_outlined,
+                                size: 18, color: Colors.amber.shade900),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Cálculo automático sobre Total de Factura C',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'En Monotributo / IVA Exento (Factura C) no se discrimina IVA, por lo que la percepción IIBB se calcula siempre automáticamente sobre el total del comprobante.',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.blueGrey.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 14),
                     Text(
                       'Condiciones frente al IVA alcanzadas por defecto:',
@@ -4806,17 +4855,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_ri'),
                           conditionKey: 'responsable_inscripto',
-                          label: 'Responsable Inscripto (Fact. A / C)',
+                          label: isIssuerResponsableInscripto
+                              ? 'Responsable Inscripto (Fact. A)'
+                              : 'Responsable Inscripto (Fact. C)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_mono'),
                           conditionKey: 'monotributo',
-                          label: 'Monotributista (Fact. A / B / C)',
+                          label: isIssuerResponsableInscripto
+                              ? 'Monotributista (Fact. B)'
+                              : 'Monotributista (Fact. C)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_exento'),
                           conditionKey: 'exento',
-                          label: 'IVA Exento (Fact. B / C)',
+                          label: isIssuerResponsableInscripto
+                              ? 'IVA Exento (Fact. B)'
+                              : 'IVA Exento (Fact. C)',
                         ),
                       ],
                     ),

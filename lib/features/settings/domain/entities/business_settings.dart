@@ -179,11 +179,9 @@ class BusinessSettings extends Equatable {
   BusinessVerticalProfile get verticalProfile =>
       BusinessVerticalProfile.fromSettings(this);
 
-  /// Indica si la Calculadora Rápida de Mostrador para Ferretería (Machimbre, Chapas, Pintura)
-  /// está disponible. Requiere explícitamente rubro Ferretería (`hardware_store`),
-  /// licencia activa y un plan Básico o Premium válido (SaaS o Lifetime).
-  bool get canUseHardwareCalculator {
-    if (!isHardwareStore) return false;
+  /// Verifica que la licencia esté activa y en un plan válido (Básico, PRO/Premium o Lifetime),
+  /// excluyendo estados vacíos sin hidratar, suspendidos, expirados o bloqueados.
+  bool get hasValidCalculatorLicense {
     final statusLower = (licenseStatus ?? '').trim().toLowerCase();
     final hasHydratedFeatures =
         features.fastPos || features.quotes || features.logistics;
@@ -212,6 +210,12 @@ class BusinessSettings extends Equatable {
         plan == 'premium' ||
         plan == 'lifetime';
   }
+
+  /// Indica si la Calculadora Rápida de Mostrador para Ferretería (Machimbre, Chapas, Pintura)
+  /// está disponible. Requiere explícitamente rubro Ferretería (`hardware_store`),
+  /// licencia activa y un plan Básico o Premium válido (SaaS o Lifetime).
+  bool get canUseHardwareCalculator =>
+      isHardwareStore && hasValidCalculatorLicense;
 
   /// True cuando la Condición frente al IVA del comercio es Responsable Inscripto
   /// (ej. 'responsable_inscripto' o 'IVA Responsable Inscripto').

@@ -535,6 +535,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             : kBrandAmber.withValues(alpha: 0.45);
 
                         return Tooltip(
+                          excludeFromSemantics: true,
                           message: isOpen
                               ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado de Terminal y Periféricos)'
                               : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado de Terminal y Periféricos)',
@@ -558,12 +559,14 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   if (isOpen && !isVeryNarrow) ...[
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: const BoxDecoration(
-                                        color: kBrandMint,
-                                        shape: BoxShape.circle,
+                                    ExcludeSemantics(
+                                      child: Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: const BoxDecoration(
+                                          color: kBrandMint,
+                                          shape: BoxShape.circle,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 6),
@@ -2578,6 +2581,7 @@ class UpdateBadgeWidget extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.only(right: 6.0),
             child: Tooltip(
+              excludeFromSemantics: true,
               message: isBeta
                   ? 'Buscando actualizaciones en canal BETA...'
                   : 'Buscando actualizaciones en canal Estable...',
@@ -2600,14 +2604,18 @@ class UpdateBadgeWidget extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: isBeta
-                            ? const Color(0xFFFBBF24)
-                            : const Color(0xFFBAE6FD),
+                    RepaintBoundary(
+                      child: ExcludeSemantics(
+                        child: SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: isBeta
+                                ? const Color(0xFFFBBF24)
+                                : const Color(0xFFBAE6FD),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 7),
@@ -2661,6 +2669,7 @@ class UpdateBadgeWidget extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(right: 6.0),
               child: Tooltip(
+                excludeFromSemantics: true,
                 message: _buildTooltipMessage(result),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
