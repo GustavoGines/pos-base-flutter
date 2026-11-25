@@ -142,7 +142,7 @@ void main() {
 
       // 1. Verificar que LicenseLockScreen está en pantalla
       expect(find.byType(LicenseLockScreen), findsOneWidget);
-      expect(find.text('SISTEMA BLOQUEADO'), findsOneWidget);
+      expect(find.text('Licencia pausada o pendiente de validación'), findsOneWidget);
 
       // 2. Verificar que AdminPinDialog NO está en pantalla ni hay ningún botón para invocarlo
       expect(find.byType(AdminPinDialog), findsNothing);

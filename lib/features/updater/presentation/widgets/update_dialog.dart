@@ -87,6 +87,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
   bool get _isFull => widget.isFullSystemUpdate;
 
   Future<void> _startUpdate() async {
+    if (!widget.updateInfo.canAutoUpdate ||
+        widget.updateInfo.effectiveDownloadUrl.trim().isEmpty) {
+      setState(() {
+        _isDownloading = false;
+        _status =
+            '🔒 Esta actualización no está habilitada para descarga automática en tu licencia actual.';
+      });
+      return;
+    }
+
     if (kDebugMode) {
       setState(() {
         _isDownloading = false;

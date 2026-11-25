@@ -88,6 +88,28 @@ class BusinessSettings extends Equatable {
   final DateTime? licenseNextPaymentAt;
   final String? licenseManageUrl;
   final bool isLifetime;
+  final bool isTrial;
+  final String? licenseBlockReason;
+  final String? licenseOtaToken;
+  final bool licenseAllowOtaUpdates;
+  final DateTime? licenseOtaUnlockedUntil;
+  final String? licenseMaxUnlockedVersion;
+
+  DateTime? get localLicenseExpiresAt => licenseExpiresAt?.toLocal();
+
+  int? get remainingLicenseDays {
+    if (isLifetime) return null;
+    final exp = localLicenseExpiresAt;
+    if (exp == null) return null;
+    final now = DateTime.now();
+    final expDay = DateTime(exp.year, exp.month, exp.day);
+    final nowDay = DateTime(now.year, now.month, now.day);
+    return expDay.difference(nowDay).inDays;
+  }
+
+  bool get hasActiveOtaWindow =>
+      licenseOtaUnlockedUntil != null &&
+      licenseOtaUnlockedUntil!.isAfter(DateTime.now());
   
   // [multiple-prices] Modificadores Globales y Dinámicos
   final double globalWholesalePercentage; // Ej: -15.0
@@ -321,6 +343,12 @@ class BusinessSettings extends Equatable {
     DateTime? licenseNextPaymentAt,
     String? licenseManageUrl,
     bool? isLifetime,
+    bool? isTrial,
+    String? licenseBlockReason,
+    String? licenseOtaToken,
+    bool? licenseAllowOtaUpdates,
+    DateTime? licenseOtaUnlockedUntil,
+    String? licenseMaxUnlockedVersion,
     String? logoPath,
     String? logoUrl,
     double? globalWholesalePercentage,
@@ -362,6 +390,15 @@ class BusinessSettings extends Equatable {
       licenseNextPaymentAt: licenseNextPaymentAt ?? this.licenseNextPaymentAt,
       licenseManageUrl: licenseManageUrl ?? this.licenseManageUrl,
       isLifetime: isLifetime ?? this.isLifetime,
+      isTrial: isTrial ?? this.isTrial,
+      licenseBlockReason: licenseBlockReason ?? this.licenseBlockReason,
+      licenseOtaToken: licenseOtaToken ?? this.licenseOtaToken,
+      licenseAllowOtaUpdates:
+          licenseAllowOtaUpdates ?? this.licenseAllowOtaUpdates,
+      licenseOtaUnlockedUntil:
+          licenseOtaUnlockedUntil ?? this.licenseOtaUnlockedUntil,
+      licenseMaxUnlockedVersion:
+          licenseMaxUnlockedVersion ?? this.licenseMaxUnlockedVersion,
       logoPath: logoPath ?? this.logoPath,
       logoUrl: logoUrl ?? this.logoUrl,
       globalWholesalePercentage: globalWholesalePercentage ?? this.globalWholesalePercentage,
@@ -407,6 +444,12 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.isTrial = false,
+    this.licenseBlockReason,
+    this.licenseOtaToken,
+    this.licenseAllowOtaUpdates = true,
+    this.licenseOtaUnlockedUntil,
+    this.licenseMaxUnlockedVersion,
     this.logoPath,
     this.logoUrl,
     this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
@@ -450,6 +493,12 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        isTrial,
+        licenseBlockReason,
+        licenseOtaToken,
+        licenseAllowOtaUpdates,
+        licenseOtaUnlockedUntil,
+        licenseMaxUnlockedVersion,
         logoPath,
         logoUrl,
         globalWholesalePercentage,

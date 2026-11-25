@@ -13,6 +13,7 @@ import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/license_commercial_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,6 +25,7 @@ import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
+import '../../../updater/presentation/widgets/upgrade_news_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
 import '../widgets/ecommerce_sync_logs_dialog.dart';
@@ -2179,6 +2181,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final backendUpdate = result.backendUpdate;
 
       if (!mounted) return;
+
+      if (result.hasAny && !result.canAutoUpdate) {
+        final dismissedVer =
+            UpdateService.dismissedUpgradeVersionNotifier.value;
+        showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder: (_) => UpgradeNewsDialog(
+            checkResult: result,
+            currentAppVersion: _appVersion.isNotEmpty
+                ? _appVersion
+                : result.currentFrontendVersion,
+            showDismissVersionAction: result.isLifetimeUpgradeBlocked &&
+                dismissedVer != result.targetVersion,
+          ),
+        );
+        return;
+      }
 
       if (frontendUpdate != null && backendUpdate != null) {
         // ESCENARIO 1: ACTUALIZACIíƒ“N DOBLE (INTEGRAL)
@@ -6290,10 +6310,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isPremium: provider.currentPlan.toLowerCase() == 'premium' ||
                 provider.currentPlan.toLowerCase() == 'pro',
             isLifetime: isLifetime,
+            isTrial: settings?.isTrial ?? false,
             licenseKey: settings?.licenseStatus,
             expiresAt: expiresAt,
             lastSync: settings?.lastLicenseCheck,
             manageUrl: manageUrl,
+            allowOtaUpdates: settings?.licenseAllowOtaUpdates ?? !isLifetime,
+            otaUnlockedUntil: settings?.licenseOtaUnlockedUntil,
           ),
           const SizedBox(height: 28),
           _buildSectionTitle('Rubro Comercial Licenciado'),
@@ -6749,19 +6772,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class AnimatedSubscriptionCard extends StatefulWidget {
   final bool isPremium;
   final bool isLifetime;
+  final bool isTrial;
   final String? licenseKey;
   final DateTime? expiresAt;
   final String? lastSync;
   final String? manageUrl;
+  final bool allowOtaUpdates;
+  final DateTime? otaUnlockedUntil;
 
   const AnimatedSubscriptionCard({
     super.key,
     required this.isPremium,
     required this.isLifetime,
+    this.isTrial = false,
     this.licenseKey,
     this.expiresAt,
     this.lastSync,
     this.manageUrl,
+    this.allowOtaUpdates = false,
+    this.otaUnlockedUntil,
   });
 
   @override
@@ -6792,6 +6821,15 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  String _formatExpirationText(DateTime expiresAt) {
+    final local = expiresAt.toLocal();
+    try {
+      return 'Expira el: ${DateFormat("d 'de' MMMM, yyyy", 'es_AR').format(local)} (23:59 hs)';
+    } catch (_) {
+      return 'Expira el: ${DateFormat('dd/MM/yyyy').format(local)} (23:59 hs)';
+    }
   }
 
   @override
@@ -6897,25 +6935,81 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                   Text(
                     widget.isLifetime
                         ? 'Acceso Vitalicio (LifeTime)'
-                        : 'Suscripción Activa',
+                        : (widget.isTrial
+                            ? 'Prueba Gratuita Activa'
+                            : 'Suscripción Activa'),
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.5),
                   ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Text(
+                      widget.isLifetime
+                          ? 'Plan Pago Único · Soporte y actualizaciones a demanda'
+                          : (widget.isTrial
+                              ? '🎯 Modo Evaluación · Tus productos y ventas se conservan al activar tu plan'
+                              : 'Plan Mensual SaaS · Actualizaciones automáticas y soporte incluidos'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (widget.isLifetime &&
+                      (widget.allowOtaUpdates ||
+                          (widget.otaUnlockedUntil != null &&
+                              widget.otaUnlockedUntil!
+                                  .isAfter(DateTime.now())))) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFF34D399).withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Text(
+                        widget.allowOtaUpdates
+                            ? '⚡ Actualizaciones OTA habilitadas en esta licencia'
+                            : '⚡ Ventana OTA habilitada hasta ${DateFormat('dd/MM/yyyy HH:mm').format(widget.otaUnlockedUntil!.toLocal())}',
+                        style: const TextStyle(
+                          color: Color(0xFFD1FAE5),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     widget.isLifetime
-                        ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
+                        ? (widget.isPremium
+                            ? 'Licencia perpetua Plan Premium · Parches críticos incluidos; nuevas versiones y soporte a demanda.'
+                            : 'Licencia perpetua Plan Básico · Parches críticos incluidos; nuevas versiones y soporte a demanda.')
                         : (widget.expiresAt != null
-                            ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
+                            ? _formatExpirationText(widget.expiresAt!)
                             : (widget.lastSync != null
                                 ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!).toLocal())}'
                                 : 'Estado: Activo y Protegido')),
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 16),
+                        fontSize: 15),
                   ),
                   if (widget.licenseKey != null && widget.licenseKey!.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -6940,26 +7034,45 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                               fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          InkWell(
-                            onTap: () async {
-                              await Clipboard.setData(ClipboardData(text: widget.licenseKey!));
-                              if (context.mounted) {
-                                SnackBarService.success(context, 'Licencia copiada al portapapeles');
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4.0),
-                              child: Icon(Icons.copy, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                          if (!widget.licenseKey!.contains('****')) ...[
+                            const SizedBox(width: 16),
+                            InkWell(
+                              onTap: () async {
+                                await Clipboard.setData(ClipboardData(text: widget.licenseKey!));
+                                if (context.mounted) {
+                                  SnackBarService.success(context, 'Licencia copiada al portapapeles');
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: Icon(Icons.copy, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
                   ],
                   const SizedBox(height: 36),
-                  if (!widget.isLifetime && widget.manageUrl != null)
+                  if (widget.isTrial && !widget.isLifetime)
+                    ElevatedButton.icon(
+                      onPressed: () => LicenseCommercialDialog.show(context),
+                      icon: const Icon(Icons.rocket_launch_rounded, size: 20),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        elevation: 6,
+                      ),
+                      label: const Text('ACTIVAR MI PLAN POR WHATSAPP',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
+                    )
+                  else if (!widget.isLifetime && widget.manageUrl != null)
                     MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: AnimatedContainer(

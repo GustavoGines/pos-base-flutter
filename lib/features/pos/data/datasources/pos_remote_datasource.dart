@@ -224,9 +224,16 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       } else {
         String detail = '';
         bool isClosedShift = false;
+        bool isLicenseBlock = false;
         try {
           final errBody = json.decode(response.body);
           if (errBody is Map) {
+            final errorCode = errBody['error_code']?.toString();
+            if (errorCode == 'LICENSE_BLOCKED' ||
+                errorCode == 'LICENSE_CLOCK_TAMPERED' ||
+                errorCode == 'LICENSE_INTEGRITY_VIOLATION') {
+              isLicenseBlock = true;
+            }
             if (errBody.containsKey('errors')) {
               final errs = errBody['errors'] as Map;
               // Detectar específicamente el error de turno cerrado
@@ -247,6 +254,9 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         // Lanzar excepción tipada para que el Provider pueda reaccionar específicamente
         if (isClosedShift) {
           throw ClosedShiftException(detail);
+        }
+        if (isLicenseBlock && detail.trim().isNotEmpty) {
+          throw Exception(detail.trim());
         }
         throw Exception('Error al procesar venta: $detail (HTTP ${response.statusCode})');
       }

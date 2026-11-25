@@ -1134,6 +1134,14 @@ class _MainAppState extends State<MainApp> {
         }
       };
 
+      // Intercepta 403 de licencia vencida/reloj para levantar LicenseLockScreen en caliente sin errores crudos
+      authProv.apiClient?.onLicenseBlocked = (_) {
+        if (!mounted) return;
+        unawaited(
+          context.read<SettingsProvider>().loadSettings(isSilent: true).catchError((_) {}),
+        );
+      };
+
       // Intercepta Error 403 (Permiso Denegado / Descuento no autorizado) y solicita PIN de Administrador
       authProv.apiClient?.onPermissionDenied = (reason) async {
         final ctx = navigatorKey.currentContext;
@@ -1389,7 +1397,10 @@ class _MainAppState extends State<MainApp> {
               } catch (_) {}
             }
 
-            if (backendUpdate != null && !isSecondaryLanTerminal && ctx.mounted) {
+            if (backendUpdate != null &&
+                backendUpdate.canAutoUpdate &&
+                !isSecondaryLanTerminal &&
+                ctx.mounted) {
               // Actualización integral en progreso en la PC Servidor: saltamos el cartel de "App actualizada"
               // y pasamos directamente a la Fase 2 (Servidor).
               await showDialog(

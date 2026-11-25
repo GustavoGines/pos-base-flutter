@@ -14,6 +14,7 @@ import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
+import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -136,6 +137,24 @@ class SettingsProvider with ChangeNotifier {
   String _logoSignature(BusinessSettings? s) =>
       '${s?.logoPath ?? ''}|${s?.effectiveLogoUrl ?? ''}';
 
+  Future<void> _persistOtaMetadataToPrefs(BusinessSettings? s) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = s?.licenseOtaToken?.trim() ?? '';
+      if (token.isNotEmpty) {
+        await prefs.setString('license_ota_token', token);
+      } else {
+        await prefs.remove('license_ota_token');
+      }
+      final mode = s?.licensePlanMode?.trim() ?? '';
+      if (mode.isNotEmpty) {
+        await prefs.setString('license_plan_mode', mode);
+      } else {
+        await prefs.remove('license_plan_mode');
+      }
+    } catch (_) {}
+  }
+
   Future<void> loadSettings({bool isSilent = false}) async {
     if (!isSilent) {
       _isLoading = true;
@@ -148,6 +167,7 @@ class SettingsProvider with ChangeNotifier {
 
       final prevLogoSig = _logoSignature(_settings);
       _settings = await getSettingsUseCase();
+      await _persistOtaMetadataToPrefs(_settings);
       if (_logoSignature(_settings) != prevLogoSig) {
         AfipFiscalPdfService.invalidateLogoCache();
       }
@@ -212,6 +232,7 @@ class SettingsProvider with ChangeNotifier {
       final prevLogoSig = _logoSignature(_settings);
       final newSettings = await getSettingsUseCase();
       _settings = newSettings;
+      await _persistOtaMetadataToPrefs(_settings);
       if (_logoSignature(_settings) != prevLogoSig) {
         AfipFiscalPdfService.invalidateLogoCache();
       }
@@ -643,6 +664,7 @@ class SettingsProvider with ChangeNotifier {
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
         }
+        unawaited(UpdateService().checkUpdate(throwErrors: false));
         
         return plan;
       } else if (response.statusCode == 404) {
@@ -697,6 +719,9 @@ class SettingsProvider with ChangeNotifier {
         // Notificar al sistema de seguridad que sincronizamos con el server
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
+        }
+        if (!isSilent) {
+          unawaited(UpdateService().checkUpdate(throwErrors: false));
         }
       } else if (response.statusCode == 404) {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
@@ -759,11 +784,12 @@ class SettingsProvider with ChangeNotifier {
           headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         ).timeout(const Duration(minutes: 4)).then((response) { // 4 min: tolera cold-start de Render
           if (response.statusCode == 200) {
-            getSettingsUseCase().then((newSettings) {
+            getSettingsUseCase().then((newSettings) async {
               _settings = newSettings;
+              await _persistOtaMetadataToPrefs(newSettings);
               // Bug #3 fix: actualizar el Secure Storage con el server_time recibido
               // para que el Drift Check del próximo ciclo use el reloj del servidor.
-              LicenseHeartbeatService().updateLastSync(newSettings);
+              await LicenseHeartbeatService().updateLastSync(newSettings);
               notifyListeners();
             });
           }

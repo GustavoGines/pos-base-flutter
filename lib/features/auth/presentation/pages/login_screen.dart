@@ -130,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             _updateCheckCompleted = true;
           });
           
-          if (update != null && update.isCritical) {
+          if (update != null && update.canAutoUpdate && update.isCritical) {
             showDialog(
               context: context,
               barrierDismissible: false,
@@ -143,10 +143,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
       final result = await UpdateService().checkUpdate(throwErrors: true);
 
+      if (result.hasAny && !result.canAutoUpdate) {
+        if (mounted) {
+          setState(() {
+            _frontendUpdate = null;
+            _backendUpdate = null;
+            _updateCheckCompleted = true;
+          });
+        }
+        return;
+      }
+
       // Si el usuario sigue pacientemente en la pantalla de login:
       if (mounted) {
         // Actualización crítica del frontend → diálogo bloqueante
-        if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
+        if (result.frontendUpdate != null &&
+            result.frontendUpdate!.canAutoUpdate &&
+            result.frontendUpdate!.isCritical) {
           showDialog(
             context: context,
             barrierDismissible: false,

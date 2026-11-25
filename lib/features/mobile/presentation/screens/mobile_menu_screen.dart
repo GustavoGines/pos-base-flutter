@@ -24,7 +24,7 @@ class _MobileMenuScreenState extends State<MobileMenuScreen> {
   Future<void> _checkForUpdate() async {
     final update = await MobileUpdateService.checkForUpdate();
     if (!mounted) return;
-    if (update != null) {
+    if (update != null && update.canAutoUpdate) {
       await showDialog(
         context: context,
         barrierDismissible: !update.isCritical,

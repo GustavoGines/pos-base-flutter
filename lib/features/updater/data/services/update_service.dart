@@ -12,18 +12,35 @@ class UpdateCheckResult {
   final UpdateInfo? backendUpdate;
   final String channel;
   final bool serverChecked;
+  final String currentFrontendVersion;
 
   UpdateCheckResult({
     this.frontendUpdate,
     this.backendUpdate,
     this.channel = 'stable',
     this.serverChecked = true,
+    this.currentFrontendVersion = '',
   });
 
   bool get hasAny => frontendUpdate != null || backendUpdate != null;
   bool get isBeta => channel.toLowerCase() == 'beta';
+  UpdateInfo? get primaryUpdate => frontendUpdate ?? backendUpdate;
+  String? get targetVersion => primaryUpdate?.version;
+  bool get canAutoUpdate =>
+      hasAny &&
+      (frontendUpdate?.canAutoUpdate ?? true) &&
+      (backendUpdate?.canAutoUpdate ?? true);
+  String? get otaBlockReason =>
+      (frontendUpdate?.canAutoUpdate == false
+          ? frontendUpdate?.otaBlockReason
+          : null) ??
+      (backendUpdate?.canAutoUpdate == false
+          ? backendUpdate?.otaBlockReason
+          : null);
+  bool get isLifetimeUpgradeBlocked =>
+      hasAny && !canAutoUpdate && otaBlockReason == 'lifetime_upgrade_required';
   bool get isFullSystemUpdate =>
-      frontendUpdate != null && backendUpdate != null;
+      frontendUpdate != null && backendUpdate != null && canAutoUpdate;
 }
 
 class UpdateService {
@@ -45,6 +62,10 @@ class UpdateService {
   /// Indica que el cambio de canal (`stable` <-> `beta`) está esperando respuesta del servidor.
   static final ValueNotifier<bool> isSwitchingChannelNotifier =
       ValueNotifier(false);
+
+  /// Versión ocultada voluntariamente por el usuario desde el modal comercial Lifetime.
+  static final ValueNotifier<String?> dismissedUpgradeVersionNotifier =
+      ValueNotifier(null);
 
   int _checkGeneration = 0;
   int _activeChecksCount = 0;
@@ -79,6 +100,18 @@ class UpdateService {
     channelNotifier.value = 'stable';
     isCheckingNotifier.value = false;
     isSwitchingChannelNotifier.value = false;
+    dismissedUpgradeVersionNotifier.value = null;
+  }
+
+  /// Guarda en SharedPreferences la versión comercial cuyo badge fue ocultado en la barra superior.
+  Future<void> dismissUpgradeVersion(String version) async {
+    final clean = version.trim();
+    if (clean.isEmpty) return;
+    dismissedUpgradeVersionNotifier.value = clean;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('dismissed_upgrade_version', clean);
+    } catch (_) {}
   }
 
   static String _normalizeChannel(String? raw) {
@@ -181,6 +214,8 @@ class UpdateService {
     );
     if (myGen == _checkGeneration) {
       channelNotifier.value = updateChannel;
+      dismissedUpgradeVersionNotifier.value =
+          prefs.getString('dismissed_upgrade_version');
     }
 
     if (kDebugMode && !allowInDebug && !_forceAllowInDebugForTest) {
@@ -208,15 +243,24 @@ class UpdateService {
     UpdateInfo? frontendUpdate;
     UpdateInfo? backendUpdate;
     bool anyServerCheckSucceeded = false;
+    String resolvedFrontendVersion = '';
     final serverTimeout =
         throwErrors ? const Duration(minutes: 4) : const Duration(seconds: 45);
 
     try {
       final currentFrontendVersion = await _resolveFrontendVersion();
+      resolvedFrontendVersion = currentFrontendVersion;
       if (myGen != _checkGeneration) {
         return updateNotifier.value ??
             UpdateCheckResult(channel: updateChannel, serverChecked: false);
       }
+
+      final otaToken = (prefs.getString('license_ota_token') ?? '').trim();
+      final otaHeaders = <String, String>{
+        'Accept': 'application/json',
+        'X-Ota-Protocol': '2',
+        if (otaToken.isNotEmpty) 'X-Ota-Token': otaToken,
+      };
 
       // 0. Obtener versión REAL del backend local (Single Source of Truth).
       // IMPORTANTE: si /version-check falla (timeout, URL incorrecta, etc.)
@@ -271,7 +315,7 @@ class UpdateService {
 
       final backendResponse = await _httpGet(
         backendUri,
-        headers: const {'Accept': 'application/json'},
+        headers: otaHeaders,
         timeout: serverTimeout,
       );
 
@@ -306,7 +350,7 @@ class UpdateService {
 
       final frontendResponse = await _httpGet(
         frontendUri,
-        headers: const {'Accept': 'application/json'},
+        headers: otaHeaders,
         timeout: serverTimeout,
       );
 
@@ -358,6 +402,7 @@ class UpdateService {
       backendUpdate: backendUpdate,
       channel: updateChannel,
       serverChecked: anyServerCheckSucceeded,
+      currentFrontendVersion: resolvedFrontendVersion,
     );
 
     if (anyServerCheckSucceeded) {

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/updater/data/models/update_info.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
+import 'package:frontend_desktop/features/updater/presentation/widgets/upgrade_news_dialog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -294,6 +295,144 @@ void main() {
       await tester.pump();
       expect(find.text('Actualizar'), findsNothing);
       expect(find.text('BETA'), findsNothing);
+    });
+
+    test('checkUpdate envía X-Ota-Protocol: 2 y X-Ota-Token desde SharedPreferences', () async {
+      SharedPreferences.setMockInitialValues({
+        'license_ota_token': 'abc123tokenhash',
+      });
+
+      final capturedHeaders = <Map<String, String>>[];
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/version-check')) {
+          return http.Response(jsonEncode({'version': '2.2.0'}), 200);
+        }
+        capturedHeaders.add(Map<String, String>.from(request.headers));
+        return http.Response(
+          jsonEncode({'success': true, 'update_available': false}),
+          200,
+        );
+      });
+
+      final service = UpdateService();
+      service.configureForTesting(
+        httpClient: client,
+        frontendVersionProvider: () async => '2.2.0',
+        forceAllowInDebug: true,
+      );
+
+      final res = await service.checkUpdate();
+      expect(res.currentFrontendVersion, '2.2.0');
+      expect(capturedHeaders, hasLength(2));
+      for (final h in capturedHeaders) {
+        expect(h['X-Ota-Protocol'], '2');
+        expect(h['X-Ota-Token'], 'abc123tokenhash');
+      }
+    });
+
+    testWidgets('Lifetime bloqueado muestra badge sutil ✨ Novedades, abre UpgradeNewsDialog y permite ocultar versión hasta la siguiente', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      UpdateService.updateNotifier.value = UpdateCheckResult(
+        channel: 'stable',
+        currentFrontendVersion: '2.2.0',
+        frontendUpdate: UpdateInfo(
+          version: '2.3.0',
+          downloadUrl: '',
+          changelog: '• Facturación rápida\n• Reporte de caja mejorado',
+          isCritical: false,
+          canAutoUpdate: false,
+          otaBlockReason: 'lifetime_upgrade_required',
+          component: 'frontend',
+        ),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(child: UpdateBadgeWidget()),
+          ),
+        ),
+      );
+
+      expect(find.text('✨ Novedades v2.3.0'), findsOneWidget);
+      expect(find.text('Actualizar'), findsNothing);
+
+      await tester.tap(find.text('✨ Novedades v2.3.0'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UpgradeNewsDialog), findsOneWidget);
+      expect(find.textContaining('Tu licencia actual es Pago Único (v2.2.0)'), findsOneWidget);
+      expect(find.text('Ocultar aviso de esta versión'), findsOneWidget);
+
+      await tester.tap(find.text('Ocultar aviso de esta versión'));
+      await tester.pumpAndSettle();
+
+      // El badge de la 2.3.0 desaparece de la barra superior
+      expect(find.text('✨ Novedades v2.3.0'), findsNothing);
+
+      // Si llega una versión más nueva (2.4.0), vuelve a mostrarse
+      UpdateService.updateNotifier.value = UpdateCheckResult(
+        channel: 'stable',
+        currentFrontendVersion: '2.2.0',
+        frontendUpdate: UpdateInfo(
+          version: '2.4.0',
+          downloadUrl: '',
+          changelog: 'Novedades v2.4.0',
+          isCritical: false,
+          canAutoUpdate: false,
+          otaBlockReason: 'lifetime_upgrade_required',
+          component: 'frontend',
+        ),
+      );
+      await tester.pump();
+      expect(find.text('✨ Novedades v2.4.0'), findsOneWidget);
+    });
+
+    testWidgets('SaaS vencido o sin licencia no muestran badge comercial en UpdateBadgeWidget', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(child: UpdateBadgeWidget()),
+          ),
+        ),
+      );
+
+      UpdateService.updateNotifier.value = UpdateCheckResult(
+        channel: 'stable',
+        currentFrontendVersion: '2.2.0',
+        frontendUpdate: UpdateInfo(
+          version: '2.3.0',
+          downloadUrl: '',
+          changelog: 'Novedades',
+          isCritical: false,
+          canAutoUpdate: false,
+          otaBlockReason: 'subscription_expired',
+          component: 'frontend',
+        ),
+      );
+      await tester.pump();
+      expect(find.textContaining('Novedades'), findsNothing);
+      expect(find.text('Actualizar'), findsNothing);
+
+      UpdateService.updateNotifier.value = UpdateCheckResult(
+        channel: 'stable',
+        currentFrontendVersion: '2.2.0',
+        frontendUpdate: UpdateInfo(
+          version: '2.3.0',
+          downloadUrl: '',
+          changelog: 'Novedades',
+          isCritical: false,
+          canAutoUpdate: false,
+          otaBlockReason: 'missing_license',
+          component: 'frontend',
+        ),
+      );
+      await tester.pump();
+      expect(find.textContaining('Novedades'), findsNothing);
+      expect(find.text('Actualizar'), findsNothing);
     });
   });
 }
