@@ -1038,5 +1038,83 @@ void main() {
         expect(find.text('Total a facturar: \$10.247,93'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      '9. Cliente sin DNI en EmitArcaInvoiceDialog: habilita Factura B < \$340.000 con doc_type=99 y bloquea si supera tope',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final posProv = _FakePosProvider();
+        final settingsProv = _FakeSettingsProvider(agentSettings);
+        final customerSinDoc = Customer(
+          id: 77,
+          name: 'Kiosco El Barrio',
+          documentNumber: '',
+          documentType: 96, // incluso legacy 96 con doc vacío
+          taxCondition: 'consumidor_final',
+          creditLimit: 0.0,
+          balance: 0.0,
+          isActive: true,
+        );
+        final customerProv = _FakeCustomerProvider([customerSinDoc]);
+
+        final saleSinDoc = SaleRecord(
+          id: 301,
+          total: 5000.0,
+          status: 'completed',
+          paymentStatus: 'paid',
+          invoiceStatus: 'none',
+          createdAt: DateTime(2026, 11, 25, 10, 0),
+          customerId: 77,
+          customerName: 'Kiosco El Barrio',
+          customerDocumentType: 96,
+          customerDocumentNumber: null,
+          customerTaxCondition: 'consumidor_final',
+          items: [
+            SaleItemRecord(
+              id: 1,
+              productName: 'Gaseosa 2L',
+              quantity: 2,
+              unitPrice: 2500.0,
+              subtotal: 5000.0,
+              ivaRate: 21.0,
+            ),
+          ],
+          payments: const [],
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<PosProvider>.value(value: posProv),
+              ChangeNotifierProvider<SettingsProvider>.value(value: settingsProv),
+              ChangeNotifierProvider<CustomerProvider>.value(value: customerProv),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: EmitArcaInvoiceDialog(sale: saleSinDoc),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final authBtn = find.text('Autorizar Factura en ARCA');
+        await tester.ensureVisible(authBtn);
+        await tester.tap(authBtn);
+        await tester.pumpAndSettle();
+
+        expect(posProv.lastIssuedSaleId, equals(301));
+        expect(posProv.lastIssuedPayload?['voucher_type'], equals(6));
+        expect(posProv.lastIssuedPayload?['doc_type'], equals(99));
+        expect(posProv.lastIssuedPayload?['doc_number'], equals('0'));
+        expect(posProv.lastIssuedPayload?['receiver_name'], equals('Kiosco El Barrio'));
+      },
+    );
   });
 }

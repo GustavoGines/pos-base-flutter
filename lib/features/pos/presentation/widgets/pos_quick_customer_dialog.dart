@@ -180,7 +180,7 @@ class _PosQuickCustomerDialogState extends State<PosQuickCustomerDialog> {
                               ),
                             ),
                             Text(
-                              '${customer.documentType == 80 ? "CUIT" : "DNI"}: ${customer.documentNumber} • Saldo C/C: \$${customer.balance.toCurrency()}',
+                              '${customer.displayDocumentSummary} • Saldo C/C: \$${customer.balance.toCurrency()}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.textSecondary,
@@ -309,7 +309,7 @@ class _PosQuickCustomerDialogState extends State<PosQuickCustomerDialog> {
                   ),
                 ),
                 subtitle: Text(
-                  '${c.documentType == 80 ? "CUIT" : "DNI"}: ${c.documentNumber} • Tel: ${c.phone ?? "-"}',
+                  '${c.displayDocumentSummary} • Tel: ${(c.phone != null && c.phone!.trim().isNotEmpty) ? c.phone : "-"}',
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: Row(

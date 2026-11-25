@@ -1044,12 +1044,26 @@ class AfipFiscalPdfService {
             'Cajero')
         .toString();
 
-    final rawReceiverDoc = (electronicInvoice['doc_number'] ??
-            sale['customer']?['document_number'] ??
-            sale['customer']?['tax_id'] ??
-            '---')
-        .toString();
-    final receiverDoc = _formatCuit(rawReceiverDoc);
+    String firstValidDoc(List<dynamic> candidates) {
+      for (final c in candidates) {
+        final s = (c ?? '').toString().trim();
+        if (s.isNotEmpty &&
+            s.toLowerCase() != 'null' &&
+            s != '0' &&
+            s != '---') {
+          return s;
+        }
+      }
+      return '---';
+    }
+
+    final rawReceiverDoc = firstValidDoc([
+      electronicInvoice['doc_number'],
+      sale['customer']?['document_number'],
+      sale['customer']?['tax_id'],
+    ]);
+    final receiverDoc =
+        rawReceiverDoc == '---' ? '---' : _formatCuit(rawReceiverDoc);
     final receiverName = (electronicInvoice['receiver_name'] ??
             sale['customer']?['name'] ??
             sale['customer_name'] ??

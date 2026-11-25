@@ -117,13 +117,33 @@ class Customer {
     this.topProducts = const [],
   });
 
+  bool get hasDocument => documentNumber.trim().isNotEmpty;
+
+  String get documentTypeLabel {
+    if (!hasDocument || documentType == 99) return 'Sin documento';
+    if (documentType == 80) return 'CUIT';
+    if (documentType == 86) return 'CUIL';
+    return 'DNI';
+  }
+
+  String get displayDocumentSummary =>
+      hasDocument ? '$documentTypeLabel: $documentNumber' : 'Sin documento';
+
   factory Customer.fromJson(Map<String, dynamic> json) {
+    final rawDoc = (json['document_number'] ?? '').toString().trim();
+    final cleanDigits = rawDoc.replaceAll(RegExp(r'\D'), '');
+    int parsedDocType = int.tryParse(json['document_type']?.toString() ?? '') ??
+        (rawDoc.isEmpty ? 99 : 96);
+    if (rawDoc.isNotEmpty && parsedDocType == 99) {
+      parsedDocType = cleanDigits.length == 11 ? 80 : 96;
+    }
+
     return Customer(
       id: json['id'],
       name: json['name'],
       phone: json['phone'],
-      documentNumber: json['document_number'] ?? '',
-      documentType: int.tryParse(json['document_type']?.toString() ?? '96') ?? 96,
+      documentNumber: rawDoc,
+      documentType: parsedDocType,
       taxCondition: json['tax_condition']?.toString() ?? 'consumidor_final',
       fiscalAddress: json['fiscal_address']?.toString(),
       creditLimit: double.tryParse(json['credit_limit']?.toString() ?? '0') ?? 0.0,
@@ -151,12 +171,20 @@ class Customer {
   }
 
   Map<String, dynamic> toJson() {
+    final cleanDoc = documentNumber.trim();
+    final cleanDigits = cleanDoc.replaceAll(RegExp(r'\D'), '');
+    final effectiveDocType = cleanDoc.isEmpty
+        ? (taxCondition == 'consumidor_final' && !appliesIibbPerception
+            ? 99
+            : documentType)
+        : (documentType == 99 ? (cleanDigits.length == 11 ? 80 : 96) : documentType);
+
     return {
       'id': id,
       'name': name,
       'phone': phone,
-      'document_number': documentNumber,
-      'document_type': documentType,
+      'document_number': cleanDoc.isEmpty ? null : cleanDoc,
+      'document_type': effectiveDocType,
       'taxCondition': taxCondition,
       'tax_condition': taxCondition,
       'fiscal_address': fiscalAddress,

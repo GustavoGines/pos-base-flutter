@@ -318,9 +318,13 @@ class DeliveryNotePdfService {
     final customer = sale['customer'] as Map<String, dynamic>?;
     final customerName =
         customer?['name'] as String? ?? sale['customer_name'] as String?;
-    final customerDoc = customer?['document_number']?.toString() ??
-        customer?['tax_id']?.toString() ??
-        '---';
+    final rawDoc = (customer?['document_number'] ?? customer?['tax_id'] ?? '')
+        .toString()
+        .trim();
+    final customerDoc =
+        (rawDoc.isEmpty || rawDoc.toLowerCase() == 'null' || rawDoc == '0')
+            ? '---'
+            : rawDoc;
     final createdAt = note['created_at'] as String?;
     final DateTime createdDate = createdAt != null
         ? (DateTime.tryParse(createdAt)?.toLocal() ?? DateTime.now())

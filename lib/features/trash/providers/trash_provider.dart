@@ -21,7 +21,8 @@ class TrashItem {
     String subtitle = '';
 
     if (type == 'customers') {
-      subtitle = 'DNI: ${json['document_number'] ?? '-'}';
+      final rawDoc = (json['document_number'] ?? '').toString().trim();
+      subtitle = rawDoc.isNotEmpty ? 'DNI/CUIT: $rawDoc' : 'Sin documento';
     } else if (type == 'products') {
       subtitle = 'Cód: ${json['barcode'] ?? json['internal_code'] ?? '-'}';
     } else if (type == 'suppliers') {

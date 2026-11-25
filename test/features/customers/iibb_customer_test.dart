@@ -353,4 +353,157 @@ void main() {
       expect(rateField.controller?.text, equals('3.85'));
     });
   });
+
+  group('Optional Document / DNI Tests (Customer & CustomerFormDialog)', () {
+    Widget buildOptionalDocFormApp({
+      required FakeCustomerProvider customerProv,
+      Customer? customer,
+    }) {
+      return MultiProvider(
+        providers: [
+          ChangeNotifierProvider<CustomerProvider>.value(value: customerProv),
+          ChangeNotifierProvider<SettingsProvider>.value(
+            value: FakeCustomerSettingsProvider(),
+          ),
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: FakeCustomerAuthProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: CustomerFormDialog(customer: customer),
+          ),
+        ),
+      );
+    }
+
+    test('Customer.displayDocumentSummary and toJson handle empty/null document cleanly', () {
+      final noDoc = Customer.fromJson({
+        'id': 1,
+        'name': 'El Colo',
+        'phone': '3704556677',
+        'document_number': null,
+        'document_type': null,
+        'tax_condition': 'consumidor_final',
+        'credit_limit': 0,
+        'balance': 0,
+        'is_active': true,
+      });
+
+      expect(noDoc.hasDocument, isFalse);
+      expect(noDoc.documentNumber, isEmpty);
+      expect(noDoc.documentType, equals(99));
+      expect(noDoc.displayDocumentSummary, equals('Sin documento'));
+      expect(noDoc.toJson()['document_number'], isNull);
+      expect(noDoc.toJson()['document_type'], equals(99));
+
+      // Coherencia bidireccional: si viene document_type=99 con documento cargado, se corrige al parsear y serializar
+      final coerced = Customer.fromJson({
+        'id': 2,
+        'name': 'Con DNI Mal Tipado',
+        'document_number': '38452190',
+        'document_type': 99,
+        'credit_limit': 0,
+        'balance': 0,
+        'is_active': true,
+      });
+      expect(coerced.documentType, equals(96));
+      expect(coerced.toJson()['document_type'], equals(96));
+      expect(coerced.displayDocumentSummary, equals('DNI: 38452190'));
+    });
+
+    testWidgets('Permite crear cliente Consumidor Final sin DNI enviando null y document_type 99', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final customerProv = FakeCustomerProvider();
+      await tester.pumpWidget(buildOptionalDocFormApp(customerProv: customerProv));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Nombre / Razón Social *'),
+        'Tito el Plomero',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Teléfono (Opcional)'),
+        '3704998877',
+      );
+      await tester.tap(find.text('Guardar'));
+      await tester.pumpAndSettle();
+
+      expect(customerProv.createCustomerCalled, isTrue);
+      expect(customerProv.lastCreatedPayload?['name'], equals('Tito el Plomero'));
+      expect(customerProv.lastCreatedPayload?['document_number'], isNull);
+      expect(customerProv.lastCreatedPayload?['document_type'], equals(99));
+    });
+
+    testWidgets('Permite limpiar DNI inventado existente a null y doc_type 99', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final custFakeDni = Customer(
+        id: 15,
+        name: 'Cliente Con DNI Falso',
+        documentNumber: '11111111',
+        documentType: 96,
+        taxCondition: 'consumidor_final',
+        creditLimit: 50000,
+        balance: 0,
+        isActive: true,
+      );
+      final prov1 = FakeCustomerProvider();
+      await tester.pumpWidget(
+        buildOptionalDocFormApp(customerProv: prov1, customer: custFakeDni),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, '11111111'),
+        '',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Guardar'));
+      await tester.pumpAndSettle();
+
+      expect(prov1.updateCustomerCalled, isTrue);
+      expect(prov1.lastUpdatedPayload?['document_number'], isNull);
+      expect(prov1.lastUpdatedPayload?['document_type'], equals(99));
+    });
+
+    testWidgets('Al cargar DNI real a cliente en doc_type 99 infiere 96 automáticamente', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final custSinDoc = Customer(
+        id: 16,
+        name: 'Cliente Sin Doc',
+        documentNumber: '',
+        documentType: 99,
+        taxCondition: 'consumidor_final',
+        creditLimit: 0,
+        balance: 0,
+        isActive: true,
+      );
+      final prov2 = FakeCustomerProvider();
+      await tester.pumpWidget(
+        buildOptionalDocFormApp(customerProv: prov2, customer: custSinDoc),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'DNI o CUIT (Opcional — vacío = Sin Documento)'),
+        '38452190',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Guardar'));
+      await tester.pumpAndSettle();
+
+      expect(prov2.updateCustomerCalled, isTrue);
+      expect(prov2.lastUpdatedPayload?['document_number'], equals('38452190'));
+      expect(prov2.lastUpdatedPayload?['document_type'], equals(96));
+    });
+  });
 }
