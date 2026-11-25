@@ -58,6 +58,10 @@ class SettingsProvider with ChangeNotifier {
   // ─── [mayorista-iibb] Percepciones IIBB ───────────────────────────────────
   bool get isIibbPerceptionAgent => _settings?.isIibbPerceptionAgent ?? false;
   double get defaultIibbPerceptionRate => _settings?.defaultIibbPerceptionRate ?? 0.0;
+  String get iibbCalculationBase =>
+      _settings?.iibbCalculationBase ?? 'net_without_vat';
+  List<String> get iibbSubjectTaxConditions =>
+      _settings?.iibbSubjectTaxConditions ?? const ['responsable_inscripto'];
 
   /// True cuando el comercio está configurado como Responsable Inscripto ante ARCA/AFIP.
   bool get isResponsableInscripto => _settings?.isResponsableInscripto ?? false;

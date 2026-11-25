@@ -27,6 +27,7 @@ import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/iibb_fiscal_calculator.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
@@ -367,6 +368,30 @@ class PosProvider with ChangeNotifier {
     }
   }
 
+  String _iibbCalculationBase = IibbFiscalCalculator.baseNetWithoutVat;
+  String get iibbCalculationBase => _iibbCalculationBase;
+  void setIibbCalculationBase(String value) {
+    final normalized = IibbFiscalCalculator.normalizeCalculationBase(value);
+    if (_iibbCalculationBase != normalized) {
+      _iibbCalculationBase = normalized;
+      notifyListeners();
+    }
+  }
+
+  List<String> _iibbSubjectTaxConditions =
+      List<String>.from(IibbFiscalCalculator.defaultSubjectConditions);
+  List<String> get iibbSubjectTaxConditions => _iibbSubjectTaxConditions;
+  void setIibbSubjectTaxConditions(List<String> conditions) {
+    final normalized =
+        IibbFiscalCalculator.normalizeSubjectConditions(conditions);
+    final changed = normalized.length != _iibbSubjectTaxConditions.length ||
+        !normalized.every((c) => _iibbSubjectTaxConditions.contains(c));
+    if (changed) {
+      _iibbSubjectTaxConditions = normalized;
+      notifyListeners();
+    }
+  }
+
   /// El override de caja pertenece exclusivamente al cliente del carrito activo.
   double? _activeCartOverrideFor(Customer? target) {
     if (_overrideIibbPerceptionRate == null) return null;
@@ -420,6 +445,8 @@ class PosProvider with ChangeNotifier {
     setIgnoreProductFixedPrices(settings.ignoreProductFixedPrices);
     setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
     setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
+    setIibbCalculationBase(settings.iibbCalculationBase);
+    setIibbSubjectTaxConditions(settings.iibbSubjectTaxConditions);
     setCardSurchargeOnOffersMode(
       CardSurchargeOnOffersMode.fromApiString(
         settings.cardSurchargeOnOffersMode,
@@ -646,14 +673,18 @@ class PosProvider with ChangeNotifier {
     return _cart.fold(0.0, (total, item) => total + item.quantity);
   }
 
-  /// Base imponible neta gravada calculada según la alícuota de IVA de cada producto
+  /// Base imponible neta gravada calculada agrupando por alícuota de IVA (espejada con `AfipWsfeService.php`)
   double get netSubtotal {
-    double totalNet = 0.0;
-    for (final item in _cart) {
-      final rate = item.product.ivaRate;
-      totalNet += item.subtotal / (1 + (rate / 100.0));
-    }
-    return (totalNet * 100).roundToDouble() / 100.0;
+    if (_cart.isEmpty) return 0.0;
+    final breakdown = IibbFiscalCalculator.calculateBreakdown(
+      lines: _cart
+          .map((item) => IibbTaxableLine(
+                subtotal: item.subtotal,
+                ivaRate: item.product.ivaRate,
+              ))
+          .toList(),
+    );
+    return breakdown.netAmount;
   }
   double get cartNetSubtotal => netSubtotal;
 
@@ -670,8 +701,9 @@ class PosProvider with ChangeNotifier {
       return _isIibbPerceptionAgent &&
           _selectedCustomer != null &&
           _selectedCustomer!.documentType == 80 &&
-          _selectedCustomer!.taxCondition != 'consumidor_final' &&
-          _selectedCustomer!.taxCondition != 'exento';
+          IibbFiscalCalculator.normalizeTaxConditionKey(
+                  _selectedCustomer!.taxCondition) !=
+              'consumidor_final';
     }
     final custRate = (_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0
         ? _selectedCustomer!.iibbPerceptionRate!
@@ -691,11 +723,9 @@ class PosProvider with ChangeNotifier {
     return custRate > 0 ? custRate : _defaultIibbPerceptionRate;
   }
 
-  /// Monto monetario de la Percepción IIBB: Base Neta * (Alícuota / 100)
+  /// Monto monetario de la Percepción IIBB usando la base configurada (`net_without_vat` o `gross_with_vat`)
   double get iibbPerceptionAmount {
-    return appliesIibbPerception
-        ? ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0
-        : 0.0;
+    return calculateIibbPerceptionAmount();
   }
   double get cartIibbPerceptionAmount => iibbPerceptionAmount;
 
@@ -721,7 +751,7 @@ class PosProvider with ChangeNotifier {
 
     if (effectiveOverride != null) {
       if (effectiveOverride <= 0) return false;
-      // Si overrideRate fue pasado explícitamente (ej. desde CheckoutDialog en Factura A
+      // Si overrideRate fue pasado explícitamente (ej. desde CheckoutDialog en Factura A/B/C
       // o al tocar un chip de percepción), el diálogo ya validó que el comprobante/receptor califica,
       // incluso si el registro viejo del cliente en BD tenía tax_condition = 'consumidor_final'.
       if (overrideRate != null || targetCustomer == null) {
@@ -729,8 +759,9 @@ class PosProvider with ChangeNotifier {
       }
       return isAgent &&
           targetCustomer.documentType == 80 &&
-          targetCustomer.taxCondition != 'consumidor_final' &&
-          targetCustomer.taxCondition != 'exento';
+          IibbFiscalCalculator.normalizeTaxConditionKey(
+                  targetCustomer.taxCondition) !=
+              'consumidor_final';
     }
 
     final custRate = (targetCustomer?.iibbPerceptionRate ?? 0.0) > 0
@@ -741,7 +772,8 @@ class PosProvider with ChangeNotifier {
         (custRate > 0);
   }
 
-  /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales y overrideRate
+  /// Helper que calcula el monto de percepción espejado al centavo con `AfipWsfeService.php`,
+  /// soportando `net_without_vat` y `gross_with_vat` y alícuotas mixtas (21%, 10.5%, 0%, 27%).
   double calculateIibbPerceptionAmount({
     BusinessSettings? settings,
     Customer? customer,
@@ -757,19 +789,30 @@ class PosProvider with ChangeNotifier {
       return 0.0;
     }
     final defaultRate = settings?.defaultIibbPerceptionRate ?? _defaultIibbPerceptionRate;
+    final calcBase = settings?.iibbCalculationBase ?? _iibbCalculationBase;
     final targetCustomer = customer ?? _selectedCustomer;
     final effectiveOverride = overrideRate ?? _activeCartOverrideFor(targetCustomer);
     final custRate = (targetCustomer?.iibbPerceptionRate ?? 0.0) > 0
         ? targetCustomer!.iibbPerceptionRate!
         : defaultRate;
     final rate = effectiveOverride ?? custRate;
-    // FINDING-SALES-02: Sincronización con AfipWsfeService: base gravada incluye neto de recargos/fletes gravados al 21%
-    final baseNet = overrideTotal != null
-        ? ((overrideTotal / 1.21) * 100).roundToDouble() / 100.0
-        : netSubtotal;
-    final extraNet = extraAmount > 0 ? (extraAmount / 1.21) : 0.0;
-    final totalBaseNet = baseNet + extraNet;
-    return ((totalBaseNet * (rate / 100.0)) * 100).roundToDouble() / 100.0;
+
+    final List<IibbTaxableLine> lines = overrideTotal != null
+        ? [IibbTaxableLine(subtotal: overrideTotal, ivaRate: 21.0)]
+        : _cart
+            .map((item) => IibbTaxableLine(
+                  subtotal: item.subtotal,
+                  ivaRate: item.product.ivaRate,
+                ))
+            .toList();
+
+    final breakdown = IibbFiscalCalculator.calculateBreakdown(
+      lines: lines,
+      extraAmount: extraAmount,
+      iibbRate: rate,
+      calculationBase: calcBase,
+    );
+    return breakdown.iibbAmount;
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
