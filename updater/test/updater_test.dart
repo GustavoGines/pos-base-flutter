@@ -398,4 +398,36 @@ void main() {
           equals('2.2.1'));
     });
   });
+
+  group('Consola Win32 — Desactivación de QuickEdit Mode', () {
+    test(
+        'computeQuickEditDisabledConsoleMode aplica exactamente (mode & ~0x0040) | 0x0080 preservando el resto de flags',
+        () {
+      expect(kWin32StdInputHandle, equals(-10));
+      expect(kWin32EnableQuickEditMode, equals(0x0040));
+      expect(kWin32EnableExtendedFlags, equals(0x0080));
+
+      // Caso típico Windows 11: QuickEdit (0x0040) + Insert (0x0020) + Echo/Line/Processed (0x0007) = 0x0067
+      const int typicalWindowsMode = 0x0067;
+      final int updated = computeQuickEditDisabledConsoleMode(typicalWindowsMode);
+
+      expect(updated & 0x0040, equals(0),
+          reason: 'ENABLE_QUICK_EDIT_MODE (0x0040) debe quedar apagado');
+      expect(updated & 0x0080, equals(0x0080),
+          reason: 'ENABLE_EXTENDED_FLAGS (0x0080) debe quedar encendido');
+      expect(updated & 0x0027, equals(0x0027),
+          reason: 'Los demás flags de consola deben conservarse intactos');
+    });
+
+    test(
+        'disableWindowsConsoleQuickEdit no arroja excepción en entorno sin consola interactiva (tests/CI)',
+        () {
+      expect(
+        () => disableWindowsConsoleQuickEdit(
+          consoleTitle: 'Test Caja4U Updater',
+        ),
+        returnsNormally,
+      );
+    });
+  });
 }

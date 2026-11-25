@@ -151,7 +151,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
                             Icon(Icons.balance_rounded, size: 16, color: Colors.indigo.shade800),
                             const SizedBox(width: 6),
                             Text(
-                              'Control Fiscal Mensual (F. 2002 ARCA / AFIP)',
+                              'Control Fiscal Mensual (F. 2002 ARCA)',
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800,
@@ -388,7 +388,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Estimación de gestión para control interno. No reemplaza la declaración jurada mensual F. 2002 de ARCA/AFIP (puede diferir por saldos a favor de libre disponibilidad de meses anteriores, retenciones bancarias, retenciones sufridas o ajustes contables del profesional).',
+                                    'Estimación de gestión para control interno. No reemplaza la declaración jurada mensual F. 2002 de ARCA (puede diferir por saldos a favor de libre disponibilidad de meses anteriores, retenciones bancarias, retenciones sufridas o ajustes contables del profesional).',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: const Color(0xFF78350F),
@@ -418,7 +418,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
     required int year,
   }) {
     final title = isToPay
-        ? 'SALDO ESTIMADO A PAGAR (ARCA / AFIP)'
+        ? 'SALDO ESTIMADO A PAGAR (ARCA)'
         : 'SALDO TÉCNICO A FAVOR ESTIMADO';
     final subtitle = isToPay
         ? 'El Débito Fiscal de ventas supera al Crédito Fiscal y Percepciones del período $monthName $year.'

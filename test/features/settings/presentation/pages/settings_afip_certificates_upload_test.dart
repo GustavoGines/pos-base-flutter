@@ -242,7 +242,7 @@ class FakeAfipSettingsProvider extends ChangeNotifier implements SettingsProvide
     notifyListeners();
 
     return {
-      'message': 'Certificados de AFIP guardados y validados correctamente.',
+      'message': 'Certificados de ARCA guardados y validados correctamente.',
       'afip_cuit': cuit,
       'afip_has_cert': true,
       'afip_has_key': true,
@@ -301,7 +301,7 @@ void main() {
 
         return http.Response(
           jsonEncode({
-            'message': 'Certificados de AFIP guardados y validados correctamente.',
+            'message': 'Certificados de ARCA guardados y validados correctamente.',
             'afip_cuit': '20123456789',
             'afip_has_cert': true,
             'afip_has_key': true,
@@ -487,7 +487,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader1 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader1 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader1);
       await tester.tap(afipHeader1);
       await tester.pump();
@@ -501,7 +501,7 @@ void main() {
 
       // Verify initial placeholders
       expect(find.text('Sin archivo seleccionado'), findsNWidgets(2));
-      expect(find.text('Certificado AFIP (.crt)'), findsOneWidget);
+      expect(find.text('Certificado ARCA (.crt)'), findsOneWidget);
       expect(find.text('Clave Privada (.key)'), findsOneWidget);
     });
 
@@ -531,7 +531,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader2 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader2 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader2);
       await tester.tap(afipHeader2);
       await tester.pump();
@@ -570,7 +570,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader3 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader3 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader3);
       await tester.tap(afipHeader3);
       await tester.pump();
@@ -607,7 +607,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader4 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader4 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader4);
       await tester.tap(afipHeader4);
       await tester.pump();
@@ -672,7 +672,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader5 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader5 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader5);
       await tester.tap(afipHeader5);
       await tester.pump();
@@ -745,7 +745,7 @@ void main() {
       expect(passphraseField.controller?.text, isEmpty);
 
       // Verify success feedback
-      expect(find.text('Certificados de AFIP guardados y validados correctamente.'), findsOneWidget);
+      expect(find.text('Certificados de ARCA guardados y validados correctamente.'), findsOneWidget);
     });
 
     testWidgets('Failed certificate upload shows error SnackBar and preserves file selection', (tester) async {
@@ -767,7 +767,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand AFIP tile
-      final afipHeader6 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader6 = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader6);
       await tester.tap(afipHeader6);
       await tester.pump();

@@ -8,6 +8,23 @@ import 'package:updater/updater_core.dart';
 // MAIN
 // ─────────────────────────────────────────────────────────
 void main(List<String> args) async {
+  // Blindaje anti-congelamiento de consola Windows:
+  // Desactiva QuickEdit Mode (STD_INPUT_HANDLE = -10) para que hacer clic
+  // en la ventana visible jamás active "Seleccionar" ni pause el proceso.
+  final bool quickEditDisabled = disableWindowsConsoleQuickEdit(
+    consoleTitle:
+        'Actualizando Caja4U — Aguarde unos segundos sin abrir el programa...',
+  );
+
+  stdout.writeln(
+      '====================================================================');
+  stdout.writeln('  ACTUALIZANDO CAJA4U — NO CIERRE ESTA VENTANA');
+  stdout.writeln(
+      '  Actualizando Caja4U, aguarde unos segundos sin abrir el programa...');
+  stdout.writeln(
+      '====================================================================');
+  stdout.writeln('');
+
   String? component;
   String? targetDir;
   String? zipPath;
@@ -65,6 +82,13 @@ void main(List<String> args) async {
   log.log('PID del proceso: $pid');
   log.log(
       'Plataforma: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+  if (Platform.isWindows) {
+    log.log(
+      quickEditDisabled
+          ? 'Consola Win32: QuickEdit Mode desactivado correctamente.'
+          : 'Consola Win32: QuickEdit Mode omitido (sin consola interactiva adjunta).',
+    );
+  }
 
   // ── PASO 1: Verificar que el ZIP existe ─────────────────
   final zipFile = File(zipPath);
@@ -440,30 +464,35 @@ void main(List<String> args) async {
     _writeOtaResult(targetDir, extractionOk,
         component: component, version: version);
 
-    // 6. Relanzar la app (con reintentos por si el antivirus Avast/Defender retiene el lock 1-3s tras extraer el nuevo .exe)
+    // 6. Relanzar la app de forma nativa sin PowerShell:
+    //    - Usa Process.start en modo ProcessStartMode.detached pasando workingDirectory: targetDir.
+    //    - Evita invocar powershell.exe para abrir un .exe recién extraído (reduce falsos positivos
+    //      heurísticos en Avast/AVG Behavior Shield / DeepScreen).
+    //    - Con reintentos por si el antivirus retiene el lock unos instantes tras escribir el nuevo .exe.
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     if (File(exePath).existsSync()) {
-      log.log('Relanzando Sistema_POS.exe...');
+      log.log('Relanzando Sistema_POS.exe...', forceFlush: true);
       bool relaunched = false;
       for (int attempt = 1; attempt <= 4; attempt++) {
         try {
-          final res = Process.runSync('powershell', [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            'Start-Process -FilePath "$exePath" -WorkingDirectory "$targetDir" -ErrorAction Stop',
-          ]);
-          if (res.exitCode == 0) {
-            relaunched = true;
-            log.log('Sistema_POS.exe relanzado exitosamente (intento $attempt).');
-            break;
-          }
+          await Process.start(
+            exePath,
+            const <String>[],
+            workingDirectory: targetDir,
+            mode: ProcessStartMode.detached,
+            runInShell: false,
+          );
+          relaunched = true;
           log.log(
-              'Intento $attempt de relanzar Sistema_POS.exe retornó código ${res.exitCode}: ${res.stderr.toString().trim()}');
+            'Sistema_POS.exe relanzado exitosamente (intento $attempt).',
+            forceFlush: true,
+          );
+          break;
         } catch (e) {
-          log.log('Intento $attempt de relanzar Sistema_POS.exe falló: $e');
+          log.log(
+            'Intento $attempt de relanzar Sistema_POS.exe falló: $e',
+            forceFlush: true,
+          );
         }
         if (attempt < 4) {
           await Future.delayed(Duration(seconds: attempt));
@@ -478,7 +507,8 @@ void main(List<String> args) async {
     }
   }
 
-  log.log('Proceso de actualización finalizado. Cerrando updater.');
+  log.log('Proceso de actualización finalizado. Cerrando updater.',
+      forceFlush: true);
   exit(0);
 }
 

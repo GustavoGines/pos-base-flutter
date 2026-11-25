@@ -92,7 +92,7 @@ void main() {
       );
       expect(plainTexts.any((t) => t.contains(testCae)), isTrue, reason: 'CAE must be present in text');
       expect(plainTexts.any((t) => t.contains(testFormattedExpiration)), isTrue, reason: 'CAE expiration must be present in text');
-      expect(plainTexts.any((t) => t.contains('Comprobante Autorizado por AFIP (RG 4892)')), isTrue,
+      expect(plainTexts.any((t) => t.contains('Comprobante Autorizado por ARCA (RG 4892)')), isTrue,
           reason: 'AFIP RG 4892 legend must be present');
 
       // Table & Totals discrimination for Factura A

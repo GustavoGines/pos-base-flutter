@@ -47,6 +47,7 @@ class UpdateService {
       ValueNotifier(false);
 
   int _checkGeneration = 0;
+  int _activeChecksCount = 0;
   Timer? _pollingTimer;
 
   http.Client? _testHttpClient;
@@ -70,6 +71,7 @@ class UpdateService {
   void resetForTesting() {
     stopPeriodicCheck();
     _checkGeneration++;
+    _activeChecksCount = 0;
     _testHttpClient = null;
     _testFrontendVersionProvider = null;
     _forceAllowInDebugForTest = false;
@@ -156,15 +158,24 @@ class UpdateService {
 
   /// Consulta al servidor si hay versiones nuevas disponibles.
   /// Chequea backend y frontend de forma separada y descarta respuestas viejas
-  /// si el usuario cambia rápido de canal.
+  /// si el usuario cambia rápido de canal (`_checkGeneration`), permitiendo que
+  /// llamadas concurrentes sobre el MISMO canal (ej. Fase 2 Auto-Resume en
+  /// `main.dart` + `LoginScreen`) completen ambas sin cancelarse mutuamente.
   Future<UpdateCheckResult> checkUpdate({
     bool throwErrors = false,
     bool allowInDebug = false,
     bool isChannelSwitch = false,
     String? channelOverride,
   }) async {
-    final int myGen = ++_checkGeneration;
+    final int myGen = _checkGeneration;
     final prefs = await SharedPreferences.getInstance();
+    if (myGen != _checkGeneration) {
+      return updateNotifier.value ??
+          UpdateCheckResult(
+            channel: channelNotifier.value,
+            serverChecked: false,
+          );
+    }
     final updateChannel = _normalizeChannel(
       channelOverride ?? prefs.getString('update_channel') ?? 'stable',
     );
@@ -176,12 +187,17 @@ class UpdateService {
       final result = UpdateCheckResult(channel: updateChannel);
       if (myGen == _checkGeneration) {
         updateNotifier.value = result;
-        isCheckingNotifier.value = false;
-        isSwitchingChannelNotifier.value = false;
+        if (_activeChecksCount == 0) {
+          isCheckingNotifier.value = false;
+        }
+        if (isChannelSwitch) {
+          isSwitchingChannelNotifier.value = false;
+        }
       }
       return result;
     }
 
+    _activeChecksCount++;
     if (myGen == _checkGeneration) {
       isCheckingNotifier.value = true;
       if (isChannelSwitch) {
@@ -319,9 +335,16 @@ class UpdateService {
     } catch (e) {
       if (throwErrors) rethrow;
     } finally {
+      if (_activeChecksCount > 0) {
+        _activeChecksCount--;
+      }
       if (myGen == _checkGeneration) {
-        isCheckingNotifier.value = false;
-        isSwitchingChannelNotifier.value = false;
+        if (_activeChecksCount == 0) {
+          isCheckingNotifier.value = false;
+        }
+        if (isChannelSwitch) {
+          isSwitchingChannelNotifier.value = false;
+        }
       }
     }
 

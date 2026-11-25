@@ -122,7 +122,7 @@ void main() {
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
-      expect(find.text('Comprobante Autorizado por AFIP'), findsOneWidget);
+      expect(find.text('Comprobante Autorizado por ARCA'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
     });
 
@@ -160,7 +160,7 @@ void main() {
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
-      expect(find.text('Comprobante Autorizado por AFIP'), findsOneWidget);
+      expect(find.text('Comprobante Autorizado por ARCA'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
     });
 

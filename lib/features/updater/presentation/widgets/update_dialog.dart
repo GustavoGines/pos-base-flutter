@@ -483,17 +483,19 @@ class _UpdateDialogState extends State<UpdateDialog> {
   ///
   /// - [requireElevation] = false (BACKEND):
   ///   La aplicación Flutter permanece abierta esperando el resultado y Laragon
-  ///   es escribible sin UAC. Lanzamos `updater.exe` DIRECTAMENTE como proceso
-  ///   nativo (`Process.start(updaterPath, [...], mode: ProcessStartMode.detached)`),
-  ///   sin invocar `cmd.exe`, sin `powershell.exe` y sin escribir scripts `.ps1`
-  ///   en `%TEMP%`. Esto evita por completo las alertas heurísticas de Behavior
-  ///   Shield en Avast/AVG/Kaspersky.
+  ///   es escribible sin UAC (o hereda el token elevado durante el Auto-Resume
+  ///   de Fase 2). Lanzamos `updater.exe` DIRECTAMENTE como proceso nativo
+  ///   (`Process.start(..., workingDirectory: updaterDir, mode: ProcessStartMode.detached)`),
+  ///   sin invocar `cmd.exe` ni `powershell.exe`.
   ///
   /// - [requireElevation] = true (FRONTEND):
   ///   Necesita elevación UAC (`Start-Process -Verb RunAs`) para escribir en
-  ///   `C:\Program Files\` y sobrevivir al `exit(0)` de Flutter. Usa `cmd.exe`
-  ///   en modo `detached` ejecutando `powershell -File` sobre el `.ps1` de
-  ///   lanzamiento y limpia el script temporal automáticamente al terminar.
+  ///   `C:\Program Files\` y sobrevivir al `exit(0)` de Flutter.
+  ///   IMPORTANTE: NO usar `-WindowStyle Hidden` en `updater.exe`. La consola
+  ///   debe mantenerse VISIBLE (`-WindowStyle Normal`) mostrando el aviso de
+  ///   actualización en curso para evitar que el cajero vea el escritorio vacío
+  ///   y abra `Caja4U` manualmente a mitad de la extracción (QuickEdit Mode ya
+  ///   se desactiva vía Win32 FFI dentro de `updater.exe`).
   Future<void> _launchUpdaterDetached({
     required String updaterPath,
     required String componentArg,
@@ -501,6 +503,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
     required String zipPath,
     required bool requireElevation,
   }) async {
+    final updaterDir = p.dirname(updaterPath);
+
     if (!requireElevation) {
       await Process.start(
         updaterPath,
@@ -509,6 +513,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
           '--target-dir=$targetDir',
           '--zip-path=$zipPath',
         ],
+        workingDirectory: updaterDir,
         mode: ProcessStartMode.detached,
         runInShell: false,
       );
@@ -521,10 +526,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
     String psQ(String s) => s.replaceAll("'", "''");
 
     final String ps1Content = [
-      '# OTA Launcher — Frontend (elevado con UAC)',
+      '# OTA Launcher — Frontend (elevado con UAC, consola visible con QuickEdit desactivado por FFI)',
       "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
       "try {",
-      "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -Verb RunAs -ErrorAction Stop",
+      "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -WorkingDirectory '${psQ(updaterDir)}' -WindowStyle Normal -Verb RunAs -ErrorAction Stop",
       "} finally {",
       "  Remove-Item -LiteralPath \$MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
       "}",

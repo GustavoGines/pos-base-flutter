@@ -104,6 +104,37 @@ void main() {
       expect(provider.cartTotal, 1210.0);
     });
 
+    test('Perception is forced to 0.0 when issuer taxCondition is Monotributo, IVA Exento, or legacy Consumidor Final', () {
+      provider.requestAddToCart(product1);
+      provider.selectCustomer(customerWithPerception);
+
+      for (final nonRiCondition in [
+        'Responsable Monotributo',
+        'IVA Exento',
+        'Consumidor Final',
+      ]) {
+        provider.updateSettings(BusinessSettings(
+          taxCondition: nonRiCondition,
+          isIibbPerceptionAgent: true,
+          defaultIibbPerceptionRate: 3.5,
+        ));
+
+        expect(provider.isIibbPerceptionAgent, isFalse, reason: nonRiCondition);
+        expect(provider.appliesIibbPerception, isFalse, reason: nonRiCondition);
+        expect(provider.iibbPerceptionAmount, 0.0, reason: nonRiCondition);
+        expect(provider.cartTotal, 1210.0, reason: nonRiCondition);
+      }
+
+      provider.updateSettings(const BusinessSettings(
+        taxCondition: 'IVA Responsable Inscripto',
+        isIibbPerceptionAgent: true,
+        defaultIibbPerceptionRate: 3.5,
+      ));
+      expect(provider.isIibbPerceptionAgent, isTrue);
+      expect(provider.appliesIibbPerception, isTrue);
+      expect(provider.iibbPerceptionAmount, 35.0);
+    });
+
     test('Perception applies genuine AFIP WSFEv1 math when agent & customer qualify', () {
       provider.setIsIibbPerceptionAgent(true);
       provider.requestAddToCart(product1);

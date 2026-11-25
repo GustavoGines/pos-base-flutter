@@ -420,7 +420,7 @@ void main() {
       expect(find.text('Integraciones'), findsWidgets);
       final mpHeader = find.text('Mercado Pago');
       expect(mpHeader, findsOneWidget);
-      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader = find.text('ARCA (Facturación Electrónica)');
       expect(afipHeader, findsOneWidget);
 
       // Expand Mercado Pago tile
@@ -572,7 +572,7 @@ void main() {
 
       // Verify critical elements are rendered in compact layout
       expect(find.text('Mercado Pago'), findsOneWidget);
-      expect(find.text('ARCA / AFIP (Facturación Electrónica)'), findsOneWidget);
+      expect(find.text('ARCA (Facturación Electrónica)'), findsOneWidget);
     });
 
     testWidgets('User without manage_settings does not trigger loadIntegrations on initial build', (tester) async {
@@ -608,7 +608,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand ARCA / AFIP tile
-      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader);
       await tester.tap(afipHeader);
       await tester.pump();
@@ -737,7 +737,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Expand ARCA / AFIP tile
-      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      final afipHeader = find.text('ARCA (Facturación Electrónica)');
       await tester.ensureVisible(afipHeader);
       await tester.tap(afipHeader);
       await tester.pump();

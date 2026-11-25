@@ -198,7 +198,7 @@ class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
                             Icon(Icons.inventory_2_outlined, size: 16, color: Colors.indigo.shade800),
                             const SizedBox(width: 6),
                             Text(
-                              'Subdiario Fiscal ARCA / AFIP (Libro IVA Compras)',
+                              'Subdiario Fiscal ARCA (Libro IVA Compras)',
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800,

@@ -6188,7 +6188,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                               const SizedBox(width: 8),
                                               Expanded(
                                                 child: Text(
-                                                  'Configuración Fiscal de Servicio / Honorario (AFIP Concepto 2)',
+                                                  'Configuración Fiscal de Servicio / Honorario (ARCA Concepto 2)',
                                                   style: TextStyle(
                                                     fontSize: 12.5,
                                                     fontWeight: FontWeight.w800,
@@ -6216,7 +6216,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                           ),
                                           const SizedBox(height: 8),
                                           Text(
-                                            'Este ítem no descuenta unidades de inventario ni genera alertas de reposición o vencimiento. Al facturarse en ARCA/AFIP, reporta automáticamente Concepto 2 (Servicios) con su período facturado.',
+                                            'Este ítem no descuenta unidades de inventario ni genera alertas de reposición o vencimiento. Al facturarse en ARCA, reporta automáticamente Concepto 2 (Servicios) con su período facturado.',
                                             style: TextStyle(
                                               fontSize: 11.8,
                                               height: 1.35,
@@ -7311,7 +7311,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           initialValue: _ivaRate,
           isExpanded: true,
           decoration: InputDecoration(
-            labelText: 'IVA AFIP',
+            labelText: 'IVA ARCA',
             prefixIcon: isNarrow
                 ? const Icon(Icons.account_balance_outlined, size: 18)
                 : null,

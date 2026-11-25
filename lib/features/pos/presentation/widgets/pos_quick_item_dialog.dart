@@ -1740,7 +1740,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
               ),
             ),
           ),
-          subtitle: 'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA/AFIP',
+          subtitle: 'Se imprime en Ticket Térmico, PDF A4 y Factura Fiscal ARCA',
           topBar: Container(
             padding: EdgeInsets.fromLTRB(
               isCompactWidth ? 14 : 20,
@@ -2010,7 +2010,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                     isExpanded: true,
                                     initialValue: _ivaRate,
                                     decoration: InputDecoration(
-                                      labelText: 'IVA AFIP',
+                                      labelText: 'IVA ARCA',
                                       filled: true,
                                       fillColor: const Color(0xFFF8FAFC),
                                       border: OutlineInputBorder(
@@ -2370,7 +2370,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                                 const SizedBox(width: 6),
                                                 Flexible(
                                                   child: Text(
-                                                    'Modalidad Servicio / Honorario (AFIP Concepto 2)',
+                                                    'Modalidad Servicio / Honorario (ARCA Concepto 2)',
                                                     maxLines: 2,
                                                     overflow: TextOverflow.ellipsis,
                                                     style: TextStyle(
@@ -2409,7 +2409,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                         child: Align(
                                           alignment: Alignment.centerLeft,
                                           child: Text(
-                                            'No descuenta inventario ni requiere costo de reposición. En Facturas A, B y C informa automáticamente el período facturado reglamentario ante ARCA/AFIP.',
+                                            'No descuenta inventario ni requiere costo de reposición. En Facturas A, B y C informa automáticamente el período facturado reglamentario ante ARCA.',
                                             style: TextStyle(
                                               fontSize: 11.8,
                                               height: 1.35,

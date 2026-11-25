@@ -454,7 +454,7 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
       } else if (response.statusCode == 500) {
         throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
-        throw Exception(_parseApiError(response.body, 'Error al subir certificados de AFIP (Status: ${response.statusCode})'));
+        throw Exception(_parseApiError(response.body, 'Error al subir certificados de ARCA (Status: ${response.statusCode})'));
       }
     } on FormatException catch (e) {
       throw Exception(e.message);

@@ -483,7 +483,7 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
                     spacing: 2,
                     children: [
                       _buildFiscalPill(provider, 'all', 'Todas', Icons.all_inclusive, Colors.blueGrey.shade800),
-                      _buildFiscalPill(provider, 'fiscal', 'Fiscales (AFIP)', Icons.verified_outlined, Colors.teal.shade700),
+                      _buildFiscalPill(provider, 'fiscal', 'Fiscales (ARCA)', Icons.verified_outlined, Colors.teal.shade700),
                       _buildFiscalPill(provider, 'non_fiscal', 'No Fiscales', Icons.receipt_long_outlined, Colors.deepOrange.shade700),
                     ],
                   ),

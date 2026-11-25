@@ -196,7 +196,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
-  String? _selectedTaxCondition = 'IVA Responsable Inscripto';
+  String? _selectedTaxCondition =
+      IibbFiscalCalculator.issuerResponsableInscripto;
+  bool _hasLegacyInvalidTaxCondition = false;
   final _iibbCtrl = TextEditingController();
   final _activityStartDateCtrl = TextEditingController();
 
@@ -219,10 +221,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _taxIdCtrl.text = settings.taxId ?? '';
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
         
-        _selectedTaxCondition = settings.taxCondition;
-        if (_selectedTaxCondition == null || _selectedTaxCondition!.isEmpty) {
-           _selectedTaxCondition = 'IVA Responsable Inscripto';
-        }
+        _hasLegacyInvalidTaxCondition =
+            IibbFiscalCalculator.isLegacyInvalidIssuerCondition(
+                settings.taxCondition);
+        _selectedTaxCondition =
+            IibbFiscalCalculator.normalizeIssuerTaxConditionOrNull(
+                settings.taxCondition);
         _iibbCtrl.text = (settings.iibb == null || settings.iibb!.isEmpty) ? 'Exento' : settings.iibb!;
         _activityStartDateCtrl.text = settings.activityStartDate ?? '';
 
@@ -233,7 +237,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _discountTierOnOffersMode = settings.discountTierOnOffersMode;
         _ignoreProductFixedPrices = settings.ignoreProductFixedPrices;
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
-        _isIibbPerceptionAgent = settings.isIibbPerceptionAgent;
+        final bool issuerEligible = _selectedTaxCondition ==
+            IibbFiscalCalculator.issuerResponsableInscripto;
+        _isIibbPerceptionAgent =
+            issuerEligible && settings.isIibbPerceptionAgent;
         _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
             ? settings.defaultIibbPerceptionRate.toString()
             : '';
@@ -832,11 +839,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
 
-      SnackBarService.success(context, result['message']?.toString() ?? 'Certificados de AFIP guardados y validados correctamente.');
+      SnackBarService.success(context, result['message']?.toString() ?? 'Certificados de ARCA guardados y validados correctamente.');
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceAll('Exception: ', '');
-        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al subir certificados de AFIP.');
+        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al subir certificados de ARCA.');
       }
     } finally {
       if (mounted) {
@@ -890,7 +897,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (csrContent.isNotEmpty) {
         final savePath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Guardar Solicitud CSR (.csr) para ARCA / AFIP',
+          dialogTitle: 'Guardar Solicitud CSR (.csr) para ARCA',
           fileName: csrFilename,
           type: FileType.custom,
           allowedExtensions: ['csr'],
@@ -1919,6 +1926,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _cardPercentageCtrl.text = normalizedCardPct.toString();
     _wholesalePercentageCtrl.text = normalizedWholesalePct.toString();
 
+    final bool isIssuerRI = _selectedTaxCondition ==
+        IibbFiscalCalculator.issuerResponsableInscripto;
     final data = {
       'company_name': _companyNameCtrl.text.trim(),
       'address': _addressCtrl.text.trim(),
@@ -1933,13 +1942,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
       'is_iibb_perception_agent':
-          (_isIibbPerceptionAgent && provider.features.arcaAfip) ? '1' : '0',
+          (_isIibbPerceptionAgent && isIssuerRI && provider.features.arcaAfip)
+              ? '1'
+              : '0',
       'default_iibb_perception_rate': double.tryParse(
               _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
           0.0,
       'iibb_calculation_base': _iibbCalculationBase,
       'iibb_subject_tax_conditions': _iibbSubjectTaxConditions.toList(),
-      'tax_condition': _selectedTaxCondition ?? 'IVA Responsable Inscripto',
+      if (_selectedTaxCondition != null && _selectedTaxCondition!.isNotEmpty)
+        'tax_condition': _selectedTaxCondition!,
       'iibb': _iibbCtrl.text.trim(),
       'activity_start_date': _activityStartDateCtrl.text.trim(),
     };
@@ -2031,7 +2043,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'multi_rubro': '🏬 Gestión Multi-Rubro',
       'mercadopago_qr': '📲 Cobro con Mercado Pago QR',
       'mercadopago_point': '💳 Posnet Mercado Pago Point',
-      'arca_afip': '🧾 Facturación Electrónica ARCA (AFIP)',
+      'arca_afip': '🧾 Facturación Electrónica ARCA',
       'ecommerce_sync': '🌐 Sincronización E-Commerce',
       'batch_expiration': '📅 Vencimientos y Control por Lotes',
       'production': '🥐 Producción Propia y Recetas',
@@ -3986,7 +3998,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     if (isNarrow) ...[
                       const Text(
-                        'ARCA / AFIP (Facturación Electrónica)',
+                        'ARCA (Facturación Electrónica)',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
@@ -3998,7 +4010,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           Flexible(
                             child: const Text(
-                              'ARCA / AFIP (Facturación Electrónica)',
+                              'ARCA (Facturación Electrónica)',
                               style: TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
@@ -4273,7 +4285,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Selectores de archivo
             if (isNarrow) ...[
               _buildFilePickerTile(
-                title: 'Certificado AFIP (.crt)',
+                title: 'Certificado ARCA (.crt)',
                 selectedFileName: _selectedCertName,
                 buttonKey: const ValueKey('btn_pick_afip_cert'),
                 onPick: _pickAfipCert,
@@ -4305,7 +4317,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Expanded(
                     child: _buildFilePickerTile(
-                      title: 'Certificado AFIP (.crt)',
+                      title: 'Certificado ARCA (.crt)',
                       selectedFileName: _selectedCertName,
                       buttonKey: const ValueKey('btn_pick_afip_cert'),
                       onPick: _pickAfipCert,
@@ -4359,7 +4371,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ? 'Mostrar contraseña'
                       : 'Ocultar contraseña',
                   onPressed: () => _toggleSecretVisibility(
-                    action: 'Revelar Clave de Certificado AFIP',
+                    action: 'Revelar Clave de Certificado ARCA',
                     isCurrentlyObscured: _obscureAfipPassphrase,
                     onToggle: (v) => _obscureAfipPassphrase = v,
                   ),
@@ -4580,8 +4592,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text('Condición frente al IVA', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    key: ValueKey(
+                        'issuer_tax_condition_${_selectedTaxCondition ?? "invalid"}'),
                     isExpanded: true,
-                    initialValue: _selectedTaxCondition,
+                    initialValue: IibbFiscalCalculator.validIssuerTaxConditions
+                            .contains(_selectedTaxCondition)
+                        ? _selectedTaxCondition
+                        : null,
+                    hint: const Text(
+                      'Seleccione una condición fiscal válida',
+                      style: TextStyle(fontSize: 13),
+                    ),
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.account_balance_outlined, color: Colors.black54),
                       filled: true,
@@ -4591,15 +4612,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
                     ),
                     items: const [
-                      DropdownMenuItem(value: 'IVA Responsable Inscripto', child: Text('IVA Responsable Inscripto')),
-                      DropdownMenuItem(value: 'Responsable Monotributo', child: Text('Responsable Monotributo')),
-                      DropdownMenuItem(value: 'IVA Exento', child: Text('IVA Exento')),
-                      DropdownMenuItem(value: 'Consumidor Final', child: Text('Consumidor Final')),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerResponsableInscripto,
+                        child: Text('IVA Responsable Inscripto'),
+                      ),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerMonotributo,
+                        child: Text('Responsable Monotributo'),
+                      ),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerExento,
+                        child: Text('IVA Exento'),
+                      ),
                     ],
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Seleccione una condición frente al IVA válida para el negocio';
+                      }
+                      return null;
+                    },
                     onChanged: (val) {
-                      setState(() { _selectedTaxCondition = val; });
+                      setState(() {
+                        _selectedTaxCondition = val;
+                        _hasLegacyInvalidTaxCondition = false;
+                        if (!IibbFiscalCalculator.isIssuerEligibleForIibb(val)) {
+                          _isIibbPerceptionAgent = false;
+                        }
+                      });
                     },
                   ),
+                  if (_hasLegacyInvalidTaxCondition) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      key: const ValueKey('legacy_invalid_tax_condition_notice'),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: Colors.amber.shade900),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'La configuración anterior tenía "Consumidor Final", que no es válido para un comercio emisor. Seleccioná una condición válida y guardá los cambios.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.amber.shade900,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -4615,16 +4687,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 24),
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
-        const SizedBox(height: 32),
         Builder(builder: (context) {
+          final isIssuerResponsableInscripto = _selectedTaxCondition ==
+              IibbFiscalCalculator.issuerResponsableInscripto;
+          if (!isIssuerResponsableInscripto) {
+            return const SizedBox.shrink();
+          }
+
           final isAfipLocked = !provider.features.arcaAfip;
           final isIibbActive = _isIibbPerceptionAgent && !isAfipLocked;
-          final normalizedIssuerCond =
-              (_selectedTaxCondition ?? '').trim().toLowerCase();
-          final isIssuerResponsableInscripto =
-              normalizedIssuerCond.contains('inscripto');
 
-          return Container(
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 32),
+              Container(
             decoration: BoxDecoration(
               color: isIibbActive
                   ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
@@ -4684,7 +4761,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   Icon(Icons.lock, size: 12, color: Colors.amber.shade800),
                                   const SizedBox(width: 4),
                                   Text(
-                                    'AFIP Requerido',
+                                    'ARCA Requerido',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
@@ -4699,10 +4776,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       subtitle: Text(
                         isAfipLocked
-                            ? 'Requiere el módulo de Facturación Electrónica ARCA/AFIP habilitado en su licencia.'
-                            : (isIssuerResponsableInscripto
-                                ? 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Facturas A y B.'
-                                : 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Factura C.'),
+                            ? 'Requiere el módulo de Facturación Electrónica ARCA habilitado en su licencia. Activar únicamente si tu negocio fue designado formalmente por Rentas (DGR) como Agente de Percepción. No afecta a Consumidores Finales.'
+                            : 'Activar únicamente si tu negocio fue designado formalmente por Rentas (DGR) como Agente de Percepción. No afecta a Consumidores Finales.',
                         style: TextStyle(fontSize: 12, color: isAfipLocked ? Colors.grey.shade600 : null),
                       ),
                       value: isIibbActive,
@@ -4711,10 +4786,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (isAfipLocked) {
                           PlanUpgradeDialog.show(
                             context,
-                            title: 'Módulo ARCA/AFIP Requerido',
+                            title: 'Módulo ARCA Requerido',
                             featureName: 'Percepciones de Ingresos Brutos (IIBB)',
                             description:
-                                'El cálculo de percepciones de Ingresos Brutos opera exclusivamente sobre comprobantes fiscales electrónicos (Facturas A y B de ARCA/AFIP).\n\n'
+                                'El cálculo de percepciones de Ingresos Brutos opera exclusivamente sobre comprobantes fiscales electrónicos (Facturas A y B de ARCA).\n\n'
                                 'Para utilizar este módulo, la licencia debe tener habilitada la facturación electrónica.',
                             onNavigateToSettings: () => setState(() =>
                                 _activeSection = SettingsSection.subscription),
@@ -4780,64 +4855,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (isIssuerResponsableInscripto) ...[
-                      _buildIibbBaseOptionCard(
-                        key: const ValueKey('iibb_base_net_option'),
-                        value: IibbFiscalCalculator.baseNetWithoutVat,
-                        title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
-                        subtitle:
-                            'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto). En Monotributo (Factura C) coincide con el total.',
-                      ),
-                      const SizedBox(height: 8),
-                      _buildIibbBaseOptionCard(
-                        key: const ValueKey('iibb_base_gross_option'),
-                        value: IibbFiscalCalculator.baseGrossWithVat,
-                        title: 'Sobre Subtotal con IVA incluido',
-                        subtitle:
-                            'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
-                      ),
-                    ] else
-                      Container(
-                        key: const ValueKey('iibb_base_factura_c_auto_note'),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.amber.shade300),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.lock_clock_outlined,
-                                size: 18, color: Colors.amber.shade900),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Cálculo automático sobre Total de Factura C',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.amber.shade900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'En Monotributo / IVA Exento (Factura C) no se discrimina IVA, por lo que la percepción IIBB se calcula siempre automáticamente sobre el total del comprobante.',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.blueGrey.shade800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_net_option'),
+                      value: IibbFiscalCalculator.baseNetWithoutVat,
+                      title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto).',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_gross_option'),
+                      value: IibbFiscalCalculator.baseGrossWithVat,
+                      title: 'Sobre Subtotal con IVA incluido',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
+                    ),
                     const SizedBox(height: 14),
                     Text(
                       'Condiciones frente al IVA alcanzadas por defecto:',
@@ -4855,23 +4887,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_ri'),
                           conditionKey: 'responsable_inscripto',
-                          label: isIssuerResponsableInscripto
-                              ? 'Responsable Inscripto (Fact. A)'
-                              : 'Responsable Inscripto (Fact. C)',
+                          label: 'Responsable Inscripto (Fact. A)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_mono'),
                           conditionKey: 'monotributo',
-                          label: isIssuerResponsableInscripto
-                              ? 'Monotributista (Fact. B)'
-                              : 'Monotributista (Fact. C)',
+                          label: 'Monotributista (Fact. B)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_exento'),
                           conditionKey: 'exento',
-                          label: isIssuerResponsableInscripto
-                              ? 'IVA Exento (Fact. B)'
-                              : 'IVA Exento (Fact. C)',
+                          label: 'IVA Exento (Fact. B)',
                         ),
                       ],
                     ),
@@ -4903,9 +4929,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
-              ],
+                ],
               ),
             ),
+          ),
+            ],
           );
         }),
         const SizedBox(height: 48),
@@ -5120,7 +5148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CheckboxListTile(
                 value: _backupIncludeAfip,
                 onChanged: _isCreatingBackup ? null : (v) => setState(() => _backupIncludeAfip = v ?? false),
-                title: const Text('Certificados Digitales ARCA / AFIP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                title: const Text('Certificados Digitales ARCA', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -5384,13 +5412,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       includedItems.add(_buildRestoreModuleRow(
         icon: Icons.verified_user_rounded,
         color: Colors.teal.shade700,
-        title: 'Certificados Digitales ARCA / AFIP',
+        title: 'Certificados Digitales ARCA',
         subtitle: afipFileCount > 0
             ? 'Se restaurarán $afipFileCount archivo(s) de certificados.'
             : 'Incluido en la copia (sin certificados nuevos para extraer).',
       ));
     } else {
-      untouchedItems.add('Certificados ARCA / AFIP');
+      untouchedItems.add('Certificados ARCA');
     }
 
     // Confirmar restauración mostrando únicamente lo que realmente trae el .zip
@@ -5527,7 +5555,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final details = <String>[
           if (tablesRestored > 0) 'Base de datos ($tablesRestored tablas)',
           if (imagesRestored > 0) '$imagesRestored imagen(es)',
-          if (afipRestored > 0) '$afipRestored certificado(s) AFIP',
+          if (afipRestored > 0) '$afipRestored certificado(s) ARCA',
         ];
 
         final summary = details.isNotEmpty ? ' Se restauró: ${details.join(', ')}.' : '';

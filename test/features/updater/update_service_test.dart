@@ -197,6 +197,61 @@ void main() {
       expect(hitCount, greaterThanOrEqualTo(1));
       expect(hitCount, lessThanOrEqualTo(8));
     });
+
+    test(
+        'Fase 2 Auto-Resume: llamadas concurrentes a checkUpdate sobre el mismo canal completan ambas sin cancelarse mutuamente',
+        () async {
+      final serverGate = Completer<void>();
+
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/version-check')) {
+          return http.Response(jsonEncode({'version': '2.1.0'}), 200);
+        }
+        final component = request.url.queryParameters['component'];
+        await serverGate.future;
+        if (component == 'backend') {
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'update_available': true,
+              'data': {
+                'version': '2.1.2',
+                'download_url': 'https://example.com/backend_2.1.2.zip',
+                'changelog': 'Backend update',
+                'is_critical': false,
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({'success': true, 'update_available': false}),
+          200,
+        );
+      });
+
+      final service = UpdateService();
+      service.configureForTesting(
+        httpClient: client,
+        frontendVersionProvider: () async => '2.1.2',
+        forceAllowInDebug: true,
+      );
+
+      // Simula main.dart (Auto-Resume post-OTA) y LoginScreen._checkForUpdates()
+      // invocando checkUpdate() casi al mismo instante tras relanzar Sistema_POS.exe
+      final autoResumeFuture = service.checkUpdate();
+      final loginCheckFuture = service.checkUpdate(throwErrors: true);
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      serverGate.complete();
+
+      final results = await Future.wait([autoResumeFuture, loginCheckFuture]);
+      expect(results[0].serverChecked, isTrue);
+      expect(results[0].backendUpdate?.version, equals('2.1.2'));
+      expect(results[1].serverChecked, isTrue);
+      expect(results[1].backendUpdate?.version, equals('2.1.2'));
+      expect(UpdateService.isCheckingNotifier.value, isFalse);
+    });
   });
 
   group('UpdateBadgeWidget - Reactividad Visual Stable vs Beta', () {

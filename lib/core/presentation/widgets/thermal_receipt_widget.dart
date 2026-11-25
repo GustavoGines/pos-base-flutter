@@ -213,6 +213,12 @@ class ThermalReceiptWidget extends StatelessWidget {
       case 'responsable inscripto':
       case 'iva responsable inscripto':
         return 'IVA RESPONSABLE INSCRIPTO';
+      case 'consumidor_final':
+      case 'consumidor final':
+      case 'a consumidor final':
+        return letter == 'C'
+            ? 'RESPONSABLE MONOTRIBUTO'
+            : 'IVA RESPONSABLE INSCRIPTO';
       default:
         if (rawCond.isNotEmpty) {
           return rawCond.toUpperCase();
@@ -698,7 +704,7 @@ class ThermalReceiptWidget extends StatelessWidget {
         ],
 
         _buildCenterText(
-          'Comprobante Autorizado por AFIP',
+          'Comprobante Autorizado por ARCA',
           fontSize: 10.5 * factor,
           isBold: true,
         ),
@@ -1181,7 +1187,8 @@ class ThermalReceiptWidget extends StatelessWidget {
                 factor: factor,
                 isBold: true,
               ),
-            if (hasPerception || businessSettings?.isIibbPerceptionAgent == true)
+            if (hasPerception ||
+                businessSettings?.isEffectiveIibbPerceptionAgent == true)
               _buildKeyValueRow(
                 'PERCEPCION IIBB (${hasPerception && perceptionRt > 0 ? perceptionRt.toStringAsFixed(1) : "0.0"}%):',
                 '\$${_formatPrice(perceptionAmt)}',

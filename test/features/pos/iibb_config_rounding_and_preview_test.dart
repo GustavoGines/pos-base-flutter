@@ -181,6 +181,7 @@ class _FakeIibbSettingsProvider extends ChangeNotifier
   Future<bool> saveSettings(Map<String, dynamic> data) async {
     savedPayload = Map<String, dynamic>.from(data);
     _settings = _settings.copyWith(
+      taxCondition: data['tax_condition']?.toString() ?? _settings.taxCondition,
       isIibbPerceptionAgent: data['is_iibb_perception_agent'] == '1',
       defaultIibbPerceptionRate:
           (data['default_iibb_perception_rate'] as num?)?.toDouble() ??
@@ -941,7 +942,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Cambiar Condición frente al IVA sincroniza en vivo subtítulo, base automática Factura C y etiquetas de chips IIBB', (tester) async {
+    testWidgets('Oculta Agente IIBB en Monotributo/Exento, quita Consumidor Final y muestra texto preventivo en RI', (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -978,39 +979,51 @@ void main() {
       await tester.tap(find.text('General').first);
       await tester.pumpAndSettle();
 
-      // Estado inicial: IVA Responsable Inscripto
-      expect(find.textContaining('en Facturas A y B.'), findsOneWidget);
+      // Estado inicial: IVA Responsable Inscripto -> bloque visible con texto preventivo
+      expect(
+        find.text(
+          'Activar únicamente si tu negocio fue designado formalmente por Rentas (DGR) como Agente de Percepción. No afecta a Consumidores Finales.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('switch_iibb_perception_agent')), findsOneWidget);
       expect(find.byKey(const ValueKey('iibb_base_net_option')), findsOneWidget);
       expect(find.byKey(const ValueKey('iibb_base_gross_option')), findsOneWidget);
-      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsNothing);
       expect(find.text('Responsable Inscripto (Fact. A)'), findsOneWidget);
       expect(find.text('Monotributista (Fact. B)'), findsOneWidget);
       expect(find.text('IVA Exento (Fact. B)'), findsOneWidget);
 
-      // Cambiar dropdown a Responsable Monotributo
+      // Abrir dropdown: Consumidor Final NO debe existir entre las opciones
       final dropdown = find.byType(DropdownButtonFormField<String>).first;
       await tester.ensureVisible(dropdown);
       await tester.tap(dropdown);
       await tester.pumpAndSettle();
+      expect(find.text('Consumidor Final'), findsNothing);
+
+      // Cambiar dropdown a Responsable Monotributo -> oculta bloque IIBB por completo
       await tester.tap(find.text('Responsable Monotributo').last);
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('en Factura C.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('switch_iibb_perception_agent')), findsNothing);
       expect(find.byKey(const ValueKey('iibb_base_net_option')), findsNothing);
       expect(find.byKey(const ValueKey('iibb_base_gross_option')), findsNothing);
-      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsOneWidget);
-      expect(find.text('Responsable Inscripto (Fact. C)'), findsOneWidget);
-      expect(find.text('Monotributista (Fact. C)'), findsOneWidget);
-      expect(find.text('IVA Exento (Fact. C)'), findsOneWidget);
 
-      // Cambiar dropdown a IVA Exento mantiene modo Factura C
-      await tester.tap(dropdown);
+      // Cambiar dropdown a IVA Exento -> mantiene bloque IIBB oculto
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('IVA Exento').last);
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('en Factura C.'), findsOneWidget);
-      expect(find.byKey(const ValueKey('iibb_base_factura_c_auto_note')), findsOneWidget);
+      expect(find.byKey(const ValueKey('switch_iibb_perception_agent')), findsNothing);
+
+      // Guardar envía is_iibb_perception_agent = '0'
+      final saveBtn = find.text('GUARDAR').first;
+      await tester.ensureVisible(saveBtn);
+      await tester.tap(saveBtn);
+      await tester.pumpAndSettle();
+
+      expect(settingsProvider.savedPayload?['tax_condition'], 'IVA Exento');
+      expect(settingsProvider.savedPayload?['is_iibb_perception_agent'], '0');
       expect(tester.takeException(), isNull);
     });
   });

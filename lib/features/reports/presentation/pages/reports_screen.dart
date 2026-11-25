@@ -559,7 +559,7 @@ class _FiscalFilterSegment extends StatelessWidget {
           ),
           _buildOption(
             value: 'fiscal',
-            label: 'Fiscales (AFIP)',
+            label: 'Fiscales (ARCA)',
             icon: Icons.verified_outlined,
             activeColor: Colors.teal.shade700,
           ),

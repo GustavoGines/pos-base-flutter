@@ -260,7 +260,7 @@ void main() {
       // processCheckout debe completarla como Ticket No Fiscal con advertencia y limpiar el carrito
       expect(ok, isTrue);
       expect(provider.cart, isEmpty);
-      expect(provider.printerWarning, contains('AFIP rechazó la factura'));
+      expect(provider.printerWarning, contains('ARCA rechazó la factura'));
       expect(provider.printerWarning, contains('CUIT receptor inválido'));
     });
 

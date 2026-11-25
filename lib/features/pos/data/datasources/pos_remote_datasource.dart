@@ -417,7 +417,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         return {
           'success': false,
           'contingency': true,
-          'message': decoded is Map ? (decoded['message'] ?? 'Servicio de AFIP no disponible. Venta registrada en contingencia.') : 'AFIP Timeout',
+          'message': decoded is Map ? (decoded['message'] ?? 'Servicio de ARCA no disponible. Venta registrada en contingencia.') : 'ARCA Timeout',
           'invoice_status': 'pending',
           'error': decoded is Map ? decoded['error'] : null,
         };

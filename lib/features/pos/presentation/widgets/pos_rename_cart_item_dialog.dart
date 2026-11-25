@@ -1748,7 +1748,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                       color: Color(0xFF1E293B),
                                     ),
                                     decoration: InputDecoration(
-                                      labelText: 'IVA AFIP',
+                                      labelText: 'IVA ARCA',
                                       labelStyle: const TextStyle(fontSize: 11.5),
                                       filled: true,
                                       fillColor: Colors.white,

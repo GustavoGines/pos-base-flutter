@@ -110,7 +110,7 @@ class _VatManagementTabState extends State<VatManagementTab> {
                       subtitle:
                           'Calculá automáticamente tu saldo estimado a pagar o a favor cruzando el Débito Fiscal de tus ventas con el Crédito Fiscal de tus Proveedores.',
                       highlights: [
-                        'Cruce automático Débito Fiscal AFIP vs. Crédito Fiscal de Compras',
+                        'Cruce automático Débito Fiscal ARCA vs. Crédito Fiscal de Compras',
                         'Desglose de alícuotas 21%, 10.5%, 27% y percepciones de IVA / IIBB',
                         'Requiere módulo de Proveedores incluido en el Plan Premium',
                       ],

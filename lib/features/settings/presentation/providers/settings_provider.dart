@@ -12,6 +12,7 @@ import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_
 import 'package:frontend_desktop/features/settings/domain/usecases/update_settings_usecase.dart';
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
 
 class SettingsProvider with ChangeNotifier {
@@ -56,7 +57,8 @@ class SettingsProvider with ChangeNotifier {
   }
 
   // ─── [mayorista-iibb] Percepciones IIBB ───────────────────────────────────
-  bool get isIibbPerceptionAgent => _settings?.isIibbPerceptionAgent ?? false;
+  bool get isIibbPerceptionAgent =>
+      _settings?.isEffectiveIibbPerceptionAgent ?? false;
   double get defaultIibbPerceptionRate => _settings?.defaultIibbPerceptionRate ?? 0.0;
   String get iibbCalculationBase =>
       _settings?.iibbCalculationBase ?? 'net_without_vat';
@@ -131,6 +133,9 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  String _logoSignature(BusinessSettings? s) =>
+      '${s?.logoPath ?? ''}|${s?.effectiveLogoUrl ?? ''}';
+
   Future<void> loadSettings({bool isSilent = false}) async {
     if (!isSilent) {
       _isLoading = true;
@@ -141,7 +146,18 @@ class SettingsProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _currentApiUrl = prefs.getString('pos_api');
 
+      final prevLogoSig = _logoSignature(_settings);
       _settings = await getSettingsUseCase();
+      if (_logoSignature(_settings) != prevLogoSig) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
+      }
       
       // DEBUG: Inspección de permisos PRO
       if (_settings != null) {
@@ -193,8 +209,19 @@ class SettingsProvider with ChangeNotifier {
     _lastSilentRefresh = now;
 
     try {
+      final prevLogoSig = _logoSignature(_settings);
       final newSettings = await getSettingsUseCase();
       _settings = newSettings;
+      if (_logoSignature(_settings) != prevLogoSig) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
+      }
       
       // Actualizar el Heartbeat con la nueva data (server_time, etc)
       await LicenseHeartbeatService().initialize(
@@ -216,6 +243,7 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      final prevLogoSig = _logoSignature(_settings);
       final updated = await updateSettingsUseCase(data);
       if (updated.effectiveLogoUrl == null && _settings?.effectiveLogoUrl != null) {
         _settings = updated.copyWith(
@@ -224,6 +252,18 @@ class SettingsProvider with ChangeNotifier {
         );
       } else {
         _settings = updated;
+      }
+      if (_logoSignature(_settings) != prevLogoSig ||
+          data.containsKey('logo_path') ||
+          data.containsKey('logo_url')) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
       }
       return true;
     } catch (e) {
@@ -242,6 +282,7 @@ class SettingsProvider with ChangeNotifier {
 
     try {
       await updateSettingsUseCase.repository.uploadLogo(filePath, bytes: bytes, filename: filename);
+      AfipFiscalPdfService.invalidateLogoCache();
       await loadSettings(isSilent: true);
       return true;
     } catch (e) {
@@ -255,6 +296,7 @@ class SettingsProvider with ChangeNotifier {
 
   void updateBaseUrl(String newUrl) {
     _currentApiUrl = newUrl;
+    AfipFiscalPdfService.invalidateLogoCache();
     if (updateSettingsUseCase.repository is SettingsRepositoryImpl) {
       (updateSettingsUseCase.repository as SettingsRepositoryImpl).updateBaseUrl(newUrl);
     }

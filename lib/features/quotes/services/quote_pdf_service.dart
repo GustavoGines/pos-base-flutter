@@ -541,7 +541,7 @@ class QuotePdfService {
       effectiveIibb ??= businessSettings.iibb;
       effectiveActivityStart ??= businessSettings.activityStartDate;
       effectiveLogoUrl ??= businessSettings.effectiveLogoUrl;
-      isIibbPerceptionAgent = businessSettings.isIibbPerceptionAgent;
+      isIibbPerceptionAgent = businessSettings.isEffectiveIibbPerceptionAgent;
     } else if (businessSettings is Map) {
       effectiveAddress ??= businessSettings['address']?.toString();
       effectivePhone ??= businessSettings['phone']?.toString();
@@ -596,7 +596,11 @@ class QuotePdfService {
 
     final formattedEmitterCuit = _formatCuit(effectiveCuit);
     final formattedEmitterIibb = _formatCuit(effectiveIibb);
-    final formattedEmitterTaxCond = _formatTaxCondition(effectiveTaxCondition);
+    final sanitizedEmitterTaxCond =
+        (effectiveTaxCondition ?? '').trim().toLowerCase().contains('consumidor')
+            ? ''
+            : effectiveTaxCondition;
+    final formattedEmitterTaxCond = _formatTaxCondition(sanitizedEmitterTaxCond);
 
     final receiverName =
         (quote.customerName != null && quote.customerName!.trim().isNotEmpty)

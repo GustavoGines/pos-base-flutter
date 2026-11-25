@@ -373,12 +373,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return _voucherType == 1 || _fiscalDocType == 80;
   }
 
+  bool get _canBusinessApplyIibb {
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings?.isEffectiveIibbPerceptionAgent != true) return false;
+    if (_isFiscalMode && _voucherType == 11) return false;
+    return true;
+  }
+
   double? get _effectiveIibbRate {
+    if (!_canBusinessApplyIibb) return 0.0;
     if (_customIibbRateOverride != null) {
       return _customIibbRateOverride! > 0 ? _customIibbRateOverride : 0.0;
     }
     final settings = context.read<SettingsProvider>().settings;
-    if (settings?.isIibbPerceptionAgent != true) return 0.0;
     if (_isFiscalMode &&
         IibbFiscalCalculator.normalizeTaxConditionKey(_fiscalTaxCondition) ==
             'consumidor_final') {
@@ -2732,7 +2739,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
           // FN-F3-04: Si la venta fue asentada y luego revertida (ej. rechazo fiscal AFIP o anulación en vista previa),
           // rotamos el UUID de transacción para que el próximo intento cree una venta nueva limpia.
-          if (errMsg == 'ANNULLED' || errMsg.contains('AFIP rechazó la factura')) {
+          if (errMsg == 'ANNULLED' ||
+              errMsg.contains('ARCA rechazó la factura') ||
+              errMsg.contains('AFIP rechazó la factura')) {
             _clientTransactionId = _generateTransactionUuid();
           }
 
@@ -5738,12 +5747,31 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ? _processCheckout
                             : null,
                         child: (provider.isLoading || _isSubmitting)
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
+                            ? FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      provider.checkoutStageLabel ??
+                                          'Registrando cobro...',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               )
                             : Text(
@@ -5771,8 +5799,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Widget _buildIibbPerceptionSelectorBar() {
+    if (!_canBusinessApplyIibb) return const SizedBox.shrink();
     final settings = context.read<SettingsProvider>().settings;
-    if (settings?.isIibbPerceptionAgent != true) return const SizedBox.shrink();
     final targetCustomer = _effectiveIibbCustomer;
     final customerCondKey = targetCustomer != null
         ? IibbFiscalCalculator.normalizeTaxConditionKey(

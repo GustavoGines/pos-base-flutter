@@ -648,7 +648,7 @@ class _FiltersPanel extends StatelessWidget {
               ButtonSegment(
                 value: 'fiscal',
                 icon: Icon(Icons.verified_outlined, size: 14),
-                label: Text('Fiscales (AFIP)'),
+                label: Text('Fiscales (ARCA)'),
               ),
               ButtonSegment(
                 value: 'non_fiscal',
@@ -2529,13 +2529,19 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     return _taxableNetBase;
   }
 
+  bool _canBusinessApplyIibb(BusinessSettings? settings) =>
+      settings?.isEffectiveIibbPerceptionAgent == true && _voucherType != 11;
+
   bool _showIibbSelectorBar(BusinessSettings? settings) {
     if (_existingSaleIibb > 0.009) return true;
-    if (settings?.isIibbPerceptionAgent != true) return false;
+    if (!_canBusinessApplyIibb(settings)) return false;
     return _qualifiesByCustomer || _isFiscalCuitSubjectToIibb(settings);
   }
 
   double _effectiveIibbRate(BusinessSettings? settings) {
+    if (_existingSaleIibb <= 0.009 && !_canBusinessApplyIibb(settings)) {
+      return 0.0;
+    }
     if (_existingSaleIibb <= 0.009 &&
         IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition) ==
             'consumidor_final') {
@@ -2558,7 +2564,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
         widget.sale.iibbPerceptionRate! <= 0.0) {
       return 0.0;
     }
-    if (settings?.isIibbPerceptionAgent != true) return 0.0;
+    if (!_canBusinessApplyIibb(settings)) return 0.0;
 
     final defaultRate = settings?.defaultIibbPerceptionRate ?? 0.0;
     if (_selectedCustomer != null) {

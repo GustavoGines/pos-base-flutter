@@ -63,6 +63,57 @@ class IibbFiscalCalculator {
     'responsable_inscripto',
   ];
 
+  static const String issuerResponsableInscripto = 'IVA Responsable Inscripto';
+  static const String issuerMonotributo = 'Responsable Monotributo';
+  static const String issuerExento = 'IVA Exento';
+
+  static const List<String> validIssuerTaxConditions = [
+    issuerResponsableInscripto,
+    issuerMonotributo,
+    issuerExento,
+  ];
+
+  /// Retorna `true` si la condición IVA guardada para el comercio emisor es
+  /// un valor legado inválido (ej. `'Consumidor Final'` o desconocido).
+  static bool isLegacyInvalidIssuerCondition(String? raw) {
+    if (raw == null) return false;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return false;
+    final norm =
+        trimmed.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+    if (norm.contains('consumidor')) return true;
+    return !norm.contains('inscripto') &&
+        !norm.contains('monotributo') &&
+        !norm.contains('exento');
+  }
+
+  /// Normaliza la condición frente al IVA del comercio emisor a uno de los
+  /// 3 valores válidos (`IVA Responsable Inscripto`, `Responsable Monotributo`,
+  /// `IVA Exento`). Retorna `null` si tenía un valor legado inválido como
+  /// `Consumidor Final` para que la UI pida seleccionar una opción válida.
+  static String? normalizeIssuerTaxConditionOrNull(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return issuerResponsableInscripto;
+    }
+    final norm =
+        raw.trim().toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+    if (norm.contains('monotributo')) return issuerMonotributo;
+    if (norm.contains('exento')) return issuerExento;
+    if (norm.contains('inscripto')) return issuerResponsableInscripto;
+    return null;
+  }
+
+  /// True únicamente cuando el comercio emisor es elegible para operar como
+  /// Agente de Percepción IIBB (`IVA Responsable Inscripto`).
+  static bool isIssuerEligibleForIibb(String? rawIssuerTaxCondition) {
+    if (rawIssuerTaxCondition == null ||
+        rawIssuerTaxCondition.trim().isEmpty) {
+      return true;
+    }
+    return normalizeIssuerTaxConditionOrNull(rawIssuerTaxCondition) ==
+        issuerResponsableInscripto;
+  }
+
   static double round2(double value) => (value * 100.0).roundToDouble() / 100.0;
 
   static String normalizeCalculationBase(String? raw) {

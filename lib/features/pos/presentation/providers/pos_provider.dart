@@ -149,6 +149,15 @@ class PosProvider with ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  String? _checkoutStageLabel;
+  String? get checkoutStageLabel => _checkoutStageLabel;
+
+  void _setCheckoutStage(String? stage) {
+    if (_checkoutStageLabel == stage) return;
+    _checkoutStageLabel = stage;
+    notifyListeners();
+  }
+
   // Guard: evita que un doble-click genere dos API calls antes de que el Consumer reconstruya el botón
   bool _isHoldingOrder = false;
   bool get isHoldingOrder => _isHoldingOrder;
@@ -350,7 +359,9 @@ class PosProvider with ChangeNotifier {
   Customer? get selectedCustomer => _selectedCustomer;
 
   bool _isIibbPerceptionAgent = false;
-  bool get isIibbPerceptionAgent => _isIibbPerceptionAgent;
+  bool _isIssuerEligibleForIibb = true;
+  bool get isIibbPerceptionAgent =>
+      _isIibbPerceptionAgent && _isIssuerEligibleForIibb;
 
   double? _overrideIibbPerceptionRate;
   double? get overrideIibbPerceptionRate => _overrideIibbPerceptionRate;
@@ -443,7 +454,9 @@ class PosProvider with ChangeNotifier {
     }
 
     setIgnoreProductFixedPrices(settings.ignoreProductFixedPrices);
-    setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
+    _isIssuerEligibleForIibb =
+        IibbFiscalCalculator.isIssuerEligibleForIibb(settings.taxCondition);
+    setIsIibbPerceptionAgent(settings.isEffectiveIibbPerceptionAgent);
     setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
     setIibbCalculationBase(settings.iibbCalculationBase);
     setIibbSubjectTaxConditions(settings.iibbSubjectTaxConditions);
@@ -542,7 +555,7 @@ class PosProvider with ChangeNotifier {
         _lastElectronicInvoice = result['invoice'] as Map<String, dynamic>;
       } else if (result['contingency'] == true || result['invoice_status'] == 'pending') {
         _lastElectronicInvoice = null;
-        _printerWarning = 'Factura en contingencia: ${result['message'] ?? 'AFIP fuera de servicio'}';
+        _printerWarning = 'Factura en contingencia: ${result['message'] ?? 'ARCA fuera de servicio'}';
       }
       notifyListeners();
       return result;
@@ -557,7 +570,7 @@ class PosProvider with ChangeNotifier {
       }
       
       _lastElectronicInvoice = null;
-      _printerWarning = 'Error al autorizar con AFIP ($e). Venta en contingencia.';
+      _printerWarning = 'Error al autorizar con ARCA ($e). Venta en contingencia.';
       notifyListeners();
       return {
         'success': false,
@@ -696,10 +709,10 @@ class PosProvider with ChangeNotifier {
 
   /// Indica si corresponde aplicar Percepción IIBB al cliente seleccionado
   bool get appliesIibbPerception {
+    if (!isIibbPerceptionAgent) return false;
     if (_overrideIibbPerceptionRate != null) {
       if (_overrideIibbPerceptionRate! <= 0) return false;
-      return _isIibbPerceptionAgent &&
-          _selectedCustomer != null &&
+      return _selectedCustomer != null &&
           _selectedCustomer!.documentType == 80 &&
           IibbFiscalCalculator.normalizeTaxConditionKey(
                   _selectedCustomer!.taxCondition) !=
@@ -708,13 +721,13 @@ class PosProvider with ChangeNotifier {
     final custRate = (_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0
         ? _selectedCustomer!.iibbPerceptionRate!
         : _defaultIibbPerceptionRate;
-    return _isIibbPerceptionAgent &&
-        (_selectedCustomer?.appliesIibbPerception == true) &&
+    return (_selectedCustomer?.appliesIibbPerception == true) &&
         (custRate > 0);
   }
 
   /// Alícuota de percepción IIBB activa para el cliente
   double get iibbPerceptionRate {
+    if (!isIibbPerceptionAgent) return 0.0;
     if (_overrideIibbPerceptionRate != null) {
       return appliesIibbPerception ? _overrideIibbPerceptionRate! : 0.0;
     }
@@ -744,7 +757,10 @@ class PosProvider with ChangeNotifier {
     Customer? customer,
     double? overrideRate,
   }) {
-    final isAgent = settings?.isIibbPerceptionAgent ?? _isIibbPerceptionAgent;
+    final isAgent = settings != null
+        ? settings.isEffectiveIibbPerceptionAgent
+        : isIibbPerceptionAgent;
+    if (!isAgent) return false;
     final defaultRate = settings?.defaultIibbPerceptionRate ?? _defaultIibbPerceptionRate;
     final targetCustomer = customer ?? _selectedCustomer;
     final effectiveOverride = overrideRate ?? _activeCartOverrideFor(targetCustomer);
@@ -1963,6 +1979,7 @@ class PosProvider with ChangeNotifier {
     if (_cart.isEmpty || _isLoading) return false;
 
     _isLoading = true;
+    _checkoutStageLabel = 'Registrando cobro...';
     _errorMessage = null;
     _printerWarning = null;
     _wasLastSaleDispatched = false;
@@ -2094,6 +2111,7 @@ class PosProvider with ChangeNotifier {
         if (fiscalData != null) {
           final sId = int.tryParse(extractedSaleId);
           if (sId != null) {
+            _setCheckoutStage('Autorizando CAE en ARCA...');
             try {
               final invRes = await issueFiscalInvoice(sId, fiscalData);
               if (invRes != null && invRes['invoice'] != null) {
@@ -2107,14 +2125,14 @@ class PosProvider with ChangeNotifier {
                   sId,
                   shiftId: shiftId,
                   fiscalRollback: true,
-                  voidReason: 'Rollback automático por rechazo fiscal AFIP',
+                  voidReason: 'Rollback automático por rechazo fiscal ARCA',
                 );
               } catch (rollbackError) {
                 debugPrint('Error en rollback automático: $rollbackError');
               }
               final cleanErr = e.toString().replaceAll('Exception: ', '');
               if (rolledBack) {
-                _errorMessage = 'AFIP rechazó la factura: $cleanErr';
+                _errorMessage = 'ARCA rechazó la factura: $cleanErr';
                 _isLoading = false;
                 notifyListeners();
                 return false;
@@ -2123,7 +2141,7 @@ class PosProvider with ChangeNotifier {
                 // no retornamos false para evitar que un reintento duplique el cobro de una venta ya asentada.
                 _lastElectronicInvoice = null;
                 _printerWarning =
-                    'AFIP rechazó la factura ($cleanErr). La venta #$sId quedó registrada como Ticket No Fiscal; puede emitir la factura desde Historial de Ventas.';
+                    'ARCA rechazó la factura ($cleanErr). La venta #$sId quedó registrada como Ticket No Fiscal; puede emitir la factura desde Historial de Ventas.';
               }
             }
           }
@@ -2194,6 +2212,7 @@ class PosProvider with ChangeNotifier {
       // ── Lógica de Impresión (A4 o Térmica) ──
       // Solo se imprime si el usuario activó "Imprimir Comprobante" (settings != null).
       if (settings != null) {
+        _setCheckoutStage('Preparando comprobante...');
         try {
         if (localTerminal.printerFormat.startsWith('a4')) {
           final isDeliveredNow = fulfillmentStatus == 'delivered';
@@ -2261,57 +2280,65 @@ class PosProvider with ChangeNotifier {
               'cashier': {'name': userName},
             };
 
-            final Uint8List pdfBytes;
-            if (_lastElectronicInvoice != null) {
-              pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
-                sale: salePayload,
-                electronicInvoice: _lastElectronicInvoice!,
-                deliveryNote:
-                    (requiresDispatch && isDeliveredNow && _lastDeliveryNote != null)
-                        ? _lastDeliveryNote
-                        : null,
-                businessSettings: settings,
-                paperSize: localTerminal.pdfPaperSize,
-              );
-            } else if (requiresDispatch &&
-                isDeliveredNow &&
-                _lastDeliveryNote != null) {
-              pdfBytes =
-                  await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
-                sale: salePayload,
-                deliveryNote: _lastDeliveryNote!,
-                businessName: settings.companyName ?? 'Mi Negocio',
-                businessAddress: settings.address,
-                phone: settings.phone ?? '',
-                cuit: settings.taxId ?? '',
-                taxCondition: settings.taxCondition,
-                iibb: settings.iibb,
-                activityStartDate: settings.activityStartDate,
-                vendorName: userName,
-                paperSize: localTerminal.pdfPaperSize,
-                businessSettings: settings,
-              );
-            } else {
-              pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
-                sale: salePayload,
-                businessName: settings.companyName ?? 'Mi Negocio',
-                businessAddress: settings.address,
-                phone: settings.phone ?? '',
-                cuit: settings.taxId ?? '',
-                taxCondition: settings.taxCondition,
-                iibb: settings.iibb,
-                activityStartDate: settings.activityStartDate,
-                vendorName: userName,
-                paperSize: localTerminal.pdfPaperSize,
-                businessSettings: settings,
-              );
+            Future<Uint8List>? pdfBytesFuture;
+            Future<Uint8List> loadPdfBytes() {
+              if (_lastElectronicInvoice != null) {
+                return pdfBytesFuture ??=
+                    AfipFiscalPdfService.generateFiscalInvoice(
+                  sale: salePayload,
+                  electronicInvoice: _lastElectronicInvoice!,
+                  deliveryNote: (requiresDispatch &&
+                          isDeliveredNow &&
+                          _lastDeliveryNote != null)
+                      ? _lastDeliveryNote
+                      : null,
+                  businessSettings: settings,
+                  paperSize: localTerminal.pdfPaperSize,
+                );
+              } else if (requiresDispatch &&
+                  isDeliveredNow &&
+                  _lastDeliveryNote != null) {
+                return pdfBytesFuture ??=
+                    A4SplitPdfService.generateA4SplitReceiptAndDispatch(
+                  sale: salePayload,
+                  deliveryNote: _lastDeliveryNote!,
+                  businessName: settings.companyName ?? 'Mi Negocio',
+                  businessAddress: settings.address,
+                  phone: settings.phone ?? '',
+                  cuit: settings.taxId ?? '',
+                  taxCondition: settings.taxCondition,
+                  iibb: settings.iibb,
+                  activityStartDate: settings.activityStartDate,
+                  vendorName: userName,
+                  paperSize: localTerminal.pdfPaperSize,
+                  businessSettings: settings,
+                );
+              } else {
+                return pdfBytesFuture ??=
+                    A4SplitPdfService.generateA4SingleReceipt(
+                  sale: salePayload,
+                  businessName: settings.companyName ?? 'Mi Negocio',
+                  businessAddress: settings.address,
+                  phone: settings.phone ?? '',
+                  cuit: settings.taxId ?? '',
+                  taxCondition: settings.taxCondition,
+                  iibb: settings.iibb,
+                  activityStartDate: settings.activityStartDate,
+                  vendorName: userName,
+                  paperSize: localTerminal.pdfPaperSize,
+                  businessSettings: settings,
+                );
+              }
             }
+
+            final eagerFuture = loadPdfBytes();
 
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
               _previewHandledInProvider = true;
               if (showPreview) {
                 final paperSize = localTerminal.pdfPaperSize;
+                _setCheckoutStage('Comprobante en pantalla...');
                 final result = await showDialog<String>(
                   context: ctx,
                   barrierDismissible: true,
@@ -2328,7 +2355,8 @@ class PosProvider with ChangeNotifier {
                           pdfFileName: 'Comprobante_$extractedSaleId.pdf',
                           initialPageFormat:
                               pdfPageFormatFromPaperSize(paperSize),
-                          build: (format) async => pdfBytes,
+                          dpi: 160.0,
+                          build: (format) => eagerFuture,
                           canClose: !isVoiding,
                           onClose: isVoiding
                               ? null
@@ -2465,6 +2493,7 @@ class PosProvider with ChangeNotifier {
                   return false;
                 }
               } else {
+                final pdfBytes = await eagerFuture;
                 await Printing.layoutPdf(
                   onLayout: (_) async => pdfBytes,
                   name: 'Comprobante_$extractedSaleId',
@@ -2493,6 +2522,7 @@ class PosProvider with ChangeNotifier {
           if (showPreview) {
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
+              _setCheckoutStage('Comprobante en pantalla...');
               confirmedToPrint = await TicketPreviewDialog.show(
                 ctx,
                 title:
@@ -2661,6 +2691,7 @@ class PosProvider with ChangeNotifier {
       return false;
     } finally {
       _isLoading = false;
+      _checkoutStageLabel = null;
       notifyListeners();
     }
   }
@@ -2796,6 +2827,9 @@ class PosProvider with ChangeNotifier {
     double? iibbPerceptionRate,
   }) async {
     _isLoading = true;
+    if (items == null) {
+      _checkoutStageLabel = 'Registrando cobro...';
+    }
     _errorMessage = null;
     _printerWarning = null;
     _lastSalePrinted = settings != null;
@@ -2824,6 +2858,7 @@ class PosProvider with ChangeNotifier {
       final fiscalData = _pendingFiscalInvoiceData;
       _pendingFiscalInvoiceData = null; // Se consume una sola vez
       if (fiscalData != null) {
+        _setCheckoutStage('Autorizando CAE en ARCA...');
         try {
           final invRes = await issueFiscalInvoice(saleId, fiscalData);
           if (invRes != null && invRes['invoice'] != null) {
@@ -2834,7 +2869,7 @@ class PosProvider with ChangeNotifier {
           _lastElectronicInvoice = null;
           final cleanErr = e.toString().replaceAll('Exception: ', '');
           _printerWarning =
-              'No se pudo autorizar la Factura Fiscal en AFIP ($cleanErr). Se emite comprobante en contingencia; puede reintentar desde Historial de Ventas.';
+              'No se pudo autorizar la Factura Fiscal en ARCA ($cleanErr). Se emite comprobante en contingencia; puede reintentar desde Historial de Ventas.';
         }
       }
 
@@ -2893,6 +2928,7 @@ class PosProvider with ChangeNotifier {
         }).toList();
 
         if (ticketItems.isNotEmpty) {
+          _setCheckoutStage('Preparando comprobante...');
           try {
             // Resolver nombres y ordenar: efectivo primero
             final resolvedPayments = (payments.map((p) {
@@ -3047,35 +3083,42 @@ class PosProvider with ChangeNotifier {
                 'cashier': {'name': userName},
               };
 
-              final Uint8List pdfBytes;
-              if (_lastElectronicInvoice != null) {
-                pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
-                  sale: salePayload,
-                  electronicInvoice: _lastElectronicInvoice!,
-                  businessSettings: safeSettings,
-                  paperSize: localTerminal.pdfPaperSize,
-                );
-              } else {
-                pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
-                  sale: salePayload,
-                  businessName: safeSettings.companyName ?? 'Mi Negocio',
-                  businessAddress: safeSettings.address,
-                  phone: safeSettings.phone ?? '',
-                  cuit: safeSettings.taxId ?? '',
-                  taxCondition: safeSettings.taxCondition,
-                  iibb: safeSettings.iibb,
-                  activityStartDate: safeSettings.activityStartDate,
-                  vendorName: userName,
-                  paperSize: localTerminal.pdfPaperSize,
-                  businessSettings: safeSettings,
-                );
+              Future<Uint8List>? pdfBytesFuture;
+              Future<Uint8List> loadPdfBytes() {
+                if (_lastElectronicInvoice != null) {
+                  return pdfBytesFuture ??=
+                      AfipFiscalPdfService.generateFiscalInvoice(
+                    sale: salePayload,
+                    electronicInvoice: _lastElectronicInvoice!,
+                    businessSettings: safeSettings,
+                    paperSize: localTerminal.pdfPaperSize,
+                  );
+                } else {
+                  return pdfBytesFuture ??=
+                      A4SplitPdfService.generateA4SingleReceipt(
+                    sale: salePayload,
+                    businessName: safeSettings.companyName ?? 'Mi Negocio',
+                    businessAddress: safeSettings.address,
+                    phone: safeSettings.phone ?? '',
+                    cuit: safeSettings.taxId ?? '',
+                    taxCondition: safeSettings.taxCondition,
+                    iibb: safeSettings.iibb,
+                    activityStartDate: safeSettings.activityStartDate,
+                    vendorName: userName,
+                    paperSize: localTerminal.pdfPaperSize,
+                    businessSettings: safeSettings,
+                  );
+                }
               }
+
+              final eagerFuture = loadPdfBytes();
               final ctx = AppConfig.navigatorKey.currentContext;
               if (ctx != null && ctx.mounted) {
                 if (showPreview) {
                   // Guardar snapshot para restaurar si se anula desde la preview
                   _lastSaleCart = List<CartItem>.from(ticketItems);
                   final paperSize = localTerminal.pdfPaperSize;
+                  _setCheckoutStage('Comprobante en pantalla...');
 
                   final result = await showDialog<String>(
                     context: ctx,
@@ -3093,7 +3136,8 @@ class PosProvider with ChangeNotifier {
                             pdfFileName: 'Comprobante_$saleId.pdf',
                             initialPageFormat:
                                 pdfPageFormatFromPaperSize(paperSize),
-                            build: (format) async => pdfBytes,
+                            dpi: 160.0,
+                            build: (format) => eagerFuture,
                             canClose: !isVoiding,
                             onClose: isVoiding
                                 ? null
@@ -3219,6 +3263,7 @@ class PosProvider with ChangeNotifier {
                     return false;
                   }
                 } else {
+                  final pdfBytes = await eagerFuture;
                   await Printing.layoutPdf(
                     onLayout: (_) async => pdfBytes,
                     name: 'Comprobante_$saleId',
@@ -3243,6 +3288,7 @@ class PosProvider with ChangeNotifier {
               if (showPreview) {
                 final ctx = AppConfig.navigatorKey.currentContext;
                 if (ctx != null && ctx.mounted) {
+                  _setCheckoutStage('Comprobante en pantalla...');
                   confirmedToPrint = await TicketPreviewDialog.show(
                     ctx,
                     title:
@@ -3334,6 +3380,9 @@ class PosProvider with ChangeNotifier {
       return false;
     } finally {
       _isLoading = false;
+      if (items == null) {
+        _checkoutStageLabel = null;
+      }
       notifyListeners();
     }
   }

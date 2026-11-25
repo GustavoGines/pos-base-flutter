@@ -223,6 +223,13 @@ class BusinessSettings extends Equatable {
       taxCondition != null &&
       taxCondition!.trim().toLowerCase().contains('inscripto');
 
+  /// True únicamente cuando el comercio emisor es elegible como IVA Responsable Inscripto
+  /// (excluyendo Monotributo, IVA Exento y valores legados inválidos como Consumidor Final)
+  /// y además tiene activo el switch de Agente de Percepción IIBB.
+  bool get isEffectiveIibbPerceptionAgent =>
+      isIibbPerceptionAgent &&
+      IibbFiscalCalculator.isIssuerEligibleForIibb(taxCondition);
+
   /// Indica si el módulo de Múltiples Listas de Precios está habilitado en el
   /// plan y activado por el usuario en Configuración -> Precios Globales.
   bool get hasMultiPriceEnabled =>

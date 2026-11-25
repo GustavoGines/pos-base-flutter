@@ -1291,7 +1291,7 @@ class ReceiptPrinterService {
         }
       }
       bytes += generator.text(
-        'Comprobante Autorizado por AFIP',
+        'Comprobante Autorizado por ARCA',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -1743,7 +1743,7 @@ class ReceiptPrinterService {
         }
       }
       bytes += generator.text(
-        'Comprobante Autorizado por AFIP',
+        'Comprobante Autorizado por ARCA',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     } else {
