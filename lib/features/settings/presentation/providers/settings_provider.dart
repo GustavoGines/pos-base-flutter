@@ -12,7 +12,10 @@ import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_
 import 'package:frontend_desktop/features/settings/domain/usecases/update_settings_usecase.dart';
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
+import 'package:frontend_desktop/features/settings/data/models/business_settings_model.dart';
 import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
+import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -56,7 +59,8 @@ class SettingsProvider with ChangeNotifier {
   }
 
   // ─── [mayorista-iibb] Percepciones IIBB ───────────────────────────────────
-  bool get isIibbPerceptionAgent => _settings?.isIibbPerceptionAgent ?? false;
+  bool get isIibbPerceptionAgent =>
+      _settings?.isEffectiveIibbPerceptionAgent ?? false;
   double get defaultIibbPerceptionRate => _settings?.defaultIibbPerceptionRate ?? 0.0;
   String get iibbCalculationBase =>
       _settings?.iibbCalculationBase ?? 'net_without_vat';
@@ -131,6 +135,31 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  String _logoSignature(BusinessSettings? s) =>
+      '${s?.logoPath ?? ''}|${s?.effectiveLogoUrl ?? ''}';
+
+  Future<void> _persistOtaMetadataToPrefs(BusinessSettings? s) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final explicitToken = s?.licenseOtaToken?.trim() ?? '';
+      final token = explicitToken.isNotEmpty
+          ? explicitToken
+          : (BusinessSettingsModel.computeFallbackOtaToken(s?.licenseStatus) ??
+              '');
+      if (token.isNotEmpty) {
+        await prefs.setString('license_ota_token', token);
+      } else {
+        await prefs.remove('license_ota_token');
+      }
+      final mode = s?.licensePlanMode?.trim() ?? '';
+      if (mode.isNotEmpty) {
+        await prefs.setString('license_plan_mode', mode);
+      } else {
+        await prefs.remove('license_plan_mode');
+      }
+    } catch (_) {}
+  }
+
   Future<void> loadSettings({bool isSilent = false}) async {
     if (!isSilent) {
       _isLoading = true;
@@ -141,7 +170,19 @@ class SettingsProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _currentApiUrl = prefs.getString('pos_api');
 
+      final prevLogoSig = _logoSignature(_settings);
       _settings = await getSettingsUseCase();
+      await _persistOtaMetadataToPrefs(_settings);
+      if (_logoSignature(_settings) != prevLogoSig) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
+      }
       
       // DEBUG: Inspección de permisos PRO
       if (_settings != null) {
@@ -193,8 +234,20 @@ class SettingsProvider with ChangeNotifier {
     _lastSilentRefresh = now;
 
     try {
+      final prevLogoSig = _logoSignature(_settings);
       final newSettings = await getSettingsUseCase();
       _settings = newSettings;
+      await _persistOtaMetadataToPrefs(_settings);
+      if (_logoSignature(_settings) != prevLogoSig) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
+      }
       
       // Actualizar el Heartbeat con la nueva data (server_time, etc)
       await LicenseHeartbeatService().initialize(
@@ -216,6 +269,7 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      final prevLogoSig = _logoSignature(_settings);
       final updated = await updateSettingsUseCase(data);
       if (updated.effectiveLogoUrl == null && _settings?.effectiveLogoUrl != null) {
         _settings = updated.copyWith(
@@ -224,6 +278,18 @@ class SettingsProvider with ChangeNotifier {
         );
       } else {
         _settings = updated;
+      }
+      if (_logoSignature(_settings) != prevLogoSig ||
+          data.containsKey('logo_path') ||
+          data.containsKey('logo_url')) {
+        AfipFiscalPdfService.invalidateLogoCache();
+      }
+      if (_settings != null) {
+        unawaited(
+          AfipFiscalPdfService.preloadPdfResources(
+            businessSettings: _settings,
+          ),
+        );
       }
       return true;
     } catch (e) {
@@ -242,6 +308,7 @@ class SettingsProvider with ChangeNotifier {
 
     try {
       await updateSettingsUseCase.repository.uploadLogo(filePath, bytes: bytes, filename: filename);
+      AfipFiscalPdfService.invalidateLogoCache();
       await loadSettings(isSilent: true);
       return true;
     } catch (e) {
@@ -255,6 +322,7 @@ class SettingsProvider with ChangeNotifier {
 
   void updateBaseUrl(String newUrl) {
     _currentApiUrl = newUrl;
+    AfipFiscalPdfService.invalidateLogoCache();
     if (updateSettingsUseCase.repository is SettingsRepositoryImpl) {
       (updateSettingsUseCase.repository as SettingsRepositoryImpl).updateBaseUrl(newUrl);
     }
@@ -601,6 +669,7 @@ class SettingsProvider with ChangeNotifier {
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
         }
+        unawaited(UpdateService().checkUpdate(throwErrors: false));
         
         return plan;
       } else if (response.statusCode == 404) {
@@ -655,6 +724,9 @@ class SettingsProvider with ChangeNotifier {
         // Notificar al sistema de seguridad que sincronizamos con el server
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
+        }
+        if (!isSilent) {
+          unawaited(UpdateService().checkUpdate(throwErrors: false));
         }
       } else if (response.statusCode == 404) {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
@@ -717,11 +789,12 @@ class SettingsProvider with ChangeNotifier {
           headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         ).timeout(const Duration(minutes: 4)).then((response) { // 4 min: tolera cold-start de Render
           if (response.statusCode == 200) {
-            getSettingsUseCase().then((newSettings) {
+            getSettingsUseCase().then((newSettings) async {
               _settings = newSettings;
+              await _persistOtaMetadataToPrefs(newSettings);
               // Bug #3 fix: actualizar el Secure Storage con el server_time recibido
               // para que el Drift Check del próximo ciclo use el reloj del servidor.
-              LicenseHeartbeatService().updateLastSync(newSettings);
+              await LicenseHeartbeatService().updateLastSync(newSettings);
               notifyListeners();
             });
           }
@@ -729,6 +802,77 @@ class SettingsProvider with ChangeNotifier {
           // Fracaso silencioso intencional
         });
       });
+    }
+  }
+
+  Map<String, dynamic>? _demoStatus;
+  bool _isDemoActionBusy = false;
+
+  Map<String, dynamic>? get demoStatus => _demoStatus;
+  bool get isDemoActionBusy => _isDemoActionBusy;
+  bool get isDemoModeActive => _settings?.demoModeActive == true;
+  bool get isFreshEmptyTrialStore => _settings?.isFreshEmptyStore == true;
+  bool get isDemoOnboardingDismissed => _settings?.demoOnboardingDismissed == true;
+
+  Future<Map<String, dynamic>> fetchDemoStatus({bool silent = false}) async {
+    final res = await getSettingsUseCase.repository.fetchDemoStatus();
+    if (res['success'] == true) {
+      _demoStatus = Map<String, dynamic>.from(res);
+      if (!silent) notifyListeners();
+    }
+    return res;
+  }
+
+  Future<Map<String, dynamic>> seedDemoEnvironment() async {
+    _isDemoActionBusy = true;
+    notifyListeners();
+    try {
+      final res = await getSettingsUseCase.repository.seedDemoEnvironment();
+      if (res['success'] == true) {
+        if (res['status'] is Map<String, dynamic>) {
+          _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+        }
+        await loadSettings(isSilent: true);
+      }
+      return res;
+    } finally {
+      _isDemoActionBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> dismissDemoOnboarding() async {
+    final res = await getSettingsUseCase.repository.dismissDemoOnboarding();
+    if (res['success'] == true) {
+      if (res['status'] is Map<String, dynamic>) {
+        _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+      }
+      await loadSettings(isSilent: true);
+    }
+    return res;
+  }
+
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  }) async {
+    _isDemoActionBusy = true;
+    notifyListeners();
+    try {
+      final res = await getSettingsUseCase.repository.resetDemoEnvironment(
+        adminPin: adminPin,
+        confirmationText: confirmationText,
+      );
+      if (res['success'] == true) {
+        if (res['status'] is Map<String, dynamic>) {
+          _demoStatus = Map<String, dynamic>.from(res['status'] as Map<String, dynamic>);
+        }
+        await loadSettings(isSilent: true);
+      }
+      return res;
+    } finally {
+      _isDemoActionBusy = false;
+      notifyListeners();
     }
   }
 }
@@ -851,6 +995,39 @@ extension SettingsProviderHardwareCalcX on SettingsProvider {
           : BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
     } catch (_) {
       return BusinessVerticalProfile.fromType(BusinessVerticalProfile.retail);
+    }
+  }
+
+  /// Getters seguros para Modo Exploración Demo compatibles con mocks heredados.
+  bool get safeIsDemoModeActive {
+    try {
+      return settings?.demoModeActive == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsFreshEmptyTrialStore {
+    try {
+      return settings?.isFreshEmptyStore == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsDemoOnboardingDismissed {
+    try {
+      return settings?.demoOnboardingDismissed == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool get safeIsDemoActionBusy {
+    try {
+      return isDemoActionBusy;
+    } catch (_) {
+      return false;
     }
   }
 }

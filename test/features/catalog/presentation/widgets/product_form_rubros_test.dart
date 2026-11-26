@@ -159,8 +159,16 @@ void main() {
       expect(find.byType(SearchableSelectField<int?>), findsWidgets);
       expect(find.text('Categoría'), findsOneWidget);
 
-      // NO debe existir badge PRO en el campo de Categoría
-      expect(find.text('PRO'), findsNothing);
+      // NO debe existir badge PRO en el campo de Categoría (el único PRO visible pertenece a la vitrina bloqueada de Proveedor)
+      final allProBadges = find.text('PRO');
+      final supplierVitrinaProBadges = find.descendant(
+        of: find.byKey(const ValueKey('product_form_locked_supplier_field')),
+        matching: find.text('PRO'),
+      );
+      expect(
+        allProBadges.evaluate().length,
+        equals(supplierVitrinaProBadges.evaluate().length),
+      );
       expect(find.byIcon(Icons.workspace_premium), findsNothing);
 
       // NO debe existir selector multi-chip ni botón Asignar

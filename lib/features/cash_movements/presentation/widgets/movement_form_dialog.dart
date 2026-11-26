@@ -153,9 +153,40 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           }
         });
       }
-      context.read<SupplierProvider>().fetchSuppliers();
-      context.read<CheckProvider>().loadChecks();
-      context.read<ExpenseCategoryProvider>().fetchCategories();
+      final settingsProv = context.read<SettingsProvider?>();
+      final authProv = context.read<AuthProvider?>();
+      final flags = () {
+        try {
+          return settingsProv?.features;
+        } catch (_) {
+          return settingsProv?.settings?.features;
+        }
+      }();
+      bool hasPermSafe(String perm) {
+        if (authProv == null) return true;
+        try {
+          if (authProv.isAdmin) return true;
+          return authProv.hasPermission(perm);
+        } catch (_) {
+          return true;
+        }
+      }
+
+      final canLoadSuppliers =
+          (flags?.suppliers ?? true) && hasPermSafe(AppPermissions.viewSuppliers);
+      final canLoadChecks =
+          (flags?.checks ?? true) && hasPermSafe(AppPermissions.viewChecks);
+      final canLoadExpenseCategories = flags?.expenses ?? true;
+
+      if (canLoadSuppliers) {
+        context.read<SupplierProvider?>()?.fetchSuppliers();
+      }
+      if (canLoadChecks) {
+        context.read<CheckProvider?>()?.loadChecks();
+      }
+      if (canLoadExpenseCategories) {
+        context.read<ExpenseCategoryProvider?>()?.fetchCategories();
+      }
       // Cargar preferencia de impresión y verificar si hay impresora
       _loadPrintPreference();
     });

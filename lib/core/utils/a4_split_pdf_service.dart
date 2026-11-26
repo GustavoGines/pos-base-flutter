@@ -2,7 +2,6 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'afip_fiscal_pdf_service.dart';
 import 'currency_formatter.dart';
@@ -95,19 +94,8 @@ class A4SplitPdfService {
       logoBytes: logoBytes,
       businessSettings: businessSettings,
     );
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      final fontItalic = await PdfGoogleFonts.robotoItalic();
-      theme = pw.ThemeData.withFont(
-        base: font,
-        bold: fontBold,
-        italic: fontItalic,
-      );
-    } catch (_) {
-      // Fallback a fuentes estándar PDF en modo offline
-    }
+    final pw.ThemeData? theme =
+        await AfipFiscalPdfService.resolveCachedPdfTheme();
 
     final pdf = pw.Document(theme: theme);
     final items = sale['items'] as List<dynamic>? ?? [];
@@ -304,17 +292,8 @@ class A4SplitPdfService {
       logoBytes: logoBytes,
       businessSettings: businessSettings,
     );
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      final fontItalic = await PdfGoogleFonts.robotoItalic();
-      theme = pw.ThemeData.withFont(
-        base: font,
-        bold: fontBold,
-        italic: fontItalic,
-      );
-    } catch (_) {}
+    final pw.ThemeData? theme =
+        await AfipFiscalPdfService.resolveCachedPdfTheme();
 
     final pdf = pw.Document(theme: theme);
     final format = paperSize.toLowerCase() == 'letter'
@@ -1231,7 +1210,7 @@ class A4SplitPdfService {
                     ),
                     pw.SizedBox(height: 2),
                     pw.Text(
-                      'Comprobante Autorizado por ARCA / AFIP (RG 4892)',
+                      'Comprobante Autorizado por ARCA (RG 4892)',
                       style: pw.TextStyle(
                         fontSize: isCompact ? 6.5 : 7.5,
                         fontStyle: pw.FontStyle.italic,

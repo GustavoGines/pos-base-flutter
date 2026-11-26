@@ -388,14 +388,82 @@ void main() {
       await tester.ensureVisible(switchFinder);
       await tester.pumpAndSettle();
 
-      // Should show AFIP Requerido badge
-      expect(find.text('AFIP Requerido'), findsOneWidget);
+      // Should show ARCA Requerido badge
+      expect(find.text('ARCA Requerido'), findsOneWidget);
 
       // Tapping switch should open PlanUpgradeDialog instead of toggling
       await tester.tap(switchFinder);
       await tester.pumpAndSettle();
 
-      expect(find.text('Módulo ARCA/AFIP Requerido'), findsOneWidget);
+      expect(find.text('Módulo ARCA Requerido'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Instalación legada con Consumidor Final no crashea, oculta IIBB, muestra aviso y exige elegir condición válida al guardar',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final settingsProv = FakeIibbSettingsProvider(
+        settings: const BusinessSettings(
+          companyName: 'Kiosco Legado',
+          taxCondition: 'Consumidor Final',
+          isIibbPerceptionAgent: true,
+          defaultIibbPerceptionRate: 3.0,
+        ),
+      );
+
+      await tester.pumpWidget(buildSettingsScreenApp(settingsProv: settingsProv));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('General'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('legacy_invalid_tax_condition_notice')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('switch_iibb_perception_agent')),
+        findsNothing,
+      );
+
+      // Intentar guardar sin elegir una condición válida -> falla validación del formulario
+      await tester.tap(find.text('GUARDAR'));
+      await tester.pumpAndSettle();
+
+      expect(settingsProv.saveSettingsCalled, isFalse);
+      expect(
+        find.text('Seleccione una condición frente al IVA válida para el negocio'),
+        findsOneWidget,
+      );
+    });
+
+    test('BusinessSettings.isEffectiveIibbPerceptionAgent solo es true para IVA Responsable Inscripto', () {
+      const riAgent = BusinessSettings(
+        taxCondition: 'IVA Responsable Inscripto',
+        isIibbPerceptionAgent: true,
+      );
+      const monoAgent = BusinessSettings(
+        taxCondition: 'Responsable Monotributo',
+        isIibbPerceptionAgent: true,
+      );
+      const exentoAgent = BusinessSettings(
+        taxCondition: 'IVA Exento',
+        isIibbPerceptionAgent: true,
+      );
+      const legacyCfAgent = BusinessSettings(
+        taxCondition: 'Consumidor Final',
+        isIibbPerceptionAgent: true,
+      );
+
+      expect(riAgent.isEffectiveIibbPerceptionAgent, isTrue);
+      expect(monoAgent.isEffectiveIibbPerceptionAgent, isFalse);
+      expect(exentoAgent.isEffectiveIibbPerceptionAgent, isFalse);
+      expect(legacyCfAgent.isEffectiveIibbPerceptionAgent, isFalse);
     });
   });
 }

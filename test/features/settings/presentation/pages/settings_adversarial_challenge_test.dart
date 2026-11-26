@@ -271,7 +271,7 @@ class FakeAdversarialSettingsProvider extends ChangeNotifier implements Settings
     notifyListeners();
 
     return {
-      'message': 'Certificados de AFIP guardados y validados correctamente.',
+      'message': 'Certificados de ARCA guardados y validados correctamente.',
       'afip_cuit': cuit,
       'afip_has_cert': true,
       'afip_has_key': true,
@@ -402,7 +402,7 @@ void main() {
 
         assertZeroRenderFlexOverflow(tester, 'Integraciones tab at ${width.toInt()}x${height.toInt()}');
         expect(find.text('Mercado Pago'), findsOneWidget);
-        expect(find.text('ARCA / AFIP (Facturación Electrónica)'), findsOneWidget);
+        expect(find.text('ARCA (Facturación Electrónica)'), findsOneWidget);
       });
 
       testWidgets('Viewport ${width.toInt()}x${height.toInt()} renders General tab with ZERO RenderFlex overflow', (tester) async {
@@ -491,7 +491,7 @@ void main() {
         assertZeroRenderFlexOverflow(tester, 'After collapsing MP tile at ${width.toInt()}x${height.toInt()}');
 
         // Tap ARCA ExpansionTile header to expand (starts collapsed)
-        final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
+        final afipHeaderFinder = find.text('ARCA (Facturación Electrónica)');
         await tester.ensureVisible(afipHeaderFinder);
         await tester.tap(afipHeaderFinder);
         await tester.pump();
@@ -547,7 +547,7 @@ void main() {
         await navigateToTab(tester, 'Integraciones', isCompact: isCompact);
 
         // Expand ARCA / AFIP tile
-        final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
+        final afipHeaderFinder = find.text('ARCA (Facturación Electrónica)');
         await tester.ensureVisible(afipHeaderFinder);
         await tester.tap(afipHeaderFinder);
         await tester.pump();
@@ -648,7 +648,7 @@ void main() {
         }
 
         // Expand ARCA / AFIP tile
-        final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
+        final afipHeaderFinder = find.text('ARCA (Facturación Electrónica)');
         await tester.ensureVisible(afipHeaderFinder);
         await tester.tap(afipHeaderFinder);
         await tester.pump();

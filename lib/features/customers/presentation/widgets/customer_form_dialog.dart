@@ -26,7 +26,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   late TextEditingController _creditLimitController;
   late TextEditingController _deliveryAddressController;
   late TextEditingController _fiscalAddressController;
-  int _documentType = 96;
+  int _documentType = 99;
   String _taxCondition = 'consumidor_final';
   bool _isInternalAccount = false;
   bool _appliesIibbPerception = false;
@@ -37,15 +37,32 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   bool _autoFilledFromPadron = false;
   String? _padronMatchedName;
 
+  bool get _requiresCuit =>
+      _taxCondition != 'consumidor_final' || _appliesIibbPerception;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.customer?.name ?? '');
     _documentController =
         TextEditingController(text: widget.customer?.documentNumber ?? '');
-    _documentType = widget.customer?.documentType ?? 96;
-    if (![80, 86, 96].contains(_documentType)) _documentType = 96;
     _taxCondition = widget.customer?.taxCondition ?? 'consumidor_final';
+    _isInternalAccount = widget.customer?.isInternalAccount ?? false;
+    _appliesIibbPerception = widget.customer?.appliesIibbPerception ?? false;
+
+    final initDigits = _documentController.text.replaceAll(RegExp(r'\D'), '');
+    if (_requiresCuit) {
+      _documentType = 80;
+    } else if (initDigits.isEmpty) {
+      _documentType = 99;
+    } else {
+      final rawType = widget.customer?.documentType ??
+          (initDigits.length == 11 ? 80 : 96);
+      _documentType = (rawType == 99 || ![80, 86, 96].contains(rawType))
+          ? (initDigits.length == 11 ? 80 : 96)
+          : rawType;
+    }
+
     _phoneController =
         TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(
@@ -58,8 +75,6 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
         TextEditingController(text: widget.customer?.deliveryAddress ?? '');
     _fiscalAddressController =
         TextEditingController(text: widget.customer?.fiscalAddress ?? '');
-    _isInternalAccount = widget.customer?.isInternalAccount ?? false;
-    _appliesIibbPerception = widget.customer?.appliesIibbPerception ?? false;
     _iibbRateController = TextEditingController(
       text: widget.customer?.iibbPerceptionRate != null
           ? widget.customer!.iibbPerceptionRate.toString()
@@ -70,7 +85,16 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_appliesIibbPerception && _documentType != 80) {
+    final cleanDoc = _documentController.text.replaceAll(RegExp(r'\D'), '');
+    final int effectiveDocType = _requiresCuit
+        ? 80
+        : (cleanDoc.isEmpty
+            ? 99
+            : (_documentType == 99
+                ? (cleanDoc.length == 11 ? 80 : 96)
+                : _documentType));
+
+    if (_appliesIibbPerception && effectiveDocType != 80) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Para aplicar percepciones IIBB, el tipo de documento debe ser CUIT (80).'),
@@ -90,8 +114,8 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
         try {
           final payload = {
             'name': _nameController.text.trim(),
-            'document_number': _documentController.text.trim(),
-            'document_type': _documentType,
+            'document_number': cleanDoc.isEmpty ? null : cleanDoc,
+            'document_type': effectiveDocType,
             'tax_condition': _taxCondition,
             'fiscal_address': _fiscalAddressController.text.trim().isEmpty
                 ? null
@@ -118,7 +142,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
           }
 
           if (success && mounted) {
-            Navigator.pop(context);
+            Navigator.pop(context, true);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                   content: Text(widget.customer == null
@@ -262,23 +286,33 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<int>(
-                key: ValueKey('customer_form_doc_type_$_documentType'),
-                initialValue: _documentType,
+                key: ValueKey('customer_form_doc_type_${_requiresCuit}_$_documentType'),
+                initialValue: (_requiresCuit ? 80 : _documentType),
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de Documento ARCA',
                   border: OutlineInputBorder(),
                 ),
-                items: const [
-                  DropdownMenuItem(value: 80, child: Text('80 - CUIT')),
-                  DropdownMenuItem(value: 86, child: Text('86 - CUIL')),
-                  DropdownMenuItem(value: 96, child: Text('96 - DNI')),
+                items: [
+                  const DropdownMenuItem(value: 80, child: Text('80 - CUIT')),
+                  if (!_requiresCuit) ...const [
+                    DropdownMenuItem(value: 86, child: Text('86 - CUIL')),
+                    DropdownMenuItem(value: 96, child: Text('96 - DNI')),
+                    DropdownMenuItem(
+                        value: 99,
+                        child: Text('99 - Sin Documento (Consumidor Final)')),
+                  ],
                 ],
                 onChanged: (val) {
                   if (val != null) {
                     setState(() {
                       _documentType = val;
-                      if (val == 96) {
+                      if (val == 99) {
+                        _documentController.clear();
+                        _padronMatchedName = null;
+                        _taxCondition = 'consumidor_final';
+                        _appliesIibbPerception = false;
+                      } else if (val == 96) {
                         _taxCondition = 'consumidor_final'; // Auto-corregir a Consumidor Final si elige DNI
                         _appliesIibbPerception = false; // Desactivar percepción si elige DNI
                       }
@@ -290,13 +324,13 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _documentController,
                 decoration: InputDecoration(
-                  labelText: _documentType == 80
+                  labelText: _documentType == 80 || _requiresCuit
                       ? 'CUIT (11 dígitos sin guiones) *'
                       : (_documentType == 86
-                          ? 'CUIL (11 dígitos) *'
+                          ? 'CUIL (11 dígitos)'
                           : (_documentType == 96
-                              ? 'DNI (7 u 8 dígitos) o CUIT (11 dígitos) *'
-                              : 'Nro de Documento')),
+                              ? 'DNI (7 u 8 dígitos) o CUIT (Opcional)'
+                              : 'DNI o CUIT (Opcional — vacío = Sin Documento)')),
                   border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
@@ -308,13 +342,14 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   final inferred = AfipModulo11.inferDocType(
                     val,
                     currentDocType: _documentType,
-                    requiresIdentification: true,
+                    isFacturaA: _requiresCuit,
+                    requiresIdentification: _requiresCuit,
                   );
                   setState(() {
                     _padronMatchedName = null;
                     if (inferred != _documentType) {
                       _documentType = inferred;
-                      if (inferred == 96) {
+                      if (inferred == 96 || inferred == 99) {
                         _taxCondition = 'consumidor_final';
                         _appliesIibbPerception = false;
                       }
@@ -323,16 +358,26 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   _lookupPadronIfNeeded(val);
                 },
                 validator: (val) {
-                  final text = val?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'Requerido';
+                  final clean = (val ?? '').replaceAll(RegExp(r'\D'), '');
+                  if (clean.isEmpty) {
+                    if (_requiresCuit ||
+                        _documentType == 80 ||
+                        _documentType == 86) {
+                      return 'Requerido';
+                    }
+                    return null;
                   }
-                  if (_documentType == 80 || _documentType == 86) {
-                    if (!AfipModulo11.validateCuit(text)) {
+                  final effectiveType = _requiresCuit
+                      ? 80
+                      : (_documentType == 99
+                          ? (clean.length == 11 ? 80 : 96)
+                          : _documentType);
+                  if (effectiveType == 80 || effectiveType == 86) {
+                    if (!AfipModulo11.validateCuit(clean)) {
                       return 'CUIT/CUIL inválido (Módulo 11)';
                     }
-                  } else if (_documentType == 96) {
-                    if (!AfipModulo11.validateDni(text)) {
+                  } else if (effectiveType == 96) {
+                    if (!AfipModulo11.validateDni(clean)) {
                       return 'DNI inválido (7-8 dígitos)';
                     }
                   }
@@ -456,7 +501,13 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                           _appliesIibbPerception = false;
                         }
                       } else if (val == 'consumidor_final') {
-                        _documentType = 96; // Forzar DNI automáticamente
+                        final cleanDigits = _documentController.text
+                            .replaceAll(RegExp(r'\D'), '');
+                        _documentType = cleanDigits.isEmpty
+                            ? 99
+                            : (cleanDigits.length == 11
+                                ? (_documentType == 86 ? 86 : 80)
+                                : 96);
                         _appliesIibbPerception = false; // Desactivar percepción para Consumidor Final
                       }
                     });

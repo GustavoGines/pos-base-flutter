@@ -1,14 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'currency_formatter.dart';
+import 'image_url_resolver.dart';
 
 /// Extension wrapper of [pw.Document] that retains the rendered widgets and page
 /// for AST programmatic inspection and test validation.
@@ -39,6 +42,87 @@ class AfipFiscalPdfService {
   static final _numberFmt = NumberFormat('#,##0.00', 'es_AR');
   static final _dateFmt = DateFormat('dd/MM/yyyy');
 
+  static const String _fontRegularAsset = 'assets/fonts/Roboto-Regular.ttf';
+  static const String _fontBoldAsset = 'assets/fonts/Roboto-Bold.ttf';
+  static const String _fontItalicAsset = 'assets/fonts/Roboto-Italic.ttf';
+  static const Duration logoFetchTimeout = Duration(milliseconds: 1200);
+  static const Duration _failedLogoCooldown = Duration(seconds: 30);
+
+  static pw.ThemeData? _cachedPdfTheme;
+  static Future<pw.ThemeData?>? _themeLoadFuture;
+  static final Map<String, Uint8List> _logoBytesCache = <String, Uint8List>{};
+  static final Map<String, Future<Uint8List?>> _inFlightLogoRequests =
+      <String, Future<Uint8List?>>{};
+  static final Map<String, DateTime> _failedLogoCooldownUntil =
+      <String, DateTime>{};
+
+  @visibleForTesting
+  static int get cachedLogoCount => _logoBytesCache.length;
+
+  /// Carga un archivo de fuente desde [rootBundle] con respaldo local en disco para tests CLI.
+  static Future<ByteData> _loadFontByteData(String assetPath) async {
+    try {
+      return await rootBundle.load(assetPath);
+    } catch (_) {
+      final bytes = await File(assetPath).readAsBytes();
+      return ByteData.sublistView(bytes);
+    }
+  }
+
+  /// Carga una única vez en RAM las fuentes Roboto locales (100% offline).
+  static Future<pw.ThemeData?> resolveCachedPdfTheme() {
+    if (_cachedPdfTheme != null) {
+      return Future<pw.ThemeData?>.value(_cachedPdfTheme);
+    }
+    if (_themeLoadFuture != null) {
+      return _themeLoadFuture!;
+    }
+    final future = () async {
+      try {
+        final fontsData = await Future.wait<ByteData>([
+          _loadFontByteData(_fontRegularAsset),
+          _loadFontByteData(_fontBoldAsset),
+          _loadFontByteData(_fontItalicAsset),
+        ]);
+        final theme = pw.ThemeData.withFont(
+          base: pw.Font.ttf(fontsData[0]),
+          bold: pw.Font.ttf(fontsData[1]),
+          italic: pw.Font.ttf(fontsData[2]),
+        );
+        _cachedPdfTheme = theme;
+        return theme;
+      } catch (_) {
+        _themeLoadFuture = null;
+        return null;
+      }
+    }();
+    _themeLoadFuture = future;
+    return future;
+  }
+
+  /// Invalida la caché en RAM del logotipo comercial cuando cambia la configuración o URL base.
+  static void invalidateLogoCache() {
+    _logoBytesCache.clear();
+    _inFlightLogoRequests.clear();
+    _failedLogoCooldownUntil.clear();
+  }
+
+  /// Pre-calienta fuentes PDF y logotipo en segundo plano sin lanzar excepciones.
+  static Future<void> preloadPdfResources({
+    dynamic businessSettings,
+    http.Client? httpClient,
+  }) async {
+    try {
+      await Future.wait([
+        resolveCachedPdfTheme(),
+        resolveLogoBytes(
+          businessSettings: businessSettings,
+          httpClient: httpClient,
+        ),
+      ]);
+    } catch (_) {}
+  }
+
   /// Formats currency values in standard Argentinian pesos with leading symbol (e.g. $ 2.155.120,00).
   static String formatCurrency(num amount) {
     if (amount < 0) {
@@ -64,13 +148,13 @@ class AfipFiscalPdfService {
     }
   }
 
-  /// Resuelve los bytes del logo del comercio desde [logoBytes], [businessSettings],
-  /// disco local de Laragon o URL HTTP.
+  /// Resuelve y cachea en RAM los bytes del logo comercial vía URL HTTP/API con timeout corto (1.2s).
   static Future<Uint8List?> resolveLogoBytes({
     Uint8List? logoBytes,
     dynamic businessSettings,
     String? logoPath,
     String? logoUrl,
+    http.Client? httpClient,
   }) async {
     if (logoBytes != null) return logoBytes;
     String? path = logoPath;
@@ -84,39 +168,57 @@ class AfipFiscalPdfService {
           businessSettings['effective_logo_url']?.toString();
     }
 
-    if (path != null && path.isNotEmpty) {
-      try {
-        final pathsToTry = [
-          'C:/laragon/www/Sistema_POS/pos-backend/public/storage/$path',
-          '../pos-backend/public/storage/$path',
-        ];
-        for (final p in pathsToTry) {
-          final localFile = File(p);
-          if (localFile.existsSync()) {
-            return localFile.readAsBytesSync();
-          }
-        }
-      } catch (_) {}
+    final resolvedUrl = resolveImageUrl(url) ?? resolveImageUrl(path);
+    if (resolvedUrl == null ||
+        (!resolvedUrl.startsWith('http://') &&
+            !resolvedUrl.startsWith('https://'))) {
+      return null;
     }
 
-    if (url != null && url.isNotEmpty) {
-      try {
-        if (url.startsWith('http')) {
-          final response = await http
-              .get(Uri.parse(url))
-              .timeout(const Duration(seconds: 3));
-          if (response.statusCode == 200) {
-            return response.bodyBytes;
-          }
-        } else {
-          final file = File(url);
-          if (file.existsSync()) {
-            return await file.readAsBytes();
-          }
-        }
-      } catch (_) {}
+    final cacheKey = '$resolvedUrl|v=${(path ?? '').trim()}';
+    final cached = _logoBytesCache[cacheKey];
+    if (cached != null) {
+      return cached;
     }
-    return null;
+
+    final cooldownUntil = _failedLogoCooldownUntil[cacheKey];
+    if (cooldownUntil != null && DateTime.now().isBefore(cooldownUntil)) {
+      return null;
+    }
+
+    final existingInFlight = _inFlightLogoRequests[cacheKey];
+    if (existingInFlight != null) {
+      return existingInFlight;
+    }
+
+    final fetchFuture = () async {
+      final bool ownsClient = httpClient == null;
+      final client = httpClient ?? http.Client();
+      try {
+        final response = await client
+            .get(Uri.parse(resolvedUrl))
+            .timeout(logoFetchTimeout);
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          _logoBytesCache[cacheKey] = response.bodyBytes;
+          _failedLogoCooldownUntil.remove(cacheKey);
+          return response.bodyBytes;
+        }
+        _failedLogoCooldownUntil[cacheKey] =
+            DateTime.now().add(_failedLogoCooldown);
+      } catch (_) {
+        _failedLogoCooldownUntil[cacheKey] =
+            DateTime.now().add(_failedLogoCooldown);
+      } finally {
+        _inFlightLogoRequests.remove(cacheKey);
+        if (ownsClient) {
+          client.close();
+        }
+      }
+      return null;
+    }();
+
+    _inFlightLogoRequests[cacheKey] = fetchFuture;
+    return fetchFuture;
   }
 
   /// Generates the raw PDF bytes for an AFIP fiscal invoice.
@@ -136,21 +238,8 @@ class AfipFiscalPdfService {
       logoBytes: logoBytes,
       businessSettings: businessSettings,
     );
-    pw.ThemeData? effectiveTheme = theme;
-    if (effectiveTheme == null) {
-      try {
-        final font = await PdfGoogleFonts.robotoRegular();
-        final fontBold = await PdfGoogleFonts.robotoBold();
-        final fontItalic = await PdfGoogleFonts.robotoItalic();
-        effectiveTheme = pw.ThemeData.withFont(
-          base: font,
-          bold: fontBold,
-          italic: fontItalic,
-        );
-      } catch (_) {
-        // Fallback to default Helvetica in offline or testing environments
-      }
-    }
+    final pw.ThemeData? effectiveTheme =
+        theme ?? await resolveCachedPdfTheme();
 
     final doc = buildFiscalDocument(
       sale: sale,
@@ -436,6 +525,11 @@ class AfipFiscalPdfService {
     }
 
     // Normalizar condición frente al IVA del emisor respetando la configuración del negocio
+    if (issuerTaxCondition.trim().toLowerCase().contains('consumidor')) {
+      issuerTaxCondition = voucherLetter == 'C'
+          ? 'Responsable Monotributo'
+          : 'IVA Responsable Inscripto';
+    }
     issuerTaxCondition = _formatTaxCondition(issuerTaxCondition);
 
     if (issuerIibb.isEmpty) {
@@ -505,12 +599,30 @@ class AfipFiscalPdfService {
         'Cajero';
 
     // ── 4. Datos del Receptor ─────────────────────────────────────────────────
-    final rawReceiverDoc = (electronicInvoice['doc_number']?.toString() ??
-            sale['customer']?['tax_id'] ??
-            sale['customer_tax_id'] ??
-            '---')
-        .toString();
-    final receiverDoc = _formatCuit(rawReceiverDoc);
+    final resolvedDocType =
+        int.tryParse((electronicInvoice['doc_type'] ?? '').toString()) ?? 0;
+    String firstValidFiscalDoc(List<dynamic> candidates) {
+      if (resolvedDocType == 99) return '---';
+      for (final c in candidates) {
+        final s = (c ?? '').toString().trim();
+        if (s.isNotEmpty &&
+            s.toLowerCase() != 'null' &&
+            s != '0' &&
+            s != '---') {
+          return s;
+        }
+      }
+      return '---';
+    }
+
+    final rawReceiverDoc = firstValidFiscalDoc([
+      electronicInvoice['doc_number'],
+      sale['customer']?['document_number'],
+      sale['customer']?['tax_id'],
+      sale['customer_tax_id'],
+    ]);
+    final receiverDoc =
+        rawReceiverDoc == '---' ? '---' : _formatCuit(rawReceiverDoc);
     final rawReceiverTaxCondition =
         electronicInvoice['receiver_tax_condition']?.toString() ??
             (voucherLetter == 'A'
@@ -786,7 +898,7 @@ class AfipFiscalPdfService {
       iibbPerceptionAmount: iibbPerceptionAmount,
       iibbPerceptionRate: iibbPerceptionRate,
       isIibbPerceptionAgent: businessSettings is BusinessSettings
-          ? businessSettings.isIibbPerceptionAgent
+          ? businessSettings.isEffectiveIibbPerceptionAgent
           : (businessSettings is Map
               ? (businessSettings['is_iibb_perception_agent'] == true ||
                   businessSettings['isIibbPerceptionAgent'] == true)
@@ -950,12 +1062,26 @@ class AfipFiscalPdfService {
             'Cajero')
         .toString();
 
-    final rawReceiverDoc = (electronicInvoice['doc_number'] ??
-            sale['customer']?['document_number'] ??
-            sale['customer']?['tax_id'] ??
-            '---')
-        .toString();
-    final receiverDoc = _formatCuit(rawReceiverDoc);
+    String firstValidDoc(List<dynamic> candidates) {
+      for (final c in candidates) {
+        final s = (c ?? '').toString().trim();
+        if (s.isNotEmpty &&
+            s.toLowerCase() != 'null' &&
+            s != '0' &&
+            s != '---') {
+          return s;
+        }
+      }
+      return '---';
+    }
+
+    final rawReceiverDoc = firstValidDoc([
+      electronicInvoice['doc_number'],
+      sale['customer']?['document_number'],
+      sale['customer']?['tax_id'],
+    ]);
+    final receiverDoc =
+        rawReceiverDoc == '---' ? '---' : _formatCuit(rawReceiverDoc);
     final receiverName = (electronicInvoice['receiver_name'] ??
             sale['customer']?['name'] ??
             sale['customer_name'] ??
@@ -2345,7 +2471,7 @@ class AfipFiscalPdfService {
                 ),
                 pw.SizedBox(height: isCompact ? 3 : 8),
                 pw.Text(
-                  'Comprobante Autorizado por AFIP (RG 4892)',
+                  'Comprobante Autorizado por ARCA (RG 4892)',
                   style: pw.TextStyle(
                       fontSize: isCompact ? 7.0 : 7.5,
                       fontWeight: pw.FontWeight.bold),

@@ -19,6 +19,7 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/utils/ean13_generator.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PRINT LABELS DIALOG — Split View con Vista Previa en tiempo real
@@ -81,11 +82,6 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   String _companyTaxId = '';
 
   bool _isPrinting = false;
-  static bool _fontLoadingFailed = false;
-
-  // Cache estático de fuentes para evitar re-escaneo de AssetManifest.json (Crash Bloqueante en Windows)
-  static pw.Font? _robotoRegular;
-  static pw.Font? _robotoBold;
 
   @override
   void initState() {
@@ -168,35 +164,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     required String companyTaxId,
     required bool printDates,
   }) async {
-    // Carga de fuentes con Cache y Fallback de seguridad
-    pw.Font ttfRegular;
-    pw.Font ttfBold;
+    // Carga de fuentes Roboto locales cacheadas en RAM (100% offline, soporta Unicode como '•')
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
-    if (_fontLoadingFailed) {
-      // Fallback inmediato si ya sabemos que el sistema de assets de Windows está fallando
-      ttfRegular = pw.Font.helvetica();
-      ttfBold = pw.Font.helveticaBold();
-    } else {
-      try {
-        // Intentar cargar Roboto desde Google Fonts (Cacheado)
-        // Usar un timeout corto para no bloquear la UI si hay problemas de red
-        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular()
-            .timeout(const Duration(seconds: 5));
-        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold()
-            .timeout(const Duration(seconds: 5));
-      } catch (e) {
-        // Fallback a Helvetica si hay error de assets/red/timeout para evitar crash fatal
-        debugPrint(
-            'Fallo al cargar fuentes remotas o manifiesto de assets: $e');
-        _fontLoadingFailed = true; // No volver a intentar en esta sesión
-        ttfRegular = pw.Font.helvetica();
-        ttfBold = pw.Font.helveticaBold();
-      }
-    }
-
-    final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(base: ttfRegular, bold: ttfBold),
-    );
+    final pdf = pw.Document(theme: theme);
     final now = DateTime.now();
     final dateFmt = DateFormat('dd/MM/yy');
 
@@ -425,7 +400,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                             batchBarcode != null
                                 ? '${batch!.batchCode} ($barcodeValue)'
                                 : Ean13Generator.format(ean13),
-                            style: pw.TextStyle(fontSize: 5, font: ttfRegular),
+                            style: const pw.TextStyle(fontSize: 5),
                             textAlign: pw.TextAlign.left,
                           ),
                         ],

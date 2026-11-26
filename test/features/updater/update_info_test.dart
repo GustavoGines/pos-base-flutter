@@ -121,5 +121,44 @@ void main() {
       expect(await fullInfo.verifyFileIntegrity(fullFile), isTrue);
       expect(await fullInfo.verifyFileIntegrity(appFile), isFalse);
     });
+
+    test('parsea can_auto_update, ota_block_reason, is_free_for_lifetime y degrada is_critical si can_auto_update==false', () {
+      final blocked = UpdateInfo.fromJson(
+        {
+          'version': '2.3.0',
+          'download_url': null,
+          'changelog': 'Novedades v2.3.0',
+          'is_critical': true,
+          'is_free_for_lifetime': false,
+          'can_auto_update': false,
+          'ota_block_reason': 'lifetime_upgrade_required',
+        },
+        component: 'frontend',
+      );
+
+      expect(blocked.canAutoUpdate, isFalse);
+      expect(blocked.otaBlockReason, 'lifetime_upgrade_required');
+      expect(blocked.isFreeForLifetime, isFalse);
+      expect(blocked.isCritical, isFalse);
+      expect(blocked.effectiveDownloadUrl, isEmpty);
+
+      final hotfix = UpdateInfo.fromJson(
+        {
+          'version': '2.2.1',
+          'download_url': fullUrl,
+          'changelog': 'Fix ARCA',
+          'is_critical': true,
+          'is_free_for_lifetime': true,
+          'can_auto_update': true,
+          'ota_block_reason': null,
+        },
+        component: 'frontend',
+      );
+
+      expect(hotfix.canAutoUpdate, isTrue);
+      expect(hotfix.isFreeForLifetime, isTrue);
+      expect(hotfix.isCritical, isTrue);
+      expect(hotfix.effectiveDownloadUrl, fullUrl);
+    });
   });
 }

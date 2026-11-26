@@ -4,7 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../features/settings/domain/entities/business_settings.dart';
 
-enum LicenseSecurityStatus { ok, clockTampered, offlineExpired }
+enum LicenseSecurityStatus {
+  ok,
+  clockTampered,
+  offlineExpired,
+  subscriptionExpired,
+  trialExpired,
+  suspended,
+}
 
 class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver {
   static final LicenseHeartbeatService _instance =
@@ -25,6 +32,8 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
   Timer? _pulseTimer;
   bool _initialized =
       false; // Guard para que los timers arranquen solo 1 vez por sesión
+  BusinessSettings? _lastSettings;
+  DateTime? _lastPulseStorageWrite;
 
   // Función para inyectar la dependencia de sincronización desde SettingsProvider
   Future<void> Function()? _onSyncRequested;
@@ -40,6 +49,7 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     Future<void> Function()? onSyncRequested,
   }) async {
     if (settings == null) return;
+    _lastSettings = settings;
 
     if (onSyncRequested != null) {
       _onSyncRequested = onSyncRequested;
@@ -58,11 +68,11 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     if (!_initialized) {
       _initialized = true;
 
-      // Timer 1: Reloj Policía (cada 15 min)
+      // Timer 1: Pulso local cada 1 min (re-evalúa corte exacto en memoria y persiste storage cada 15 min)
       _pulseTimer?.cancel();
       _pulseTimer = Timer.periodic(
-        const Duration(minutes: 15),
-        (_) => _updatePulse(),
+        const Duration(minutes: 1),
+        (_) => _onPulseTick(),
       );
 
       // Timer 2: Ping Silencioso al servidor (cada 3 min)
@@ -74,6 +84,17 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     }
     // ──────────────────────────────────────────────────────────────────────
     notifyListeners();
+  }
+
+  Future<void> _onPulseTick() async {
+    final now = DateTime.now();
+    if (_lastPulseStorageWrite == null ||
+        now.difference(_lastPulseStorageWrite!).inMinutes >= 15) {
+      await _updatePulse();
+    }
+    if (_lastSettings != null) {
+      await _checkOfflineGrace(_lastSettings!);
+    }
   }
 
   /// L-03: Permitir que _triggerSync se ejecute incluso si el estado actual es clockTampered,
@@ -133,30 +154,65 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
   Future<void> _updatePulse() async {
     if (_securityStatus == LicenseSecurityStatus.clockTampered) return;
     try {
+      final now = DateTime.now();
       await _storage.write(
         key: 'drm_last_system_time',
-        value: DateTime.now().toIso8601String(),
+        value: now.toIso8601String(),
       );
+      _lastPulseStorageWrite = now;
     } catch (_) {
       // Si falla la escritura (ej. error nativo), ignoramos para no romper el flujo
     }
   }
 
-  /// Verifica la regla de las 72hs y expiración contractual para planes SaaS (L-08)
+  /// Verifica la regla de las 72hs y expiración contractual diferenciando Demo vs SaaS (L-08)
   Future<void> _checkOfflineGrace(BusinessSettings settings) async {
-    // Si es Lifetime, no hay bloqueo por offline
-    if (settings.licensePlanMode == 'lifetime') return;
+    if (settings.licenseBlockReason == 'clock_tampered') {
+      _securityStatus = LicenseSecurityStatus.clockTampered;
+      notifyListeners();
+      return;
+    }
 
-    // L-08: Si se conoce la fecha de expiración contractual y ya venció, bloquear
+    // Si es Lifetime, no hay bloqueo por expiración ni por offline
+    if (settings.licensePlanMode == 'lifetime' || settings.isLifetime) {
+      if (_securityStatus != LicenseSecurityStatus.clockTampered) {
+        _securityStatus = LicenseSecurityStatus.ok;
+      }
+      return;
+    }
+
+    // L-08: Si se conoce la fecha de expiración contractual y ya venció, bloquear con motivo exacto
     if (settings.licenseExpiresAt != null &&
         DateTime.now().isAfter(settings.licenseExpiresAt!)) {
-      _securityStatus = LicenseSecurityStatus.offlineExpired;
+      _securityStatus = settings.isTrial
+          ? LicenseSecurityStatus.trialExpired
+          : LicenseSecurityStatus.subscriptionExpired;
+      notifyListeners();
+      return;
+    }
+
+    if (settings.licensePlanType == 'blocked') {
+      _securityStatus = switch (settings.licenseBlockReason) {
+        'trial_expired' => LicenseSecurityStatus.trialExpired,
+        'subscription_expired' => LicenseSecurityStatus.subscriptionExpired,
+        'offline_grace_expired' => LicenseSecurityStatus.offlineExpired,
+        'suspended' => LicenseSecurityStatus.suspended,
+        'clock_tampered' => LicenseSecurityStatus.clockTampered,
+        _ => settings.isTrial
+            ? LicenseSecurityStatus.trialExpired
+            : LicenseSecurityStatus.subscriptionExpired,
+      };
       notifyListeners();
       return;
     }
 
     final lastCheckStr = settings.lastLicenseCheck;
-    if (lastCheckStr == null || lastCheckStr.isEmpty) return;
+    if (lastCheckStr == null || lastCheckStr.isEmpty) {
+      if (_securityStatus != LicenseSecurityStatus.clockTampered) {
+        _securityStatus = LicenseSecurityStatus.ok;
+      }
+      return;
+    }
 
     try {
       final lastCheck = DateTime.parse(lastCheckStr);
@@ -165,24 +221,32 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
       if (diff.inHours > 72) {
         _securityStatus = LicenseSecurityStatus.offlineExpired;
         notifyListeners();
+        return;
       }
     } catch (_) {
       // Error de parseo, ignoramos por ahora
+    }
+
+    if (_securityStatus != LicenseSecurityStatus.clockTampered) {
+      _securityStatus = LicenseSecurityStatus.ok;
     }
   }
 
   /// Actualiza los datos de seguridad tras un ping exitoso al servidor
   Future<void> updateLastSync(BusinessSettings settings) async {
+    _lastSettings = settings;
     _securityStatus = LicenseSecurityStatus.ok;
 
     // LIC-07: Usar DateTime.now() local al confirmar sincronización exitosa con el servidor,
     // evitando falsos positivos de clockTampered cuando el reloj de Windows del cliente
     // tiene algunos minutos de desfase respecto al reloj UTC del servidor en Render.
     try {
+      final now = DateTime.now();
       await _storage.write(
         key: 'drm_last_system_time',
-        value: DateTime.now().toIso8601String(),
+        value: now.toIso8601String(),
       );
+      _lastPulseStorageWrite = now;
     } catch (_) {}
 
     await _checkOfflineGrace(settings);
@@ -204,6 +268,8 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     _heartbeatTimer = null;
     _pulseTimer?.cancel();
     _pulseTimer = null;
+    _lastSettings = null;
+    _lastPulseStorageWrite = null;
     // Reset del flag para que el próximo login inicie un ciclo limpio
     _initialized = false;
     _securityStatus = LicenseSecurityStatus.ok;

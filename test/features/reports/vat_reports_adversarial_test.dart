@@ -202,7 +202,7 @@ void main() {
           'iva_perceptions': 2000.0,
           'net_balance': 58000.0,
           'result': 'to_pay',
-          'result_label': 'SALDO ESTIMADO A PAGAR (ARCA / AFIP)',
+          'result_label': 'SALDO ESTIMADO A PAGAR (ARCA)',
           'absolute_balance': 58000.0,
         },
         'disclaimer': 'Estimación de gestión...',
@@ -231,7 +231,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('SALDO ESTIMADO A PAGAR (ARCA / AFIP)'), findsOneWidget);
+      expect(find.text('SALDO ESTIMADO A PAGAR (ARCA)'), findsOneWidget);
       expect(find.text('\$58.000'), findsWidgets);
     });
 
@@ -274,7 +274,7 @@ void main() {
           'iva_perceptions': 5000000.0,
           'net_balance': 100000000.0,
           'result': 'to_pay',
-          'result_label': 'SALDO ESTIMADO A PAGAR (ARCA / AFIP)',
+          'result_label': 'SALDO ESTIMADO A PAGAR (ARCA)',
           'absolute_balance': 100000000.0,
         },
         'disclaimer': 'Estimación de gestión...',
@@ -305,7 +305,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('\$100.000.000'), findsWidgets);
       expect(find.text('\$210.000.000'), findsWidgets);
-      expect(find.text('SALDO ESTIMADO A PAGAR (ARCA / AFIP)'), findsOneWidget);
+      expect(find.text('SALDO ESTIMADO A PAGAR (ARCA)'), findsOneWidget);
     });
 
     testWidgets('Edge Case 5: Missing map keys / null fields degrade gracefully without exception',

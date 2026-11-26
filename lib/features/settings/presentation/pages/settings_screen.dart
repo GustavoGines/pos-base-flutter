@@ -12,7 +12,9 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/iibb_fiscal_calculator.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/demo_environment_widgets.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/license_commercial_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,6 +26,7 @@ import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
+import '../../../updater/presentation/widgets/upgrade_news_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
 import '../widgets/ecommerce_sync_logs_dialog.dart';
@@ -196,7 +199,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
-  String? _selectedTaxCondition = 'IVA Responsable Inscripto';
+  String? _selectedTaxCondition =
+      IibbFiscalCalculator.issuerResponsableInscripto;
+  bool _hasLegacyInvalidTaxCondition = false;
   final _iibbCtrl = TextEditingController();
   final _activityStartDateCtrl = TextEditingController();
 
@@ -219,10 +224,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _taxIdCtrl.text = settings.taxId ?? '';
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
         
-        _selectedTaxCondition = settings.taxCondition;
-        if (_selectedTaxCondition == null || _selectedTaxCondition!.isEmpty) {
-           _selectedTaxCondition = 'IVA Responsable Inscripto';
-        }
+        _hasLegacyInvalidTaxCondition =
+            IibbFiscalCalculator.isLegacyInvalidIssuerCondition(
+                settings.taxCondition);
+        _selectedTaxCondition =
+            IibbFiscalCalculator.normalizeIssuerTaxConditionOrNull(
+                settings.taxCondition);
         _iibbCtrl.text = (settings.iibb == null || settings.iibb!.isEmpty) ? 'Exento' : settings.iibb!;
         _activityStartDateCtrl.text = settings.activityStartDate ?? '';
 
@@ -233,7 +240,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _discountTierOnOffersMode = settings.discountTierOnOffersMode;
         _ignoreProductFixedPrices = settings.ignoreProductFixedPrices;
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
-        _isIibbPerceptionAgent = settings.isIibbPerceptionAgent;
+        final bool issuerEligible = _selectedTaxCondition ==
+            IibbFiscalCalculator.issuerResponsableInscripto;
+        _isIibbPerceptionAgent =
+            issuerEligible && settings.isIibbPerceptionAgent;
         _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
             ? settings.defaultIibbPerceptionRate.toString()
             : '';
@@ -832,11 +842,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
 
-      SnackBarService.success(context, result['message']?.toString() ?? 'Certificados de AFIP guardados y validados correctamente.');
+      SnackBarService.success(context, result['message']?.toString() ?? 'Certificados de ARCA guardados y validados correctamente.');
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceAll('Exception: ', '');
-        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al subir certificados de AFIP.');
+        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al subir certificados de ARCA.');
       }
     } finally {
       if (mounted) {
@@ -890,7 +900,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (csrContent.isNotEmpty) {
         final savePath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Guardar Solicitud CSR (.csr) para ARCA / AFIP',
+          dialogTitle: 'Guardar Solicitud CSR (.csr) para ARCA',
           fileName: csrFilename,
           type: FileType.custom,
           allowedExtensions: ['csr'],
@@ -1919,6 +1929,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _cardPercentageCtrl.text = normalizedCardPct.toString();
     _wholesalePercentageCtrl.text = normalizedWholesalePct.toString();
 
+    final bool isIssuerRI = _selectedTaxCondition ==
+        IibbFiscalCalculator.issuerResponsableInscripto;
     final data = {
       'company_name': _companyNameCtrl.text.trim(),
       'address': _addressCtrl.text.trim(),
@@ -1933,13 +1945,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
       'is_iibb_perception_agent':
-          (_isIibbPerceptionAgent && provider.features.arcaAfip) ? '1' : '0',
+          (_isIibbPerceptionAgent && isIssuerRI && provider.features.arcaAfip)
+              ? '1'
+              : '0',
       'default_iibb_perception_rate': double.tryParse(
               _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
           0.0,
       'iibb_calculation_base': _iibbCalculationBase,
       'iibb_subject_tax_conditions': _iibbSubjectTaxConditions.toList(),
-      'tax_condition': _selectedTaxCondition ?? 'IVA Responsable Inscripto',
+      if (_selectedTaxCondition != null && _selectedTaxCondition!.isNotEmpty)
+        'tax_condition': _selectedTaxCondition!,
       'iibb': _iibbCtrl.text.trim(),
       'activity_start_date': _activityStartDateCtrl.text.trim(),
     };
@@ -2031,7 +2046,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'multi_rubro': '🏬 Gestión Multi-Rubro',
       'mercadopago_qr': '📲 Cobro con Mercado Pago QR',
       'mercadopago_point': '💳 Posnet Mercado Pago Point',
-      'arca_afip': '🧾 Facturación Electrónica ARCA (AFIP)',
+      'arca_afip': '🧾 Facturación Electrónica ARCA',
       'ecommerce_sync': '🌐 Sincronización E-Commerce',
       'batch_expiration': '📅 Vencimientos y Control por Lotes',
       'production': '🥐 Producción Propia y Recetas',
@@ -2167,6 +2182,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final backendUpdate = result.backendUpdate;
 
       if (!mounted) return;
+
+      if (result.hasAny && !result.canAutoUpdate) {
+        final dismissedVer =
+            UpdateService.dismissedUpgradeVersionNotifier.value;
+        showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder: (_) => UpgradeNewsDialog(
+            checkResult: result,
+            currentAppVersion: _appVersion.isNotEmpty
+                ? _appVersion
+                : result.currentFrontendVersion,
+            showDismissVersionAction: result.isLifetimeUpgradeBlocked &&
+                dismissedVer != result.targetVersion,
+          ),
+        );
+        return;
+      }
 
       if (frontendUpdate != null && backendUpdate != null) {
         // ESCENARIO 1: ACTUALIZACIíƒ“N DOBLE (INTEGRAL)
@@ -3986,7 +4019,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     if (isNarrow) ...[
                       const Text(
-                        'ARCA / AFIP (Facturación Electrónica)',
+                        'ARCA (Facturación Electrónica)',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
@@ -3998,7 +4031,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           Flexible(
                             child: const Text(
-                              'ARCA / AFIP (Facturación Electrónica)',
+                              'ARCA (Facturación Electrónica)',
                               style: TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
@@ -4273,7 +4306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Selectores de archivo
             if (isNarrow) ...[
               _buildFilePickerTile(
-                title: 'Certificado AFIP (.crt)',
+                title: 'Certificado ARCA (.crt)',
                 selectedFileName: _selectedCertName,
                 buttonKey: const ValueKey('btn_pick_afip_cert'),
                 onPick: _pickAfipCert,
@@ -4305,7 +4338,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Expanded(
                     child: _buildFilePickerTile(
-                      title: 'Certificado AFIP (.crt)',
+                      title: 'Certificado ARCA (.crt)',
                       selectedFileName: _selectedCertName,
                       buttonKey: const ValueKey('btn_pick_afip_cert'),
                       onPick: _pickAfipCert,
@@ -4359,7 +4392,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ? 'Mostrar contraseña'
                       : 'Ocultar contraseña',
                   onPressed: () => _toggleSecretVisibility(
-                    action: 'Revelar Clave de Certificado AFIP',
+                    action: 'Revelar Clave de Certificado ARCA',
                     isCurrentlyObscured: _obscureAfipPassphrase,
                     onToggle: (v) => _obscureAfipPassphrase = v,
                   ),
@@ -4580,8 +4613,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text('Condición frente al IVA', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    key: ValueKey(
+                        'issuer_tax_condition_${_selectedTaxCondition ?? "invalid"}'),
                     isExpanded: true,
-                    initialValue: _selectedTaxCondition,
+                    initialValue: IibbFiscalCalculator.validIssuerTaxConditions
+                            .contains(_selectedTaxCondition)
+                        ? _selectedTaxCondition
+                        : null,
+                    hint: const Text(
+                      'Seleccione una condición fiscal válida',
+                      style: TextStyle(fontSize: 13),
+                    ),
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.account_balance_outlined, color: Colors.black54),
                       filled: true,
@@ -4591,15 +4633,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
                     ),
                     items: const [
-                      DropdownMenuItem(value: 'IVA Responsable Inscripto', child: Text('IVA Responsable Inscripto')),
-                      DropdownMenuItem(value: 'Responsable Monotributo', child: Text('Responsable Monotributo')),
-                      DropdownMenuItem(value: 'IVA Exento', child: Text('IVA Exento')),
-                      DropdownMenuItem(value: 'Consumidor Final', child: Text('Consumidor Final')),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerResponsableInscripto,
+                        child: Text('IVA Responsable Inscripto'),
+                      ),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerMonotributo,
+                        child: Text('Responsable Monotributo'),
+                      ),
+                      DropdownMenuItem(
+                        value: IibbFiscalCalculator.issuerExento,
+                        child: Text('IVA Exento'),
+                      ),
                     ],
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Seleccione una condición frente al IVA válida para el negocio';
+                      }
+                      return null;
+                    },
                     onChanged: (val) {
-                      setState(() { _selectedTaxCondition = val; });
+                      setState(() {
+                        _selectedTaxCondition = val;
+                        _hasLegacyInvalidTaxCondition = false;
+                        if (!IibbFiscalCalculator.isIssuerEligibleForIibb(val)) {
+                          _isIibbPerceptionAgent = false;
+                        }
+                      });
                     },
                   ),
+                  if (_hasLegacyInvalidTaxCondition) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      key: const ValueKey('legacy_invalid_tax_condition_notice'),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: Colors.amber.shade900),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'La configuración anterior tenía "Consumidor Final", que no es válido para un comercio emisor. Seleccioná una condición válida y guardá los cambios.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.amber.shade900,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -4615,16 +4708,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 24),
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
-        const SizedBox(height: 32),
         Builder(builder: (context) {
+          final isIssuerResponsableInscripto = _selectedTaxCondition ==
+              IibbFiscalCalculator.issuerResponsableInscripto;
+          if (!isIssuerResponsableInscripto) {
+            return const SizedBox.shrink();
+          }
+
           final isAfipLocked = !provider.features.arcaAfip;
           final isIibbActive = _isIibbPerceptionAgent && !isAfipLocked;
-          final normalizedIssuerCond =
-              (_selectedTaxCondition ?? '').trim().toLowerCase();
-          final isIssuerResponsableInscripto =
-              normalizedIssuerCond.contains('inscripto');
 
-          return Container(
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 32),
+              Container(
             decoration: BoxDecoration(
               color: isIibbActive
                   ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
@@ -4684,7 +4782,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   Icon(Icons.lock, size: 12, color: Colors.amber.shade800),
                                   const SizedBox(width: 4),
                                   Text(
-                                    'AFIP Requerido',
+                                    'ARCA Requerido',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
@@ -4699,10 +4797,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       subtitle: Text(
                         isAfipLocked
-                            ? 'Requiere el módulo de Facturación Electrónica ARCA/AFIP habilitado en su licencia.'
-                            : (isIssuerResponsableInscripto
-                                ? 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Facturas A y B.'
-                                : 'Habilita el cálculo automático de percepciones de Ingresos Brutos en Factura C.'),
+                            ? 'Requiere el módulo de Facturación Electrónica ARCA habilitado en su licencia. Activar únicamente si tu negocio fue designado formalmente por Rentas (DGR) como Agente de Percepción. No afecta a Consumidores Finales.'
+                            : 'Activar únicamente si tu negocio fue designado formalmente por Rentas (DGR) como Agente de Percepción. No afecta a Consumidores Finales.',
                         style: TextStyle(fontSize: 12, color: isAfipLocked ? Colors.grey.shade600 : null),
                       ),
                       value: isIibbActive,
@@ -4711,10 +4807,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (isAfipLocked) {
                           PlanUpgradeDialog.show(
                             context,
-                            title: 'Módulo ARCA/AFIP Requerido',
+                            title: 'Módulo ARCA Requerido',
                             featureName: 'Percepciones de Ingresos Brutos (IIBB)',
                             description:
-                                'El cálculo de percepciones de Ingresos Brutos opera exclusivamente sobre comprobantes fiscales electrónicos (Facturas A y B de ARCA/AFIP).\n\n'
+                                'El cálculo de percepciones de Ingresos Brutos opera exclusivamente sobre comprobantes fiscales electrónicos (Facturas A y B de ARCA).\n\n'
                                 'Para utilizar este módulo, la licencia debe tener habilitada la facturación electrónica.',
                             onNavigateToSettings: () => setState(() =>
                                 _activeSection = SettingsSection.subscription),
@@ -4780,64 +4876,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (isIssuerResponsableInscripto) ...[
-                      _buildIibbBaseOptionCard(
-                        key: const ValueKey('iibb_base_net_option'),
-                        value: IibbFiscalCalculator.baseNetWithoutVat,
-                        title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
-                        subtitle:
-                            'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto). En Monotributo (Factura C) coincide con el total.',
-                      ),
-                      const SizedBox(height: 8),
-                      _buildIibbBaseOptionCard(
-                        key: const ValueKey('iibb_base_gross_option'),
-                        value: IibbFiscalCalculator.baseGrossWithVat,
-                        title: 'Sobre Subtotal con IVA incluido',
-                        subtitle:
-                            'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
-                      ),
-                    ] else
-                      Container(
-                        key: const ValueKey('iibb_base_factura_c_auto_note'),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.amber.shade300),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.lock_clock_outlined,
-                                size: 18, color: Colors.amber.shade900),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Cálculo automático sobre Total de Factura C',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.amber.shade900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'En Monotributo / IVA Exento (Factura C) no se discrimina IVA, por lo que la percepción IIBB se calcula siempre automáticamente sobre el total del comprobante.',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.blueGrey.shade800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_net_option'),
+                      value: IibbFiscalCalculator.baseNetWithoutVat,
+                      title: 'Sobre Neto Gravado sin IVA (Recomendado / Regla general DGR)',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal neto sin IVA (ImpNeto).',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildIibbBaseOptionCard(
+                      key: const ValueKey('iibb_base_gross_option'),
+                      value: IibbFiscalCalculator.baseGrossWithVat,
+                      title: 'Sobre Subtotal con IVA incluido',
+                      subtitle:
+                          'Calcula la alícuota sobre el subtotal gravado con IVA incluido (ImpNeto + ImpIVA) y declara esa BaseImp en ARCA.',
+                    ),
                     const SizedBox(height: 14),
                     Text(
                       'Condiciones frente al IVA alcanzadas por defecto:',
@@ -4855,23 +4908,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_ri'),
                           conditionKey: 'responsable_inscripto',
-                          label: isIssuerResponsableInscripto
-                              ? 'Responsable Inscripto (Fact. A)'
-                              : 'Responsable Inscripto (Fact. C)',
+                          label: 'Responsable Inscripto (Fact. A)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_mono'),
                           conditionKey: 'monotributo',
-                          label: isIssuerResponsableInscripto
-                              ? 'Monotributista (Fact. B)'
-                              : 'Monotributista (Fact. C)',
+                          label: 'Monotributista (Fact. B)',
                         ),
                         _buildIibbSubjectChip(
                           key: const ValueKey('iibb_subject_exento'),
                           conditionKey: 'exento',
-                          label: isIssuerResponsableInscripto
-                              ? 'IVA Exento (Fact. B)'
-                              : 'IVA Exento (Fact. C)',
+                          label: 'IVA Exento (Fact. B)',
                         ),
                       ],
                     ),
@@ -4903,16 +4950,158 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
-              ],
+                ],
               ),
             ),
+          ),
+            ],
           );
         }),
         const SizedBox(height: 48),
         const Divider(),
         const SizedBox(height: 24),
+        _buildDemoEnvironmentSection(provider),
         _buildBackupSection(provider),
         const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildDemoEnvironmentSection(SettingsProvider provider) {
+    bool isAdmin = false;
+    try {
+      isAdmin = context.read<AuthProvider>().isAdmin;
+    } catch (_) {}
+    final bool isDemoActive = provider.safeIsDemoModeActive;
+    final bool isEmptyTrial = (provider.settings?.isTrial == true) &&
+        provider.safeIsFreshEmptyTrialStore;
+
+    if (!isAdmin || (!isDemoActive && !isEmptyTrial)) {
+      return const SizedBox.shrink();
+    }
+
+    final Color accentColor =
+        isDemoActive ? const Color(0xFFB45309) : AppColors.indigo;
+    final Color bgColor =
+        isDemoActive ? const Color(0xFFFFFBEB) : const Color(0xFFEEF2FF);
+    final Color borderColor =
+        isDemoActive ? const Color(0xFFFCD34D) : const Color(0xFFC7D2FE);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          elevation: 0,
+          color: bgColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: borderColor),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isDemoActive
+                        ? Icons.cleaning_services_rounded
+                        : Icons.auto_awesome_rounded,
+                    color: accentColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isDemoActive
+                            ? 'Modo Exploración (Datos de Ejemplo Activos)'
+                            : 'Modo Exploración con Datos de Ejemplo',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: accentColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isDemoActive
+                            ? 'Cuando termines de evaluar el sistema podés limpiar los datos ficticios y empezar con tu negocio real en limpio (conservando tu licencia, usuarios e impresoras).'
+                            : 'Tu licencia de prueba todavía no tiene productos ni ventas cargadas. Podés poblar el sistema en segundos con ejemplos reales de tu rubro para explorar reportes, stock y caja.',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                if (isDemoActive)
+                  ElevatedButton.icon(
+                    key: const Key('settings_demo_reset_btn'),
+                    onPressed: provider.safeIsDemoActionBusy
+                        ? null
+                        : () => DemoResetConfirmDialog.show(context),
+                    icon: const Icon(Icons.cleaning_services_rounded, size: 17),
+                    label: const Text('Limpiar datos de ejemplo'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD97706),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    key: const Key('settings_demo_seed_btn'),
+                    onPressed: provider.safeIsDemoActionBusy
+                        ? null
+                        : () => DemoEnvironmentCoordinator.seedAndHydrate(
+                              context,
+                            ),
+                    icon: provider.safeIsDemoActionBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.auto_awesome_rounded, size: 17),
+                    label: Text(
+                      provider.safeIsDemoActionBusy
+                          ? 'Cargando...'
+                          : 'Cargar datos de ejemplo',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.indigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -5120,7 +5309,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               CheckboxListTile(
                 value: _backupIncludeAfip,
                 onChanged: _isCreatingBackup ? null : (v) => setState(() => _backupIncludeAfip = v ?? false),
-                title: const Text('Certificados Digitales ARCA / AFIP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                title: const Text('Certificados Digitales ARCA', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -5384,13 +5573,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       includedItems.add(_buildRestoreModuleRow(
         icon: Icons.verified_user_rounded,
         color: Colors.teal.shade700,
-        title: 'Certificados Digitales ARCA / AFIP',
+        title: 'Certificados Digitales ARCA',
         subtitle: afipFileCount > 0
             ? 'Se restaurarán $afipFileCount archivo(s) de certificados.'
             : 'Incluido en la copia (sin certificados nuevos para extraer).',
       ));
     } else {
-      untouchedItems.add('Certificados ARCA / AFIP');
+      untouchedItems.add('Certificados ARCA');
     }
 
     // Confirmar restauración mostrando únicamente lo que realmente trae el .zip
@@ -5527,7 +5716,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final details = <String>[
           if (tablesRestored > 0) 'Base de datos ($tablesRestored tablas)',
           if (imagesRestored > 0) '$imagesRestored imagen(es)',
-          if (afipRestored > 0) '$afipRestored certificado(s) AFIP',
+          if (afipRestored > 0) '$afipRestored certificado(s) ARCA',
         ];
 
         final summary = details.isNotEmpty ? ' Se restauró: ${details.join(', ')}.' : '';
@@ -6262,10 +6451,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isPremium: provider.currentPlan.toLowerCase() == 'premium' ||
                 provider.currentPlan.toLowerCase() == 'pro',
             isLifetime: isLifetime,
+            isTrial: settings?.isTrial ?? false,
             licenseKey: settings?.licenseStatus,
             expiresAt: expiresAt,
             lastSync: settings?.lastLicenseCheck,
             manageUrl: manageUrl,
+            allowOtaUpdates: settings?.licenseAllowOtaUpdates ?? !isLifetime,
+            otaUnlockedUntil: settings?.licenseOtaUnlockedUntil,
           ),
           const SizedBox(height: 28),
           _buildSectionTitle('Rubro Comercial Licenciado'),
@@ -6721,19 +6913,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class AnimatedSubscriptionCard extends StatefulWidget {
   final bool isPremium;
   final bool isLifetime;
+  final bool isTrial;
   final String? licenseKey;
   final DateTime? expiresAt;
   final String? lastSync;
   final String? manageUrl;
+  final bool allowOtaUpdates;
+  final DateTime? otaUnlockedUntil;
 
   const AnimatedSubscriptionCard({
     super.key,
     required this.isPremium,
     required this.isLifetime,
+    this.isTrial = false,
     this.licenseKey,
     this.expiresAt,
     this.lastSync,
     this.manageUrl,
+    this.allowOtaUpdates = false,
+    this.otaUnlockedUntil,
   });
 
   @override
@@ -6764,6 +6962,15 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  String _formatExpirationText(DateTime expiresAt) {
+    final local = expiresAt.toLocal();
+    try {
+      return 'Expira el: ${DateFormat("d 'de' MMMM, yyyy", 'es_AR').format(local)} (23:59 hs)';
+    } catch (_) {
+      return 'Expira el: ${DateFormat('dd/MM/yyyy').format(local)} (23:59 hs)';
+    }
   }
 
   @override
@@ -6869,25 +7076,81 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                   Text(
                     widget.isLifetime
                         ? 'Acceso Vitalicio (LifeTime)'
-                        : 'Suscripción Activa',
+                        : (widget.isTrial
+                            ? 'Prueba Gratuita Activa'
+                            : 'Suscripción Activa'),
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.5),
                   ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Text(
+                      widget.isLifetime
+                          ? 'Plan Pago Único · Soporte y actualizaciones a demanda'
+                          : (widget.isTrial
+                              ? '🎯 Modo Evaluación · Tus productos y ventas se conservan al activar tu plan'
+                              : 'Plan Mensual SaaS · Actualizaciones automáticas y soporte incluidos'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (widget.isLifetime &&
+                      (widget.allowOtaUpdates ||
+                          (widget.otaUnlockedUntil != null &&
+                              widget.otaUnlockedUntil!
+                                  .isAfter(DateTime.now())))) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFF34D399).withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Text(
+                        widget.allowOtaUpdates
+                            ? '⚡ Actualizaciones OTA habilitadas en esta licencia'
+                            : '⚡ Ventana OTA habilitada hasta ${DateFormat('dd/MM/yyyy HH:mm').format(widget.otaUnlockedUntil!.toLocal())}',
+                        style: const TextStyle(
+                          color: Color(0xFFD1FAE5),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     widget.isLifetime
-                        ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
+                        ? (widget.isPremium
+                            ? 'Licencia perpetua Plan Premium · Parches críticos incluidos; nuevas versiones y soporte a demanda.'
+                            : 'Licencia perpetua Plan Básico · Parches críticos incluidos; nuevas versiones y soporte a demanda.')
                         : (widget.expiresAt != null
-                            ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
+                            ? _formatExpirationText(widget.expiresAt!)
                             : (widget.lastSync != null
                                 ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!).toLocal())}'
                                 : 'Estado: Activo y Protegido')),
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 16),
+                        fontSize: 15),
                   ),
                   if (widget.licenseKey != null && widget.licenseKey!.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -6912,26 +7175,45 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                               fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          InkWell(
-                            onTap: () async {
-                              await Clipboard.setData(ClipboardData(text: widget.licenseKey!));
-                              if (context.mounted) {
-                                SnackBarService.success(context, 'Licencia copiada al portapapeles');
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4.0),
-                              child: Icon(Icons.copy, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                          if (!widget.licenseKey!.contains('****')) ...[
+                            const SizedBox(width: 16),
+                            InkWell(
+                              onTap: () async {
+                                await Clipboard.setData(ClipboardData(text: widget.licenseKey!));
+                                if (context.mounted) {
+                                  SnackBarService.success(context, 'Licencia copiada al portapapeles');
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: Icon(Icons.copy, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
                   ],
                   const SizedBox(height: 36),
-                  if (!widget.isLifetime && widget.manageUrl != null)
+                  if (widget.isTrial && !widget.isLifetime)
+                    ElevatedButton.icon(
+                      onPressed: () => LicenseCommercialDialog.show(context),
+                      icon: const Icon(Icons.rocket_launch_rounded, size: 20),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        elevation: 6,
+                      ),
+                      label: const Text('ACTIVAR MI PLAN POR WHATSAPP',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
+                    )
+                  else if (!widget.isLifetime && widget.manageUrl != null)
                     MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: AnimatedContainer(

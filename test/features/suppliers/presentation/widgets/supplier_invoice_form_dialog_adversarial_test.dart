@@ -198,7 +198,7 @@ void main() {
 
       // Verify header and primary sections
       expect(find.text('Espejo de Ventas - Carga de Remito / Factura'), findsOneWidget);
-      expect(find.text('Datos Fiscales (ARCA / AFIP)'), findsOneWidget);
+      expect(find.text('Datos Fiscales (ARCA)'), findsOneWidget);
 
       // Verify that the fiscal section is expanded by default
       expect(find.text('Letra'), findsOneWidget);
@@ -234,8 +234,8 @@ void main() {
       await tester.pumpWidget(buildTestDialog());
       await tester.pumpAndSettle();
 
-      // Find the fiscal section container by finding 'Datos Fiscales (ARCA / AFIP)' ancestor Container
-      final fiscalHeader = find.text('Datos Fiscales (ARCA / AFIP)');
+      // Find the fiscal section container by finding 'Datos Fiscales (ARCA)' ancestor Container
+      final fiscalHeader = find.text('Datos Fiscales (ARCA)');
       expect(fiscalHeader, findsOneWidget);
 
       // Inspect every Row inside the dialog to verify that right panel inputs do not exceed 2 Expanded children
@@ -288,7 +288,7 @@ void main() {
       await tester.pumpWidget(buildTestDialog());
       await tester.pumpAndSettle();
 
-      expect(find.text('Datos Fiscales (ARCA / AFIP)'), findsNothing);
+      expect(find.text('Datos Fiscales (ARCA)'), findsNothing);
       expect(find.text('Pto. Venta'), findsNothing);
       expect(find.text('Neto 21% (\$)'), findsNothing);
     });
@@ -478,14 +478,14 @@ void main() {
       await tester.pumpWidget(buildTestDialog());
       await tester.pumpAndSettle();
 
-      expect(find.text('Datos Fiscales (ARCA / AFIP)'), findsOneWidget);
+      expect(find.text('Datos Fiscales (ARCA)'), findsOneWidget);
 
       await tester.tap(find.text('Factura de Compra'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Remito de Mercadería').last);
       await tester.pumpAndSettle();
 
-      expect(find.text('Datos Fiscales (ARCA / AFIP)'), findsNothing);
+      expect(find.text('Datos Fiscales (ARCA)'), findsNothing);
     });
 
     testWidgets('Editing historical invoice without voucher_letter defaults to S/D and does not block with Factura A error',

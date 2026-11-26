@@ -648,7 +648,7 @@ class _FiltersPanel extends StatelessWidget {
               ButtonSegment(
                 value: 'fiscal',
                 icon: Icon(Icons.verified_outlined, size: 14),
-                label: Text('Fiscales (AFIP)'),
+                label: Text('Fiscales (ARCA)'),
               ),
               ButtonSegment(
                 value: 'non_fiscal',
@@ -2529,13 +2529,19 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     return _taxableNetBase;
   }
 
+  bool _canBusinessApplyIibb(BusinessSettings? settings) =>
+      settings?.isEffectiveIibbPerceptionAgent == true && _voucherType != 11;
+
   bool _showIibbSelectorBar(BusinessSettings? settings) {
     if (_existingSaleIibb > 0.009) return true;
-    if (settings?.isIibbPerceptionAgent != true) return false;
+    if (!_canBusinessApplyIibb(settings)) return false;
     return _qualifiesByCustomer || _isFiscalCuitSubjectToIibb(settings);
   }
 
   double _effectiveIibbRate(BusinessSettings? settings) {
+    if (_existingSaleIibb <= 0.009 && !_canBusinessApplyIibb(settings)) {
+      return 0.0;
+    }
     if (_existingSaleIibb <= 0.009 &&
         IibbFiscalCalculator.normalizeTaxConditionKey(_taxCondition) ==
             'consumidor_final') {
@@ -2558,7 +2564,7 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
         widget.sale.iibbPerceptionRate! <= 0.0) {
       return 0.0;
     }
-    if (settings?.isIibbPerceptionAgent != true) return 0.0;
+    if (!_canBusinessApplyIibb(settings)) return 0.0;
 
     final defaultRate = settings?.defaultIibbPerceptionRate ?? 0.0;
     if (_selectedCustomer != null) {
@@ -2674,16 +2680,17 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
       _taxCondition = _normalizeTaxConditionForVoucher(initialTaxCond, 1);
     } else {
       _taxCondition = _normalizeTaxConditionForVoucher(initialTaxCond, _voucherType);
-      if (sale.customerDocumentType != null &&
-          [80, 86, 96, 99].contains(sale.customerDocumentType)) {
+      if (_taxCondition != 'consumidor_final') {
+        _docType = 80;
+      } else if (initialDocNum.isEmpty) {
+        _docType = _exceedsAnonymousLimit(settings) ? 96 : 99;
+      } else if (sale.customerDocumentType != null &&
+          [80, 86, 96].contains(sale.customerDocumentType)) {
         _docType = sale.customerDocumentType!;
       } else if (initialDocNum.length == 11) {
         _docType = 80;
-      } else if (initialDocNum.length >= 7 && initialDocNum.length <= 8) {
-        _docType = 96;
       } else {
-        // Si supera el límite anónimo ($340.000), preseleccionamos DNI (96) para guiar al cajero
-        _docType = _exceedsAnonymousLimit(settings) ? 96 : 99;
+        _docType = 96;
       }
       _docType = _normalizeDocType(
         _docType,
@@ -2730,6 +2737,24 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                 if (_receiverAddressCtrl.text.trim().isEmpty) {
                   _receiverAddressCtrl.text =
                       match.fiscalAddress ?? match.deliveryAddress ?? '';
+                }
+                final matchDigits =
+                    match.documentNumber.replaceAll(RegExp(r'\D'), '');
+                if (_docNumberCtrl.text.replaceAll(RegExp(r'\D'), '').isEmpty) {
+                  if (matchDigits.isNotEmpty) {
+                    _docNumberCtrl.text = matchDigits;
+                    if (_voucherType == 1 || _taxCondition != 'consumidor_final') {
+                      _docType = 80;
+                    } else if ([80, 86, 96].contains(match.documentType)) {
+                      _docType = match.documentType;
+                    } else {
+                      _docType = matchDigits.length == 11 ? 80 : 96;
+                    }
+                  } else if (_voucherType != 1 &&
+                      _taxCondition == 'consumidor_final') {
+                    _docType =
+                        _exceedsAnonymousLimit(currentSettings) ? 96 : 99;
+                  }
                 }
                 _docType = _normalizeDocType(
                   _docType,
@@ -2783,18 +2808,23 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
       _taxCondition =
           _normalizeTaxConditionForVoucher(c.taxCondition, _voucherType);
 
-      if (_voucherType == 1) {
+      if (_voucherType == 1 || _taxCondition != 'consumidor_final') {
         _docType = 80;
       } else {
-        var nextDocType = c.documentType;
-        if (nextDocType == 99 && _docNumberCtrl.text.isNotEmpty) {
-          nextDocType = _docNumberCtrl.text.length == 11 ? 80 : 96;
+        final cleanDigits = _docNumberCtrl.text.replaceAll(RegExp(r'\D'), '');
+        if (cleanDigits.isEmpty) {
+          _docType = _exceedsAnonymousLimit(settings) ? 96 : 99;
+        } else {
+          var nextDocType = c.documentType;
+          if (nextDocType == 99 || ![80, 86, 96].contains(nextDocType)) {
+            nextDocType = cleanDigits.length == 11 ? 80 : 96;
+          }
+          _docType = _normalizeDocType(
+            nextDocType,
+            _voucherType,
+            _exceedsAnonymousLimit(settings),
+          );
         }
-        _docType = _normalizeDocType(
-          nextDocType,
-          _voucherType,
-          _exceedsAnonymousLimit(settings),
-        );
       }
     });
   }
@@ -2982,7 +3012,12 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
   bool _isFormValid(BusinessSettings? settings) {
     final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
     final exceedsLimit = _exceedsAnonymousLimit(settings);
-    final safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    var safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    if (_voucherType != 1 &&
+        safeDocType == 99 &&
+        cleanDoc.isNotEmpty) {
+      safeDocType = cleanDoc.length == 11 ? 80 : 96;
+    }
 
     if (_voucherType == 1) {
       if (safeDocType != 80) return false;
@@ -2990,7 +3025,10 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
       if (_receiverNameCtrl.text.trim().isEmpty) return false;
       return true;
     }
-    // Factura B o C
+    if (_taxCondition != 'consumidor_final') {
+      return AfipModulo11.validateCuit(cleanDoc);
+    }
+    // Factura B o C para Consumidor Final
     if (exceedsLimit && (safeDocType == 99 || cleanDoc.isEmpty)) {
       return false;
     }
@@ -3031,14 +3069,21 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
     });
 
     final exceedsLimit = _exceedsAnonymousLimit(settings);
-    final safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    var safeDocType = _normalizeDocType(_docType, _voucherType, exceedsLimit);
+    if (_taxCondition != 'consumidor_final' || _voucherType == 1) {
+      safeDocType = 80;
+    } else if (cleanDoc.isEmpty) {
+      safeDocType = exceedsLimit ? 96 : 99;
+    } else if (safeDocType == 99) {
+      safeDocType = cleanDoc.length == 11 ? 80 : 96;
+    }
     final safeTaxCondition =
         _normalizeTaxConditionForVoucher(_taxCondition, _voucherType);
     final showIibbBar = _showIibbSelectorBar(settings);
     final effectiveRate = _effectiveIibbRate(settings);
     final currentIibb = _currentIibbAmount(settings);
 
-    final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
     final payload = <String, dynamic>{
       'voucher_type': _voucherType,
       'doc_type': safeDocType,
@@ -3545,6 +3590,10 @@ class EmitArcaInvoiceDialogState extends State<EmitArcaInvoiceDialog> {
                                 if (val != null) {
                                   setState(() {
                                     _docType = val;
+                                    if (val == 99) {
+                                      _docNumberCtrl.clear();
+                                      _taxCondition = 'consumidor_final';
+                                    }
                                     _errorMessage = null;
                                   });
                                 }
@@ -3926,7 +3975,7 @@ class _QuickCustomerPickerDialogState
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text(
-                        'Doc: ${c.documentNumber} • ${c.taxCondition.replaceAll('_', ' ').toUpperCase()}',
+                        '${c.displayDocumentSummary} • ${c.taxCondition.replaceAll('_', ' ').toUpperCase()}',
                         style: const TextStyle(fontSize: 12),
                       ),
                       onTap: () => Navigator.pop(context, c),

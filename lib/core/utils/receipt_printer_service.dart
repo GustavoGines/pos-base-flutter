@@ -1291,7 +1291,7 @@ class ReceiptPrinterService {
         }
       }
       bytes += generator.text(
-        'Comprobante Autorizado por AFIP',
+        'Comprobante Autorizado por ARCA',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -1743,7 +1743,7 @@ class ReceiptPrinterService {
         }
       }
       bytes += generator.text(
-        'Comprobante Autorizado por AFIP',
+        'Comprobante Autorizado por ARCA',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     } else {
@@ -1808,10 +1808,21 @@ class ReceiptPrinterService {
     if (effectiveCustName != null && effectiveCustName.isNotEmpty) {
       bytes += generator.text('CLIENTE: ${_cleanText(effectiveCustName).toUpperCase()}', styles: const PosStyles(bold: true));
     }
-    final effectiveCustDoc = (customerDoc != null && customerDoc.isNotEmpty)
-        ? customerDoc
-        : invoice?['doc_number']?.toString();
-    if (effectiveCustDoc != null && effectiveCustDoc.isNotEmpty) {
+    bool isValidPrintableDoc(String? raw) {
+      if (raw == null) return false;
+      final t = raw.trim();
+      return t.isNotEmpty &&
+          t.toLowerCase() != 'null' &&
+          t != '0' &&
+          t != '---';
+    }
+
+    final effectiveCustDoc = isValidPrintableDoc(customerDoc)
+        ? customerDoc!.trim()
+        : (isValidPrintableDoc(invoice?['doc_number']?.toString())
+            ? invoice!['doc_number'].toString().trim()
+            : null);
+    if (effectiveCustDoc != null) {
       bytes += generator.text('DOC / CUIT: ${_cleanText(effectiveCustDoc)}');
     }
     final deliveryAddress = deliveryNote['delivery_address'] ??

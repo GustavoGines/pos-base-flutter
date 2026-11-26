@@ -46,8 +46,18 @@ class MobileUpdateService {
         },
       );
 
+      final otaToken = (prefs.getString('license_ota_token') ?? '').trim();
       final response = await Dio()
-          .getUri(uri)
+          .getUri(
+            uri,
+            options: Options(
+              headers: {
+                'Accept': 'application/json',
+                'X-Ota-Protocol': '2',
+                if (otaToken.isNotEmpty) 'X-Ota-Token': otaToken,
+              },
+            ),
+          )
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -77,6 +87,11 @@ class MobileUpdateService {
     String downloadUrl, {
     required void Function(double progress) onProgress,
   }) async {
+    if (downloadUrl.trim().isEmpty) {
+      throw Exception(
+          'Esta actualización requiere habilitar el permiso OTA en su licencia.');
+    }
+
     // ── 1. Crear directorio de descarga en caché interna ────────────────────
     final cacheDir = await getTemporaryDirectory();
     final apkDir = Directory('${cacheDir.path}/apk_downloads');

@@ -8,6 +8,23 @@ import 'package:updater/updater_core.dart';
 // MAIN
 // ─────────────────────────────────────────────────────────
 void main(List<String> args) async {
+  // Blindaje anti-congelamiento de consola Windows:
+  // Desactiva QuickEdit Mode (STD_INPUT_HANDLE = -10) para que hacer clic
+  // en la ventana visible jamás active "Seleccionar" ni pause el proceso.
+  final bool quickEditDisabled = disableWindowsConsoleQuickEdit(
+    consoleTitle:
+        'Actualizando Caja4U — Aguarde unos segundos sin abrir el programa...',
+  );
+
+  stdout.writeln(
+      '====================================================================');
+  stdout.writeln('  ACTUALIZANDO CAJA4U — NO CIERRE ESTA VENTANA');
+  stdout.writeln(
+      '  Actualizando Caja4U, aguarde unos segundos sin abrir el programa...');
+  stdout.writeln(
+      '====================================================================');
+  stdout.writeln('');
+
   String? component;
   String? targetDir;
   String? zipPath;
@@ -65,6 +82,13 @@ void main(List<String> args) async {
   log.log('PID del proceso: $pid');
   log.log(
       'Plataforma: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+  if (Platform.isWindows) {
+    log.log(
+      quickEditDisabled
+          ? 'Consola Win32: QuickEdit Mode desactivado correctamente.'
+          : 'Consola Win32: QuickEdit Mode omitido (sin consola interactiva adjunta).',
+    );
+  }
 
   // ── PASO 1: Verificar que el ZIP existe ─────────────────
   final zipFile = File(zipPath);
@@ -132,8 +156,153 @@ void main(List<String> args) async {
     }
   }
 
-  // ── PASO 2: Liberación previa de archivos / workers ──────
-  if (component == 'frontend') {
+  // ── EJECUCIÓN SEPARADA POR COMPONENTE ───────────────────
+  if (component == 'backend') {
+    String? failureDetail;
+    bool backendSuccess = false;
+
+    try {
+      backendSuccess = await runWithBackendServicesSuspended<bool>(
+        targetDir: targetDir,
+        phpExe: phpExe,
+        phpEnv: phpEnv,
+        log: log,
+        isActionSuccessful: (ok) => ok,
+        action: () async {
+          log.log('Iniciando lectura del directorio central del ZIP...');
+          final Archive archive;
+          try {
+            final bytes = zipFile.readAsBytesSync();
+            log.log('ZIP leído en memoria (${bytes.length} bytes).');
+            archive = ZipDecoder().decodeBytes(bytes);
+            log.log(
+                'ZIP decodificado: ${archive.length} entradas encontradas.');
+          } catch (e) {
+            log.err('Error fatal decodificando el ZIP: $e');
+            failureDetail = 'ZIP corrupto o ilegible';
+            return false;
+          }
+
+          log.log('Iniciando extracción diferencial atómica...');
+          final stats = extractArchiveDifferentially(
+            archive: archive,
+            targetDir: targetDir!,
+            component: 'backend',
+            log: log,
+            skipUpdaterExe: false,
+            rollbackOnPartialFailure: true,
+          );
+
+          final bool extractionOk = stats.extractionOk;
+          if (!extractionOk) {
+            log.err(
+                '${stats.filesSkipped} archivos no pudieron extraerse. Se revirtieron los cambios parciales.');
+          }
+
+          // 1. Saneamiento idempotente de variables .env nuevas (para clientes que suben desde v1.4.4 / v1.8.5)
+          ensureBackendEnvVariables(targetDir: targetDir, log: log);
+
+          // 2. Respaldo automático de la Base de Datos (mysqldump) ANTES de correr migraciones
+          bool hasError = !extractionOk;
+          final artisanPath = p.join(targetDir, 'artisan');
+
+          if (extractionOk) {
+            createPreMigrationDatabaseBackup(
+              targetDir: targetDir,
+              version: version,
+              log: log,
+            );
+
+            final commands = [
+              [phpExe, artisanPath, 'optimize:clear'],
+              [phpExe, artisanPath, 'migrate', '--force'],
+              [phpExe, artisanPath, 'optimize'],
+            ];
+
+            for (final cmd in commands) {
+              final cmdString = cmd.join(' ');
+              log.log('Ejecutando: $cmdString');
+              try {
+                final result = Process.runSync(
+                  cmd.first,
+                  cmd.sublist(1),
+                  workingDirectory: targetDir,
+                  environment: phpEnv.isNotEmpty ? phpEnv : null,
+                );
+                if (result.stdout.toString().trim().isNotEmpty) {
+                  log.log('  STDOUT: ${result.stdout.toString().trim()}');
+                }
+                if (result.stderr.toString().trim().isNotEmpty) {
+                  log.err('  STDERR: ${result.stderr.toString().trim()}');
+                }
+                if (result.exitCode != 0) {
+                  hasError = true;
+                  log.err('  $cmdString retornó exitCode=${result.exitCode}');
+                } else {
+                  log.log('  $cmdString: OK');
+                }
+              } catch (e) {
+                hasError = true;
+                log.err('  Excepción ejecutando $cmdString: $e');
+              }
+            }
+          }
+
+          final bool success = extractionOk && !hasError;
+
+          // 3. Commit atómico final: escribir public/version.txt y podar obsoletos
+          // ÚNICAMENTE si la extracción y las migraciones fueron 100% exitosas.
+          if (success) {
+            if (stats.deferredVersionTxtBytes != null) {
+              try {
+                final versionFile =
+                    File(p.join(targetDir, 'public', 'version.txt'));
+                versionFile.createSync(recursive: true);
+                versionFile.writeAsBytesSync(stats.deferredVersionTxtBytes!);
+                log.log(
+                    'public/version.txt actualizado tras migración exitosa (${utf8.decode(stats.deferredVersionTxtBytes!).trim()}).');
+              } catch (e) {
+                log.err('No se pudo escribir public/version.txt final: $e');
+              }
+            }
+
+            pruneDeletedFilesAndSaveManifest(
+              targetDir: targetDir,
+              newManifestBytes: stats.newManifestBytes,
+              log: log,
+            );
+          } else {
+            log.err(
+                'Se omitió la actualización de public/version.txt y la poda de obsoletos debido a errores previos (permite reintentar OTA).');
+          }
+
+          return success;
+        },
+      );
+    } catch (unexpectedError) {
+      log.err('Excepción inesperada durante OTA de backend: $unexpectedError');
+      failureDetail = 'Excepción inesperada';
+      backendSuccess = false;
+    }
+
+    // Eliminar ZIP temporal
+    try {
+      if (zipFile.existsSync()) {
+        zipFile.deleteSync();
+        log.log('ZIP temporal eliminado correctamente.');
+      }
+    } catch (e) {
+      log.log('No se pudo eliminar el ZIP: $e');
+    }
+
+    log.writeResult(backendSuccess, detail: failureDetail);
+    _writeOtaResult(targetDir, backendSuccess,
+        component: component, version: version);
+    log.log('Proceso de actualización finalizado. Cerrando updater.',
+        forceFlush: true);
+    exit(backendSuccess ? 0 : 1);
+  } else if (component == 'frontend') {
+    // FRONTEND: No toca las tareas en segundo plano del servidor (salvo migración única de branding).
     log.log('Esperando a que Sistema_POS.exe libere el lock de archivo...');
     final exeFile = File(p.join(targetDir, 'Sistema_POS.exe'));
     bool isLocked = true;
@@ -158,59 +327,23 @@ void main(List<String> args) async {
       log.log(
           'Advertencia: El exe sigue bloqueado después de 20s — intentando de todas formas.');
     }
-  } else {
-    // BACKEND: Detener tareas programadas y workers PHP ANTES de tocar vendor/
-    log.log(
-        'Deteniendo temporalmente tareas y workers en segundo plano antes de extraer...');
-    final artisanPath = p.join(targetDir, 'artisan');
-    if (File(artisanPath).existsSync()) {
-      for (final stopCmd in ['queue:restart', 'reverb:restart']) {
-        try {
-          Process.runSync(
-            phpExe,
-            [artisanPath, stopCmd],
-            workingDirectory: targetDir,
-            environment: phpEnv.isNotEmpty ? phpEnv : null,
-          );
-        } catch (_) {}
-      }
-    }
 
-    for (final taskName in [
-      'SistemaPOS_Schedule',
-      'SistemaPOS_Queue',
-      'SistemaPOS_Reverb',
-    ]) {
-      try {
-        Process.runSync('schtasks', ['/end', '/tn', taskName]);
-      } catch (_) {}
-    }
-
+    log.log('Iniciando lectura del directorio central del ZIP...');
+    late final Archive archive;
     try {
-      Process.runSync('taskkill', ['/F', '/IM', 'php-win.exe', '/T']);
-    } catch (_) {}
+      final bytes = zipFile.readAsBytesSync();
+      log.log('ZIP leído en memoria (${bytes.length} bytes).');
+      archive = ZipDecoder().decodeBytes(bytes);
+      log.log('ZIP decodificado: ${archive.length} entradas encontradas.');
+    } catch (e) {
+      log.err('Error fatal decodificando el ZIP: $e');
+      log.writeResult(false, detail: 'ZIP corrupto o ilegible');
+      _writeOtaResult(targetDir, false, component: component, version: version);
+      exit(1);
+    }
 
-    await Future.delayed(const Duration(seconds: 2));
-  }
-
-  // ── PASO 3 y 4: Decodificación del Central Directory y Extracción Diferencial ──
-  log.log('Iniciando lectura del directorio central del ZIP...');
-  late final Archive archive;
-  try {
-    final bytes = zipFile.readAsBytesSync();
-    log.log('ZIP leído en memoria (${bytes.length} bytes).');
-    archive = ZipDecoder().decodeBytes(bytes);
-    log.log('ZIP decodificado: ${archive.length} entradas encontradas.');
-  } catch (e) {
-    log.err('Error fatal decodificando el ZIP: $e');
-    log.writeResult(false, detail: 'ZIP corrupto o ilegible');
-    _writeOtaResult(targetDir, false, component: component, version: version);
-    exit(1);
-  }
-
-  // ── PASO 3: Self-update condicional de updater.exe (Solo Frontend) ──
-  bool skipUpdaterExe = false;
-  if (component == 'frontend') {
+    // Self-update condicional de updater.exe (Solo Frontend)
+    bool skipUpdaterExe = false;
     final updaterChanged = hasUpdaterExeChangedInArchive(archive, targetDir);
     if (!updaterChanged) {
       skipUpdaterExe = true;
@@ -234,21 +367,18 @@ void main(List<String> args) async {
         log.log('Advertencia: No se pudo renombrar updater.exe: $e');
       }
     }
-  }
 
-  // ── PASO 4: Extracción Diferencial Atómica por Tamaño + CRC-32 + Rollback ──
-  log.log('Iniciando extracción diferencial atómica...');
-  final stats = extractArchiveDifferentially(
-    archive: archive,
-    targetDir: targetDir,
-    component: component,
-    log: log,
-    skipUpdaterExe: skipUpdaterExe,
-    rollbackOnPartialFailure: component == 'backend',
-  );
+    log.log('Iniciando extracción diferencial atómica...');
+    final stats = extractArchiveDifferentially(
+      archive: archive,
+      targetDir: targetDir,
+      component: 'frontend',
+      log: log,
+      skipUpdaterExe: skipUpdaterExe,
+      rollbackOnPartialFailure: false,
+    );
 
-  // Salvaguarda crítica post-extracción para Frontend: garantizar que updater.exe siempre exista
-  if (component == 'frontend') {
+    // Salvaguarda crítica post-extracción para Frontend: garantizar que updater.exe siempre exista
     final updaterFile = File(p.join(targetDir, 'updater.exe'));
     final updaterOldFile = File(p.join(targetDir, 'updater_old.exe'));
     if (!updaterFile.existsSync() && updaterOldFile.existsSync()) {
@@ -260,134 +390,13 @@ void main(List<String> args) async {
         log.err('No se pudo restaurar updater_old.exe: $e');
       }
     }
-  }
 
-  final bool extractionOk = stats.extractionOk;
-  if (!extractionOk) {
-    log.err(
-        '${stats.filesSkipped} archivos no pudieron extraerse. Se revirtieron los cambios parciales.');
-  }
-
-  // ── PASO 5: Lógica post-extracción por componente ────────
-  if (component == 'backend') {
-    // 1. Saneamiento idempotente de variables .env nuevas (para clientes que suben desde v1.4.4 / v1.8.5)
-    ensureBackendEnvVariables(targetDir: targetDir, log: log);
-
-    // 2. Respaldo automático de la Base de Datos (mysqldump) ANTES de correr migraciones
-    bool hasError = !extractionOk;
-    final artisanPath = p.join(targetDir, 'artisan');
-
-    if (extractionOk) {
-      createPreMigrationDatabaseBackup(
-        targetDir: targetDir,
-        version: version,
-        log: log,
-      );
-
-      final commands = [
-        [phpExe, artisanPath, 'optimize:clear'],
-        [phpExe, artisanPath, 'migrate', '--force'],
-        [phpExe, artisanPath, 'optimize'],
-      ];
-
-      for (final cmd in commands) {
-        final cmdString = cmd.join(' ');
-        log.log('Ejecutando: $cmdString');
-        try {
-          final result = Process.runSync(
-            cmd.first,
-            cmd.sublist(1),
-            workingDirectory: targetDir,
-            environment: phpEnv.isNotEmpty ? phpEnv : null,
-          );
-          if (result.stdout.toString().trim().isNotEmpty) {
-            log.log('  STDOUT: ${result.stdout.toString().trim()}');
-          }
-          if (result.stderr.toString().trim().isNotEmpty) {
-            log.err('  STDERR: ${result.stderr.toString().trim()}');
-          }
-          if (result.exitCode != 0) {
-            hasError = true;
-            log.err('  $cmdString retornó exitCode=${result.exitCode}');
-          } else {
-            log.log('  $cmdString: OK');
-          }
-        } catch (e) {
-          hasError = true;
-          log.err('  Excepción ejecutando $cmdString: $e');
-        }
-      }
-    }
-
-    // 3. Reiniciar workers de cola y WebSockets Reverb en segundo plano (siempre levantar tareas al terminar)
-    if (!hasError) {
-      for (final bgCmd in ['queue:restart', 'reverb:restart']) {
-        try {
-          final qResult = Process.runSync(
-            phpExe,
-            [artisanPath, bgCmd],
-            workingDirectory: targetDir,
-            environment: phpEnv.isNotEmpty ? phpEnv : null,
-          );
-          if (qResult.exitCode == 0) {
-            log.log('  $bgCmd: OK');
-          }
-        } catch (e) {
-          log.log('  Advertencia ejecutando $bgCmd (no bloqueante): $e');
-        }
-      }
-    }
-
-    // Asegurar que las tareas programadas de Windows (Reverb, Queue, Schedule) vuelvan a
-    // levantar inmediatamente tras la actualización.
-    for (final taskName in [
-      'SistemaPOS_Reverb',
-      'SistemaPOS_Queue',
-      'SistemaPOS_Schedule',
-    ]) {
-      try {
-        Process.runSync('schtasks', ['/run', '/tn', taskName]);
-      } catch (_) {}
-    }
-
-    final success = extractionOk && !hasError;
-
-    // 4. Commit atómico final: escribir public/version.txt y podar obsoletos
-    // ÚNICAMENTE si la extracción y las migraciones fueron 100% exitosas.
-    if (success) {
-      if (stats.deferredVersionTxtBytes != null) {
-        try {
-          final versionFile = File(p.join(targetDir, 'public', 'version.txt'));
-          versionFile.createSync(recursive: true);
-          versionFile.writeAsBytesSync(stats.deferredVersionTxtBytes!);
-          log.log(
-              'public/version.txt actualizado tras migración exitosa (${utf8.decode(stats.deferredVersionTxtBytes!).trim()}).');
-        } catch (e) {
-          log.err('No se pudo escribir public/version.txt final: $e');
-        }
-      }
-
-      pruneDeletedFilesAndSaveManifest(
-        targetDir: targetDir,
-        newManifestBytes: stats.newManifestBytes,
-        log: log,
-      );
-    } else {
+    final bool extractionOk = stats.extractionOk;
+    if (!extractionOk) {
       log.err(
-          'Se omitió la actualización de public/version.txt y la poda de obsoletos debido a errores previos (permite reintentar OTA).');
+          '${stats.filesSkipped} archivos no pudieron extraerse en frontend.');
     }
 
-    // 5. Eliminar ZIP temporal
-    try {
-      zipFile.deleteSync();
-      log.log('ZIP temporal eliminado correctamente.');
-    } catch (e) {
-      log.log('No se pudo eliminar el ZIP: $e');
-    }
-
-    log.writeResult(success);
-    _writeOtaResult(targetDir, success, component: component, version: version);
-  } else if (component == 'frontend') {
     // 1. Poda de archivos obsoletos y guardado de manifiesto si la extracción fue exitosa
     if (extractionOk) {
       pruneDeletedFilesAndSaveManifest(
@@ -440,30 +449,35 @@ void main(List<String> args) async {
     _writeOtaResult(targetDir, extractionOk,
         component: component, version: version);
 
-    // 6. Relanzar la app (con reintentos por si el antivirus Avast/Defender retiene el lock 1-3s tras extraer el nuevo .exe)
+    // 6. Relanzar la app de forma nativa sin PowerShell:
+    //    - Usa Process.start en modo ProcessStartMode.detached pasando workingDirectory: targetDir.
+    //    - Evita invocar powershell.exe para abrir un .exe recién extraído (reduce falsos positivos
+    //      heurísticos en Avast/AVG Behavior Shield / DeepScreen).
+    //    - Con reintentos por si el antivirus retiene el lock unos instantes tras escribir el nuevo .exe.
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     if (File(exePath).existsSync()) {
-      log.log('Relanzando Sistema_POS.exe...');
+      log.log('Relanzando Sistema_POS.exe...', forceFlush: true);
       bool relaunched = false;
       for (int attempt = 1; attempt <= 4; attempt++) {
         try {
-          final res = Process.runSync('powershell', [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            'Start-Process -FilePath "$exePath" -WorkingDirectory "$targetDir" -ErrorAction Stop',
-          ]);
-          if (res.exitCode == 0) {
-            relaunched = true;
-            log.log('Sistema_POS.exe relanzado exitosamente (intento $attempt).');
-            break;
-          }
+          await Process.start(
+            exePath,
+            const <String>[],
+            workingDirectory: targetDir,
+            mode: ProcessStartMode.detached,
+            runInShell: false,
+          );
+          relaunched = true;
           log.log(
-              'Intento $attempt de relanzar Sistema_POS.exe retornó código ${res.exitCode}: ${res.stderr.toString().trim()}');
+            'Sistema_POS.exe relanzado exitosamente (intento $attempt).',
+            forceFlush: true,
+          );
+          break;
         } catch (e) {
-          log.log('Intento $attempt de relanzar Sistema_POS.exe falló: $e');
+          log.log(
+            'Intento $attempt de relanzar Sistema_POS.exe falló: $e',
+            forceFlush: true,
+          );
         }
         if (attempt < 4) {
           await Future.delayed(Duration(seconds: attempt));
@@ -478,7 +492,8 @@ void main(List<String> args) async {
     }
   }
 
-  log.log('Proceso de actualización finalizado. Cerrando updater.');
+  log.log('Proceso de actualización finalizado. Cerrando updater.',
+      forceFlush: true);
   exit(0);
 }
 
@@ -590,19 +605,15 @@ void _migrateBrandingAndPrefs(String targetDir, OtaLogger log) {
       log.log('Advertencia escaneando perfiles de usuario: $e');
     }
 
-    // Si en esta PC existe instalar_tareas_bg.bat y la tarea SistemaPOS_Queue aún no fue registrada
-    // (ej. cliente v1.8.5 que actualiza sólo por OTA), registrarla automáticamente aprovechando el UAC de Frontend.
+    // Si en esta PC existe instalar_tareas_bg.bat, refrescarlo durante la migración inicial a Caja4U
+    // aprovechando el UAC de Frontend (garantiza -RestartCount 999 incluso si ya existían tareas de v1.8.5).
     try {
       final bgScript =
           File(r'C:\laragon\www\Sistema_POS\pos-backend\instalar_tareas_bg.bat');
       if (bgScript.existsSync()) {
-        final qCheck = Process.runSync(
-            'schtasks', ['/query', '/tn', 'SistemaPOS_Queue']);
-        if (qCheck.exitCode != 0) {
-          log.log(
-              'Registrando tareas en segundo plano de Laravel (Reverb/Queue/Schedule)...');
-          Process.runSync('cmd.exe', ['/c', bgScript.path]);
-        }
+        log.log(
+            'Registrando/actualizando tareas en segundo plano de Laravel (Reverb/Queue/Schedule)...');
+        Process.runSync('cmd.exe', ['/c', bgScript.path]);
       }
     } catch (_) {}
   }

@@ -92,7 +92,7 @@ void main() {
       );
       expect(plainTexts.any((t) => t.contains(testCae)), isTrue, reason: 'CAE must be present in text');
       expect(plainTexts.any((t) => t.contains(testFormattedExpiration)), isTrue, reason: 'CAE expiration must be present in text');
-      expect(plainTexts.any((t) => t.contains('Comprobante Autorizado por AFIP (RG 4892)')), isTrue,
+      expect(plainTexts.any((t) => t.contains('Comprobante Autorizado por ARCA (RG 4892)')), isTrue,
           reason: 'AFIP RG 4892 legend must be present');
 
       // Table & Totals discrimination for Factura A
@@ -629,6 +629,52 @@ void main() {
       expect(plainTexts.any((t) => t.contains('Destinatario / Cliente: Lorena Caballero')), isTrue);
       expect(plainTexts.any((t) => t.contains('ENTREGADO EN EL ACTO')), isTrue);
       expect(plainTexts.any((t) => t.contains('RECIBÍ CONFORME')), isTrue);
+    });
+
+    test(
+        'C-01: Factura B para cliente sin DNI (doc_type=99, doc_number=0) imprime CUIT / DNI: --- en lugar de 0',
+        () async {
+      final sale = {
+        'id': 905,
+        'created_at': '2026-11-25T18:00:00Z',
+        'items': [
+          {
+            'product_name': 'Yerba Mate 1kg',
+            'quantity': 1,
+            'unit_price': 4500.0,
+            'subtotal': 4500.0,
+          },
+        ],
+        'total': 4500.0,
+      };
+      final electronicInvoice = {
+        'voucher_type': 6,
+        'voucher_letter': 'B',
+        'point_of_sale': 1,
+        'voucher_number': 905,
+        'formatted_number': '00001-00000905',
+        'cae': testCae,
+        'cae_expiration': testExpiration,
+        'doc_type': 99,
+        'doc_number': '0',
+        'receiver_name': 'Cliente Sin DNI',
+        'receiver_tax_condition': 'consumidor_final',
+        'total_amount': 4500.0,
+      };
+
+      final doc = AfipFiscalPdfService.buildFiscalDocument(
+        sale: sale,
+        electronicInvoice: electronicInvoice,
+        businessSettings: sampleBusinessSettings,
+        paperSize: 'a4',
+        compress: false,
+      );
+
+      final textNodes = AfipFiscalPdfService.findWidgets<pw.RichText>(doc);
+      final plainTexts = textNodes.map((w) => w.text.toPlainText()).toList();
+      expect(plainTexts.any((t) => t.contains('CUIT / DNI: ---')), isTrue);
+      expect(plainTexts.any((t) => t.contains('CUIT / DNI: 0')), isFalse);
+      expect(plainTexts.any((t) => t.contains('Cliente Sin DNI')), isTrue);
     });
   });
 }

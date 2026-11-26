@@ -12,6 +12,7 @@ import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
+import 'package:frontend_desktop/features/updater/presentation/widgets/upgrade_news_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/live_clock_widget.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
@@ -19,6 +20,7 @@ import 'package:frontend_desktop/features/cash_movements/providers/cash_movement
 import 'package:frontend_desktop/features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/core/presentation/widgets/app_modal_shell.dart';
+import 'package:frontend_desktop/core/presentation/widgets/license_commercial_dialog.dart';
 import 'package:frontend_desktop/core/theme/app_theme.dart';
 
 
@@ -474,6 +476,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    const LicenseExpiryBadgeWidget(),
                     const UpdateBadgeWidget(),
                     if (extraAction != null) ...[
                       extraAction!,
@@ -2639,6 +2642,88 @@ class UpdateBadgeWidget extends StatelessWidget {
           builder: (context, result, child) {
             if (result == null || !result.hasAny) {
               return const SizedBox.shrink();
+            }
+
+            if (!result.canAutoUpdate) {
+              if (!result.isLifetimeUpgradeBlocked) {
+                return const SizedBox.shrink();
+              }
+
+              SettingsProvider? settingsProv;
+              try {
+                settingsProv = context.watch<SettingsProvider?>();
+              } catch (_) {}
+
+              if (settingsProv?.settings != null &&
+                  !settingsProv!.settings!.isLifetime) {
+                return const SizedBox.shrink();
+              }
+
+              return ValueListenableBuilder<String?>(
+                valueListenable: UpdateService.dismissedUpgradeVersionNotifier,
+                builder: (context, dismissedVersion, _) {
+                  final targetVer = result.targetVersion ?? '';
+                  if (dismissedVersion != null &&
+                      dismissedVersion.isNotEmpty &&
+                      dismissedVersion == targetVer) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: Tooltip(
+                      excludeFromSemantics: true,
+                      message:
+                          'Conocé las novedades disponibles en Caja4U v$targetVer',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            barrierDismissible: true,
+                            builder: (_) => UpgradeNewsDialog(
+                              checkResult: result,
+                              currentAppVersion: result.currentFrontendVersion,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          height: 34,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B)
+                                .withValues(alpha: 0.14),
+                            border: Border.all(
+                              color: const Color(0xFFFBBF24)
+                                  .withValues(alpha: 0.50),
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 15,
+                                color: Color(0xFFFDE68A),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '✨ Novedades v$targetVer',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFFEF3C7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
             }
 
             final isCritical = (result.frontendUpdate?.isCritical == true) ||

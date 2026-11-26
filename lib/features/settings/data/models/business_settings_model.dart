@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/business_vertical_profile.dart';
 import '../../../../core/utils/iibb_fiscal_calculator.dart';
@@ -21,6 +22,16 @@ class BusinessSettingsModel extends BusinessSettings {
     super.licenseNextPaymentAt,
     super.licenseManageUrl,
     super.isLifetime,
+    super.isTrial,
+    super.licenseBlockReason,
+    super.licenseOtaToken,
+    super.licenseAllowOtaUpdates,
+    super.licenseOtaUnlockedUntil,
+    super.licenseMaxUnlockedVersion,
+    super.demoModeActive = false,
+    super.demoOnboardingDismissed = false,
+    super.isFreshEmptyStore = false,
+    super.demoSeededAt,
     super.logoPath,
     super.logoUrl,
     super.globalWholesalePercentage,
@@ -47,6 +58,17 @@ class BusinessSettingsModel extends BusinessSettings {
     super.posPopularityResetAt,
     super.bankTransferAccounts,
   });
+
+  /// Deriva localmente el token OTA v2 (SHA-256) cuando el cliente se conecta
+  /// contra un backend legado (< v2.2.0) que aún no devuelve `license_ota_token`
+  /// pero sí entrega `license_key` en claro. Ignora claves vacías o enmascaradas (`****`).
+  static String? computeFallbackOtaToken(dynamic rawLicenseKey) {
+    final trimmed = rawLicenseKey?.toString().trim() ?? '';
+    if (trimmed.isEmpty || trimmed.contains('****')) {
+      return null;
+    }
+    return sha256.convert(utf8.encode('caja4u-ota-v2:$trimmed')).toString();
+  }
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
     // Parser ultra-robusto para el diccionario de features
@@ -177,6 +199,43 @@ class BusinessSettingsModel extends BusinessSettings {
           : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
+      isTrial: json['license_is_trial'] == '1' ||
+          json['license_is_trial'] == true ||
+          json['license_is_trial'] == 1 ||
+          json['is_trial'] == true ||
+          json['is_trial'] == 1,
+      licenseBlockReason:
+          (json['license_block_reason']?.toString().trim().isNotEmpty ?? false)
+              ? json['license_block_reason'].toString().trim()
+              : null,
+      licenseOtaToken: (json['license_ota_token']?.toString().trim().isNotEmpty ?? false)
+          ? json['license_ota_token'].toString().trim()
+          : computeFallbackOtaToken(
+              json['license_key'] ?? json['license_api_key'],
+            ),
+      licenseAllowOtaUpdates: json['license_allow_ota_updates'] == null
+          ? json['license_is_lifetime'] != '1'
+          : (json['license_allow_ota_updates'] == '1' ||
+              json['license_allow_ota_updates'] == true ||
+              json['license_allow_ota_updates'] == 1),
+      licenseOtaUnlockedUntil: json['license_ota_unlocked_until'] != null
+          ? DateTime.tryParse(json['license_ota_unlocked_until'].toString())
+          : null,
+      licenseMaxUnlockedVersion:
+          (json['license_max_unlocked_version']?.toString().trim().isNotEmpty ?? false)
+              ? json['license_max_unlocked_version'].toString().trim()
+              : null,
+      demoModeActive: json['demo_mode_active']?.toString() == '1' ||
+          json['demo_mode_active'] == true,
+      demoOnboardingDismissed:
+          json['demo_onboarding_dismissed']?.toString() == '1' ||
+              json['demo_onboarding_dismissed'] == true,
+      isFreshEmptyStore: json['is_fresh_empty_store']?.toString() == '1' ||
+          json['is_fresh_empty_store'] == true,
+      demoSeededAt:
+          (json['demo_seeded_at']?.toString().trim().isNotEmpty ?? false)
+              ? json['demo_seeded_at'].toString().trim()
+              : null,
       logoPath: json['logo_path']?.toString(),
       logoUrl: resolveImageUrl(json['logo_url']?.toString()) ??
           resolveImageUrl(json['logo_path']?.toString()),

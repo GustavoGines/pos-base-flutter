@@ -130,6 +130,32 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchDemoStatus() async {
+    return await remoteDataSource.fetchDemoStatus();
+  }
+
+  @override
+  Future<Map<String, dynamic>> seedDemoEnvironment() async {
+    return await remoteDataSource.seedDemoEnvironment();
+  }
+
+  @override
+  Future<Map<String, dynamic>> dismissDemoOnboarding() async {
+    return await remoteDataSource.dismissDemoOnboarding();
+  }
+
+  @override
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  }) async {
+    return await remoteDataSource.resetDemoEnvironment(
+      adminPin: adminPin,
+      confirmationText: confirmationText,
+    );
+  }
+
+  @override
   void updateBaseUrl(String newUrl) {
     if (remoteDataSource is SettingsRemoteDataSourceImpl) {
       (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);

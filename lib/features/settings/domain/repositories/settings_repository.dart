@@ -35,5 +35,12 @@ abstract class SettingsRepository {
   Future<EcommerceIntegration> toggleEcommerceActive(int id);
   Future<Map<String, dynamic>> importEcommerceCatalog(int id);
   Future<Map<String, dynamic>> exportEcommerceCatalog(int id);
+  Future<Map<String, dynamic>> fetchDemoStatus();
+  Future<Map<String, dynamic>> seedDemoEnvironment();
+  Future<Map<String, dynamic>> dismissDemoOnboarding();
+  Future<Map<String, dynamic>> resetDemoEnvironment({
+    required String adminPin,
+    required String confirmationText,
+  });
   void updateBaseUrl(String newUrl);
 }

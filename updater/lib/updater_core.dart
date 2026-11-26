@@ -1,8 +1,106 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
+import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as p;
+
+/// Constantes Win32 para control de consola (kernel32.dll).
+const int kWin32StdInputHandle = -10; // STD_INPUT_HANDLE
+const int kWin32EnableQuickEditMode = 0x0040; // ENABLE_QUICK_EDIT_MODE
+const int kWin32EnableExtendedFlags = 0x0080; // ENABLE_EXTENDED_FLAGS
+
+typedef _GetStdHandleNative = IntPtr Function(Int32 nStdHandle);
+typedef _GetStdHandleDart = int Function(int nStdHandle);
+
+typedef _GetConsoleModeNative = Int32 Function(
+  IntPtr hConsoleHandle,
+  Pointer<Uint32> lpMode,
+);
+typedef _GetConsoleModeDart = int Function(
+  int hConsoleHandle,
+  Pointer<Uint32> lpMode,
+);
+
+typedef _SetConsoleModeNative = Int32 Function(
+  IntPtr hConsoleHandle,
+  Uint32 dwMode,
+);
+typedef _SetConsoleModeDart = int Function(
+  int hConsoleHandle,
+  int dwMode,
+);
+
+typedef _SetConsoleTitleWNative = Int32 Function(Pointer<Utf16> lpConsoleTitle);
+typedef _SetConsoleTitleWDart = int Function(Pointer<Utf16> lpConsoleTitle);
+
+/// Aplica la máscara Win32 `(mode & ~0x0040) | 0x0080`
+/// (`~ENABLE_QUICK_EDIT_MODE | ENABLE_EXTENDED_FLAGS`) para desactivar
+/// la pausa accidental por clic en la ventana de consola de Windows.
+int computeQuickEditDisabledConsoleMode(int mode) {
+  return ((mode & ~kWin32EnableQuickEditMode) | kWin32EnableExtendedFlags) &
+      0xFFFFFFFF;
+}
+
+/// Desactiva `ENABLE_QUICK_EDIT_MODE` sobre `STD_INPUT_HANDLE (-10)` vía
+/// `kernel32.dll` para impedir que un clic accidental en la ventana negra
+/// ponga la consola en modo "Seleccionar" y congele el actualizador.
+/// Opcionalmente actualiza el título de la ventana de consola.
+/// Envuelto en `try/catch` para no fallar si no hay consola interactiva o en tests.
+bool disableWindowsConsoleQuickEdit({String? consoleTitle}) {
+  if (!Platform.isWindows) return false;
+  try {
+    final kernel32 = DynamicLibrary.open('kernel32.dll');
+
+    if (consoleTitle != null && consoleTitle.isNotEmpty) {
+      try {
+        final setConsoleTitle = kernel32
+            .lookupFunction<_SetConsoleTitleWNative, _SetConsoleTitleWDart>(
+          'SetConsoleTitleW',
+        );
+        final titlePtr = consoleTitle.toNativeUtf16();
+        try {
+          setConsoleTitle(titlePtr);
+        } finally {
+          calloc.free(titlePtr);
+        }
+      } catch (_) {}
+    }
+
+    final getStdHandle = kernel32
+        .lookupFunction<_GetStdHandleNative, _GetStdHandleDart>('GetStdHandle');
+    final getConsoleMode =
+        kernel32.lookupFunction<_GetConsoleModeNative, _GetConsoleModeDart>(
+      'GetConsoleMode',
+    );
+    final setConsoleMode =
+        kernel32.lookupFunction<_SetConsoleModeNative, _SetConsoleModeDart>(
+      'SetConsoleMode',
+    );
+
+    final handle = getStdHandle(kWin32StdInputHandle); // -10 (STD_INPUT_HANDLE)
+    if (handle == 0 || handle == -1) {
+      return false;
+    }
+
+    final modePtr = calloc<Uint32>();
+    try {
+      final okGet = getConsoleMode(handle, modePtr);
+      if (okGet == 0) {
+        return false;
+      }
+      final currentMode = modePtr.value;
+      final newMode = computeQuickEditDisabledConsoleMode(currentMode);
+      final okSet = setConsoleMode(handle, newMode);
+      return okSet != 0;
+    } finally {
+      calloc.free(modePtr);
+    }
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Resultado estadístico de una operación de extracción diferencial OTA.
 class OtaExtractionStats {
@@ -908,4 +1006,205 @@ String extractVersionFromZipPath(String zipPath) {
   final match = RegExp(r'v(\d+\.\d+[\.\d]*)').firstMatch(name);
   if (match == null) return 'desconocida';
   return match.group(1)!.replaceAll(RegExp(r'\.$'), '');
+}
+
+/// Runner inyectable de procesos del sistema para permitir pruebas deterministas
+/// del ciclo de suspensión y restauración de servicios en segundo plano.
+typedef OtaProcessRunner = ProcessResult Function(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+  Map<String, String>? environment,
+});
+
+ProcessResult _defaultOtaProcessRunner(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+  Map<String, String>? environment,
+}) {
+  return Process.runSync(
+    executable,
+    arguments,
+    workingDirectory: workingDirectory,
+    environment: environment,
+  );
+}
+
+/// Tareas programadas de Windows administradas durante una OTA de Backend.
+const List<String> kBackendScheduledTasks = <String>[
+  'SistemaPOS_Schedule',
+  'SistemaPOS_Queue',
+  'SistemaPOS_Reverb',
+];
+
+/// Orden de arranque de las tareas programadas al finalizar la OTA de Backend.
+const List<String> kBackendScheduledTasksStartOrder = <String>[
+  'SistemaPOS_Reverb',
+  'SistemaPOS_Queue',
+  'SistemaPOS_Schedule',
+];
+
+/// Ejecuta [action] durante una actualización OTA de **Backend** garantizando:
+/// 1. Antes de extraer o migrar:
+///    - Señal elegante `queue:restart` y `reverb:restart` si existe `artisan`.
+///    - `schtasks /change /tn <tarea> /disable` en las 3 tareas para impedir que
+///      `SistemaPOS_Schedule` (cada 1 min) se dispare en medio de la extracción o migración.
+///    - `schtasks /end /tn <tarea>` y `taskkill /F /IM php-win.exe /T` para liberar locks.
+/// 2. En un bloque `try / finally` incondicional (incluso ante ZIP corrupto, rollback o excepción):
+///    - `schtasks /change /tn <tarea> /enable` en las 3 tareas (ninguna tarea queda deshabilitada).
+///    - Si la acción tuvo éxito y existe `instalar_tareas_bg.bat`, refresca las tareas validando su
+///      `exitCode` real; si la acción falló, no existe el script o retornó error (`!= 0`), re-asegura
+///      `/enable` y ejecuta `schtasks /run /tn <tarea>` directamente.
+Future<T> runWithBackendServicesSuspended<T>({
+  required String targetDir,
+  required String phpExe,
+  required Map<String, String> phpEnv,
+  required OtaLogger log,
+  required Future<T> Function() action,
+  bool Function(T result)? isActionSuccessful,
+  OtaProcessRunner processRunner = _defaultOtaProcessRunner,
+  Duration postStopDelay = const Duration(seconds: 2),
+}) async {
+  final Map<String, String>? envOrNull = phpEnv.isNotEmpty ? phpEnv : null;
+  final String artisanPath = p.join(targetDir, 'artisan');
+
+  log.log(
+      'Deshabilitando y deteniendo temporalmente tareas y workers en segundo plano antes de extraer...');
+
+  if (File(artisanPath).existsSync()) {
+    for (final stopCmd in const ['queue:restart', 'reverb:restart']) {
+      try {
+        processRunner(
+          phpExe,
+          [artisanPath, stopCmd],
+          workingDirectory: targetDir,
+          environment: envOrNull,
+        );
+      } catch (_) {}
+    }
+  }
+
+  for (final taskName in kBackendScheduledTasks) {
+    try {
+      final disRes = processRunner(
+        'schtasks',
+        ['/change', '/tn', taskName, '/disable'],
+      );
+      if (disRes.exitCode == 0) {
+        log.log('  schtasks /disable $taskName: OK');
+      }
+    } catch (_) {}
+  }
+
+  for (final taskName in kBackendScheduledTasks) {
+    try {
+      processRunner('schtasks', ['/end', '/tn', taskName]);
+    } catch (_) {}
+  }
+
+  try {
+    processRunner('taskkill', ['/F', '/IM', 'php-win.exe', '/T']);
+  } catch (_) {}
+
+  if (postStopDelay > Duration.zero) {
+    await Future<void>.delayed(postStopDelay);
+  }
+
+  bool actionSucceeded = false;
+  try {
+    final T result = await action();
+    actionSucceeded =
+        isActionSuccessful != null ? isActionSuccessful(result) : true;
+    return result;
+  } finally {
+    log.log(
+        'Restaurando y reactivando tareas en segundo plano (bloque finally garantizado)...');
+
+    // 1. Garantizar SIEMPRE que ninguna tarea quede en estado Disabled
+    for (final taskName in kBackendScheduledTasks) {
+      try {
+        final enRes = processRunner(
+          'schtasks',
+          ['/change', '/tn', taskName, '/enable'],
+        );
+        if (enRes.exitCode == 0) {
+          log.log('  schtasks /enable $taskName: OK');
+        } else {
+          log.log(
+              '  Advertencia: schtasks /enable $taskName retornó exitCode=${enRes.exitCode}');
+        }
+      } catch (e) {
+        log.log('  Advertencia reactivando $taskName: $e');
+      }
+    }
+
+    // 2. Si la OTA tuvo éxito, señalizar recarga de workers y refrescar instalar_tareas_bg.bat
+    if (actionSucceeded && File(artisanPath).existsSync()) {
+      for (final bgCmd in const ['queue:restart', 'reverb:restart']) {
+        try {
+          final qResult = processRunner(
+            phpExe,
+            [artisanPath, bgCmd],
+            workingDirectory: targetDir,
+            environment: envOrNull,
+          );
+          if (qResult.exitCode == 0) {
+            log.log('  $bgCmd: OK');
+          }
+        } catch (e) {
+          log.log('  Advertencia ejecutando $bgCmd (no bloqueante): $e');
+        }
+      }
+    }
+
+    bool tasksStartedByScript = false;
+    final bgTasksScript = File(p.join(targetDir, 'instalar_tareas_bg.bat'));
+    if (actionSucceeded && bgTasksScript.existsSync()) {
+      log.log(
+          'Refrescando configuración de tareas en segundo plano (instalar_tareas_bg.bat)...');
+      try {
+        final bgScriptResult = processRunner(
+          'cmd.exe',
+          ['/c', bgTasksScript.path],
+          workingDirectory: targetDir,
+          environment: envOrNull,
+        );
+        if (bgScriptResult.exitCode == 0) {
+          tasksStartedByScript = true;
+          log.log(
+              '  instalar_tareas_bg.bat ejecutado correctamente (Reverb/Queue/Schedule activos).');
+        } else {
+          log.log(
+              '  Advertencia: instalar_tareas_bg.bat retornó exitCode=${bgScriptResult.exitCode}. Re-asegurando /enable y ejecutando schtasks /run directo...');
+          for (final taskName in kBackendScheduledTasks) {
+            try {
+              processRunner(
+                'schtasks',
+                ['/change', '/tn', taskName, '/enable'],
+              );
+            } catch (_) {}
+          }
+        }
+      } catch (e) {
+        log.log('  Advertencia ejecutando instalar_tareas_bg.bat: $e');
+      }
+    }
+
+    // 3. Relanzar directamente las tareas si no fueron arrancadas por instalar_tareas_bg.bat
+    if (!tasksStartedByScript) {
+      for (final taskName in kBackendScheduledTasksStartOrder) {
+        try {
+          final runRes =
+              processRunner('schtasks', ['/run', '/tn', taskName]);
+          if (runRes.exitCode == 0) {
+            log.log('  schtasks /run $taskName: OK');
+          } else {
+            log.log(
+                '  Advertencia: schtasks /run $taskName retornó exitCode=${runRes.exitCode}');
+          }
+        } catch (_) {}
+      }
+    }
+  }
 }

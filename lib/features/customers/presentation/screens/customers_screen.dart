@@ -272,7 +272,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            '${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}'
+                                            '${customer.displayDocumentSummary}'
                                             '${customer.phone != null && customer.phone!.isNotEmpty ? " · 📞 ${customer.phone}" : ""}',
                                             style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                                             maxLines: 1,
@@ -848,7 +848,7 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
                             const SizedBox(width: 5),
                             Flexible(
                               child: Text(
-                                '${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}',
+                                customer.displayDocumentSummary,
                                 style: TextStyle(color: Colors.blueGrey.shade700, fontSize: 13, fontWeight: FontWeight.w500),
                                 overflow: TextOverflow.ellipsis,
                               ),

@@ -731,6 +731,78 @@ void main() {
       expect(payload['receiver_name'], equals('Roberto Carlos Gómez'));
       expect(payload['receiver_address'], equals('Av. Libertador 900, Formosa'));
     });
+
+    testWidgets('Cliente asignado sin DNI (legacy docType 96) habilita Factura B < tope con DocTipo=99 y receiver_name', (tester) async {
+      final posLow = FakeFiscalPosProvider();
+      final sinDocLegacy96 = Customer(
+        id: 55,
+        name: 'Carlos Fiado',
+        documentNumber: '',
+        documentType: 96,
+        taxCondition: 'consumidor_final',
+        creditLimit: 50000.0,
+        balance: 0.0,
+        isActive: true,
+      );
+      posLow.selectCustomer(sinDocLegacy96);
+
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posLow,
+        total: 1500.0,
+      ));
+      await tester.pumpAndSettle();
+
+      // Etiqueta de cliente en Checkout no debe mostrar "DNI: " vacío
+      expect(find.textContaining('Sin documento'), findsOneWidget);
+      expect(find.textContaining('DNI:  •'), findsNothing);
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      // Botón CONFIRMAR PAGO habilitado y envía doc_type=99, doc_number='0' conservando receiver_name
+      final submitBtn = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
+      );
+      expect(submitBtn.onPressed, isNotNull);
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
+      await tester.pumpAndSettle();
+
+      expect(posLow.capturedFiscalInvoiceData?['doc_type'], equals(99));
+      expect(posLow.capturedFiscalInvoiceData?['doc_number'], equals('0'));
+      expect(posLow.capturedFiscalInvoiceData?['receiver_name'], equals('Carlos Fiado'));
+    });
+
+    testWidgets('Cliente asignado sin DNI bloquea Factura B cuando monto >= 340000', (tester) async {
+      final sinDocLegacy96 = Customer(
+        id: 55,
+        name: 'Carlos Fiado',
+        documentNumber: '',
+        documentType: 96,
+        taxCondition: 'consumidor_final',
+        creditLimit: 50000.0,
+        balance: 0.0,
+        isActive: true,
+      );
+      final posHigh = FakeFiscalPosProvider();
+      posHigh.selectCustomer(sinDocLegacy96);
+
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posHigh,
+        total: 400000.0,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      final disabledBtn = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
+      );
+      expect(disabledBtn.onPressed, isNull);
+    });
   });
 }
 

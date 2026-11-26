@@ -44,6 +44,20 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # ─── 2.5 ESTAMPAR VERSIÓN DEL TAG EN PUBSPEC.YAML ───
+      - name: 🏷️ Estampar versión del tag en pubspec.yaml
+        shell: pwsh
+        run: |
+          $versionClean = "${{ github.ref_name }}".Replace('desktop-', '').TrimStart('v', 'V')
+          if (-not $versionClean) {
+            throw "No se pudo extraer una versión válida desde github.ref_name (${{ github.ref_name }})"
+          }
+          $pubspecFullPath = (Resolve-Path "pubspec.yaml").Path
+          $pubspecContent = [System.IO.File]::ReadAllText($pubspecFullPath, [System.Text.Encoding]::UTF8)
+          $updatedPubspec = [regex]::Replace($pubspecContent, '(?m)^version:\s*[^\r\n]+', "version: $versionClean")
+          [System.IO.File]::WriteAllText($pubspecFullPath, $updatedPubspec, [System.Text.UTF8Encoding]::new($false))
+          Write-Host "✅ pubspec.yaml actualizado a version: $versionClean"
+
       # ─── 3. DEPENDENCIAS FLUTTER ────────────────────────
       - name: 📦 Instalar dependencias Flutter
         run: flutter pub get

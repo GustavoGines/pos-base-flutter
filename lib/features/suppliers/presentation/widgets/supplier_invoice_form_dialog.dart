@@ -3837,7 +3837,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Datos Fiscales (ARCA / AFIP)',
+                      'Datos Fiscales (ARCA)',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,

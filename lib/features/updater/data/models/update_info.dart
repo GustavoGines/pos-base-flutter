@@ -11,6 +11,9 @@ class UpdateInfo {
   final String? localVendorHash;
   final String changelog;
   final bool isCritical;
+  final bool canAutoUpdate;
+  final String? otaBlockReason;
+  final bool isFreeForLifetime;
   final String component;
 
   UpdateInfo({
@@ -23,6 +26,9 @@ class UpdateInfo {
     this.localVendorHash,
     required this.changelog,
     required this.isCritical,
+    this.canAutoUpdate = true,
+    this.otaBlockReason,
+    this.isFreeForLifetime = false,
     required this.component,
   });
 
@@ -36,6 +42,8 @@ class UpdateInfo {
     final rawAppSha = json['app_sha256']?.toString().trim();
     final rawVendorHash = json['vendor_hash']?.toString().trim();
     final cleanLocalVendorHash = localVendorHash?.trim();
+    final canAuto = json['can_auto_update'] != false;
+    final rawReason = json['ota_block_reason']?.toString().trim();
 
     return UpdateInfo(
       version: json['version'] ?? '',
@@ -55,7 +63,11 @@ class UpdateInfo {
               ? cleanLocalVendorHash.toLowerCase()
               : null,
       changelog: json['changelog'] ?? '',
-      isCritical: json['is_critical'] ?? false,
+      isCritical: (json['is_critical'] == true) && canAuto,
+      canAutoUpdate: canAuto,
+      otaBlockReason:
+          (rawReason != null && rawReason.isNotEmpty) ? rawReason : null,
+      isFreeForLifetime: json['is_free_for_lifetime'] == true,
       component: component,
     );
   }

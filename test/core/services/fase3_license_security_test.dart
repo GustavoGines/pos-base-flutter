@@ -181,18 +181,35 @@ void main() {
       expect(fakeStorage.store['other_secret_key'], 'must_survive');
     });
 
-    test('L-08: bloquea en modo offline si licenseExpiresAt ya venció aunque lastLicenseCheck sea menor a 72h', () async {
+    test('L-08: bloquea en modo offline con subscriptionExpired si licenseExpiresAt ya venció en SaaS pago', () async {
       final expiredSettings = BusinessSettings(
         licenseStatus: 'pos_key_123',
         licensePlanType: 'pro',
         licensePlanMode: 'saas',
+        isTrial: false,
         lastLicenseCheck: DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(),
         licenseExpiresAt: DateTime.now().subtract(const Duration(days: 1)),
       );
 
       await heartbeat.initialize(expiredSettings);
 
-      expect(heartbeat.securityStatus, LicenseSecurityStatus.offlineExpired);
+      expect(heartbeat.securityStatus, LicenseSecurityStatus.subscriptionExpired);
+      expect(heartbeat.isBlocked, isTrue);
+    });
+
+    test('bloquea en modo offline con trialExpired cuando vence una licencia Demo', () async {
+      final expiredTrial = BusinessSettings(
+        licenseStatus: 'pos_trial_123',
+        licensePlanType: 'pro',
+        licensePlanMode: 'saas',
+        isTrial: true,
+        lastLicenseCheck: DateTime.now().subtract(const Duration(hours: 1)).toIso8601String(),
+        licenseExpiresAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      await heartbeat.initialize(expiredTrial);
+
+      expect(heartbeat.securityStatus, LicenseSecurityStatus.trialExpired);
       expect(heartbeat.isBlocked, isTrue);
     });
   });

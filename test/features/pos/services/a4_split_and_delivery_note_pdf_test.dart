@@ -557,5 +557,28 @@ void main() {
         expect(pendingPdf.length, greaterThan(1000));
       }
     });
+
+    test('DeliveryNotePdfService generates valid PDF when customer has empty document_number', () async {
+      final baseNote = buildSampleDeliveryNote(itemCount: 2, status: 'pending');
+      final saleMap = Map<String, dynamic>.from(baseNote['sale'] as Map);
+      saleMap['customer'] = {
+        'id': 88,
+        'name': 'Cliente Sin Documento',
+        'document_number': '',
+        'document_type': 99,
+      };
+      baseNote['sale'] = saleMap;
+
+      final bytes = await DeliveryNotePdfService.generatePdf(
+        note: baseNote,
+        businessName: 'Corralón El Constructor SA',
+        businessAddress: 'Ruta 3 Km 42',
+        businessPhone: '011-4555-9999',
+        businessTaxId: '30-71234567-8',
+        paperSize: 'a4',
+      );
+      expect(bytes, isNotEmpty);
+      expect(bytes.length, greaterThan(1000));
+    });
   });
 }

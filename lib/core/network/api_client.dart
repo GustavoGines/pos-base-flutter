@@ -50,6 +50,9 @@ class ApiClient extends http.BaseClient {
   /// Callback global para manejar el error 401 de forma centralizada.
   void Function()? onSessionExpired;
 
+  /// Callback global para refrescar el estado de licencia al recibir 403 LICENSE_BLOCKED / LICENSE_CLOCK_TAMPERED.
+  void Function(String? errorCode)? onLicenseBlocked;
+
   /// Callback global para solicitar PIN de administrador cuando el backend responde 403 (permiso denegado / descuento no autorizado).
   /// Retorna el PIN validado o null si el usuario canceló la operación.
   Future<String?> Function(String? reason)? onPermissionDenied;
@@ -428,7 +431,7 @@ class ApiClient extends http.BaseClient {
         );
       }
 
-      // ── Intercepción de 403: Permiso Denegado / Autorización In Situ ──────
+      // ── Intercepción de 403: Licencia Bloqueada o Permiso Denegado ──────
       if (response.statusCode == 403) {
         final path = url.path;
         final isAuthEndpoint = path.contains('/auth/authorize-pin') ||
@@ -438,27 +441,39 @@ class ApiClient extends http.BaseClient {
                                path.contains('/auth/logout');
 
         final alreadyHasPin = headers.containsKey('X-Admin-Pin') && headers['X-Admin-Pin']!.isNotEmpty;
+        final shouldInspect403 = onLicenseBlocked != null ||
+            (!isAuthEndpoint && !alreadyHasPin && onPermissionDenied != null && request is http.Request);
 
-        if (!isAuthEndpoint && !alreadyHasPin && onPermissionDenied != null && request is http.Request) {
+        if (shouldInspect403) {
           final resBytes = await response.stream.toBytes();
           final resString = utf8.decode(resBytes, allowMalformed: true);
 
           String? reason;
+          String? detectedErrorCode;
           bool isPermissionError = false;
+          bool isLicenseBlockError = false;
 
           try {
             final decoded = json.decode(resString);
             if (decoded is Map<String, dynamic>) {
               final errorCode = decoded['error_code'] as String?;
+              detectedErrorCode = errorCode;
               reason = decoded['message'] as String?;
 
-              final isLicenseOrFeatureBlock = errorCode == 'FEATURE_NOT_LICENSED' ||
-                  errorCode == 'MODULE_DISABLED' ||
-                  errorCode == 'DIFFERENCE_REQUIRES_ADMIN' ||
-                  errorCode == 'LICENSE_BLOCKED' ||
+              isLicenseBlockError = errorCode == 'LICENSE_BLOCKED' ||
+                  errorCode == 'LICENSE_CLOCK_TAMPERED' ||
                   errorCode == 'LICENSE_INTEGRITY_VIOLATION';
 
-              if (!isLicenseOrFeatureBlock) {
+              final isLicenseOrFeatureBlock = isLicenseBlockError ||
+                  errorCode == 'FEATURE_NOT_LICENSED' ||
+                  errorCode == 'MODULE_DISABLED' ||
+                  errorCode == 'DIFFERENCE_REQUIRES_ADMIN';
+
+              if (!isLicenseOrFeatureBlock &&
+                  !isAuthEndpoint &&
+                  !alreadyHasPin &&
+                  onPermissionDenied != null &&
+                  request is http.Request) {
                 if (errorCode == 'PIN_REQUIRED' ||
                     errorCode == 'UNAUTHORIZED_PRICE_DISCOUNT' ||
                     errorCode == 'INVALID_ADMIN_PIN' ||
@@ -483,16 +498,25 @@ class ApiClient extends http.BaseClient {
               }
             }
           } catch (_) {
-            final lower = resString.toLowerCase();
-            if (lower.contains('permiso') ||
-                lower.contains('unauthorized') ||
-                lower.contains('forbidden') ||
-                lower.contains('denegado')) {
-              isPermissionError = true;
+            if (!isAuthEndpoint &&
+                !alreadyHasPin &&
+                onPermissionDenied != null &&
+                request is http.Request) {
+              final lower = resString.toLowerCase();
+              if (lower.contains('permiso') ||
+                  lower.contains('unauthorized') ||
+                  lower.contains('forbidden') ||
+                  lower.contains('denegado')) {
+                isPermissionError = true;
+              }
             }
           }
 
-          if (isPermissionError) {
+          if (isLicenseBlockError) {
+            onLicenseBlocked?.call(detectedErrorCode);
+          }
+
+          if (isPermissionError && onPermissionDenied != null && request is http.Request) {
             final pin = await _promptAdminPin(reason);
             if (pin != null && pin.isNotEmpty) {
               final retryHeaders = Map<String, String>.from(headers)

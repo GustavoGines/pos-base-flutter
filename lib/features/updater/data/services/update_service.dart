@@ -12,18 +12,35 @@ class UpdateCheckResult {
   final UpdateInfo? backendUpdate;
   final String channel;
   final bool serverChecked;
+  final String currentFrontendVersion;
 
   UpdateCheckResult({
     this.frontendUpdate,
     this.backendUpdate,
     this.channel = 'stable',
     this.serverChecked = true,
+    this.currentFrontendVersion = '',
   });
 
   bool get hasAny => frontendUpdate != null || backendUpdate != null;
   bool get isBeta => channel.toLowerCase() == 'beta';
+  UpdateInfo? get primaryUpdate => frontendUpdate ?? backendUpdate;
+  String? get targetVersion => primaryUpdate?.version;
+  bool get canAutoUpdate =>
+      hasAny &&
+      (frontendUpdate?.canAutoUpdate ?? true) &&
+      (backendUpdate?.canAutoUpdate ?? true);
+  String? get otaBlockReason =>
+      (frontendUpdate?.canAutoUpdate == false
+          ? frontendUpdate?.otaBlockReason
+          : null) ??
+      (backendUpdate?.canAutoUpdate == false
+          ? backendUpdate?.otaBlockReason
+          : null);
+  bool get isLifetimeUpgradeBlocked =>
+      hasAny && !canAutoUpdate && otaBlockReason == 'lifetime_upgrade_required';
   bool get isFullSystemUpdate =>
-      frontendUpdate != null && backendUpdate != null;
+      frontendUpdate != null && backendUpdate != null && canAutoUpdate;
 }
 
 class UpdateService {
@@ -46,7 +63,12 @@ class UpdateService {
   static final ValueNotifier<bool> isSwitchingChannelNotifier =
       ValueNotifier(false);
 
+  /// Versión ocultada voluntariamente por el usuario desde el modal comercial Lifetime.
+  static final ValueNotifier<String?> dismissedUpgradeVersionNotifier =
+      ValueNotifier(null);
+
   int _checkGeneration = 0;
+  int _activeChecksCount = 0;
   Timer? _pollingTimer;
 
   http.Client? _testHttpClient;
@@ -70,6 +92,7 @@ class UpdateService {
   void resetForTesting() {
     stopPeriodicCheck();
     _checkGeneration++;
+    _activeChecksCount = 0;
     _testHttpClient = null;
     _testFrontendVersionProvider = null;
     _forceAllowInDebugForTest = false;
@@ -77,6 +100,18 @@ class UpdateService {
     channelNotifier.value = 'stable';
     isCheckingNotifier.value = false;
     isSwitchingChannelNotifier.value = false;
+    dismissedUpgradeVersionNotifier.value = null;
+  }
+
+  /// Guarda en SharedPreferences la versión comercial cuyo badge fue ocultado en la barra superior.
+  Future<void> dismissUpgradeVersion(String version) async {
+    final clean = version.trim();
+    if (clean.isEmpty) return;
+    dismissedUpgradeVersionNotifier.value = clean;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('dismissed_upgrade_version', clean);
+    } catch (_) {}
   }
 
   static String _normalizeChannel(String? raw) {
@@ -156,32 +191,48 @@ class UpdateService {
 
   /// Consulta al servidor si hay versiones nuevas disponibles.
   /// Chequea backend y frontend de forma separada y descarta respuestas viejas
-  /// si el usuario cambia rápido de canal.
+  /// si el usuario cambia rápido de canal (`_checkGeneration`), permitiendo que
+  /// llamadas concurrentes sobre el MISMO canal (ej. Fase 2 Auto-Resume en
+  /// `main.dart` + `LoginScreen`) completen ambas sin cancelarse mutuamente.
   Future<UpdateCheckResult> checkUpdate({
     bool throwErrors = false,
     bool allowInDebug = false,
     bool isChannelSwitch = false,
     String? channelOverride,
   }) async {
-    final int myGen = ++_checkGeneration;
+    final int myGen = _checkGeneration;
     final prefs = await SharedPreferences.getInstance();
+    if (myGen != _checkGeneration) {
+      return updateNotifier.value ??
+          UpdateCheckResult(
+            channel: channelNotifier.value,
+            serverChecked: false,
+          );
+    }
     final updateChannel = _normalizeChannel(
       channelOverride ?? prefs.getString('update_channel') ?? 'stable',
     );
     if (myGen == _checkGeneration) {
       channelNotifier.value = updateChannel;
+      dismissedUpgradeVersionNotifier.value =
+          prefs.getString('dismissed_upgrade_version');
     }
 
     if (kDebugMode && !allowInDebug && !_forceAllowInDebugForTest) {
       final result = UpdateCheckResult(channel: updateChannel);
       if (myGen == _checkGeneration) {
         updateNotifier.value = result;
-        isCheckingNotifier.value = false;
-        isSwitchingChannelNotifier.value = false;
+        if (_activeChecksCount == 0) {
+          isCheckingNotifier.value = false;
+        }
+        if (isChannelSwitch) {
+          isSwitchingChannelNotifier.value = false;
+        }
       }
       return result;
     }
 
+    _activeChecksCount++;
     if (myGen == _checkGeneration) {
       isCheckingNotifier.value = true;
       if (isChannelSwitch) {
@@ -192,15 +243,24 @@ class UpdateService {
     UpdateInfo? frontendUpdate;
     UpdateInfo? backendUpdate;
     bool anyServerCheckSucceeded = false;
+    String resolvedFrontendVersion = '';
     final serverTimeout =
         throwErrors ? const Duration(minutes: 4) : const Duration(seconds: 45);
 
     try {
       final currentFrontendVersion = await _resolveFrontendVersion();
+      resolvedFrontendVersion = currentFrontendVersion;
       if (myGen != _checkGeneration) {
         return updateNotifier.value ??
             UpdateCheckResult(channel: updateChannel, serverChecked: false);
       }
+
+      final otaToken = (prefs.getString('license_ota_token') ?? '').trim();
+      final otaHeaders = <String, String>{
+        'Accept': 'application/json',
+        'X-Ota-Protocol': '2',
+        if (otaToken.isNotEmpty) 'X-Ota-Token': otaToken,
+      };
 
       // 0. Obtener versión REAL del backend local (Single Source of Truth).
       // IMPORTANTE: si /version-check falla (timeout, URL incorrecta, etc.)
@@ -255,7 +315,7 @@ class UpdateService {
 
       final backendResponse = await _httpGet(
         backendUri,
-        headers: const {'Accept': 'application/json'},
+        headers: otaHeaders,
         timeout: serverTimeout,
       );
 
@@ -290,7 +350,7 @@ class UpdateService {
 
       final frontendResponse = await _httpGet(
         frontendUri,
-        headers: const {'Accept': 'application/json'},
+        headers: otaHeaders,
         timeout: serverTimeout,
       );
 
@@ -319,9 +379,16 @@ class UpdateService {
     } catch (e) {
       if (throwErrors) rethrow;
     } finally {
+      if (_activeChecksCount > 0) {
+        _activeChecksCount--;
+      }
       if (myGen == _checkGeneration) {
-        isCheckingNotifier.value = false;
-        isSwitchingChannelNotifier.value = false;
+        if (_activeChecksCount == 0) {
+          isCheckingNotifier.value = false;
+        }
+        if (isChannelSwitch) {
+          isSwitchingChannelNotifier.value = false;
+        }
       }
     }
 
@@ -335,6 +402,7 @@ class UpdateService {
       backendUpdate: backendUpdate,
       channel: updateChannel,
       serverChecked: anyServerCheckSucceeded,
+      currentFrontendVersion: resolvedFrontendVersion,
     );
 
     if (anyServerCheckSucceeded) {

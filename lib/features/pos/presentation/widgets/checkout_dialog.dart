@@ -373,12 +373,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return _voucherType == 1 || _fiscalDocType == 80;
   }
 
+  bool get _canBusinessApplyIibb {
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings?.isEffectiveIibbPerceptionAgent != true) return false;
+    if (_isFiscalMode && _voucherType == 11) return false;
+    return true;
+  }
+
   double? get _effectiveIibbRate {
+    if (!_canBusinessApplyIibb) return 0.0;
     if (_customIibbRateOverride != null) {
       return _customIibbRateOverride! > 0 ? _customIibbRateOverride : 0.0;
     }
     final settings = context.read<SettingsProvider>().settings;
-    if (settings?.isIibbPerceptionAgent != true) return 0.0;
     if (_isFiscalMode &&
         IibbFiscalCalculator.normalizeTaxConditionKey(_fiscalTaxCondition) ==
             'consumidor_final') {
@@ -418,8 +425,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool get _hasValidRecipientDoc {
     final cleanDoc = _fiscalDocNumberCtrl.text.replaceAll(RegExp(r'\D'), '');
     if (cleanDoc.isEmpty) return false;
-    final effectiveDocType =
+    var effectiveDocType =
         (_exceedsAnonymousLimit && _fiscalDocType == 99) ? 96 : _fiscalDocType;
+    if (effectiveDocType == 99) {
+      effectiveDocType = cleanDoc.length == 11 ? 80 : 96;
+    }
     if (effectiveDocType == 96) {
       return cleanDoc.length >= 7 &&
           cleanDoc.length <= 8 &&
@@ -617,15 +627,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   void _syncCustomerWithFiscal(Customer? c) {
     if (c != null) {
-      _fiscalDocNumberCtrl.text = c.documentNumber;
+      final cleanDoc = c.documentNumber.replaceAll(RegExp(r'\D'), '');
+      _fiscalDocNumberCtrl.text = cleanDoc;
       _fiscalReceiverNameCtrl.text = c.name;
       _fiscalReceiverAddressCtrl.text =
           c.fiscalAddress ?? c.deliveryAddress ?? '';
-      _fiscalDocType = c.documentType;
       _fiscalTaxCondition = c.taxCondition;
-      if (_voucherType == 1 && _fiscalDocType != 80) {
-        _fiscalDocType = 80;
-      }
       if (_voucherType == 1 &&
           _fiscalTaxCondition != 'responsable_inscripto' &&
           _fiscalTaxCondition != 'monotributo') {
@@ -634,6 +641,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           (_fiscalTaxCondition == 'responsable_inscripto' ||
               _fiscalTaxCondition == 'monotributo')) {
         _fiscalTaxCondition = 'consumidor_final';
+      }
+
+      if (_voucherType == 1 || _fiscalTaxCondition != 'consumidor_final') {
+        _fiscalDocType = 80;
+      } else if (cleanDoc.isEmpty) {
+        _fiscalDocType = _exceedsAnonymousLimit ? 96 : 99;
+      } else if (c.documentType == 99 ||
+          ![80, 86, 96].contains(c.documentType)) {
+        _fiscalDocType = cleanDoc.length == 11 ? 80 : 96;
+      } else {
+        _fiscalDocType = c.documentType;
       }
     }
   }
@@ -693,15 +711,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       if (_fiscalReceiverNameCtrl.text.trim().isEmpty) return false;
       return true;
     } else if (_voucherType == 6 || _voucherType == 11) {
-      if (_exceedsAnonymousLimit && (_fiscalDocType == 99 || cleanDoc.isEmpty)) {
+      if (_fiscalTaxCondition != 'consumidor_final') {
+        if (cleanDoc.isEmpty || !AfipModulo11.isValid(cleanDoc)) {
+          return false;
+        }
+        return true;
+      }
+      final effectiveDocType = cleanDoc.isEmpty
+          ? (_exceedsAnonymousLimit ? 96 : 99)
+          : (_fiscalDocType == 99
+              ? (cleanDoc.length == 11 ? 80 : 96)
+              : _fiscalDocType);
+      if (_exceedsAnonymousLimit &&
+          (effectiveDocType == 99 || cleanDoc.isEmpty)) {
         return false;
       }
-      if (_fiscalDocType == 80 || _fiscalDocType == 86) {
+      if (effectiveDocType == 80 || effectiveDocType == 86) {
         if (cleanDoc.isEmpty || !AfipModulo11.isValid(cleanDoc)) {
           return false;
         }
       }
-      if (_fiscalDocType == 96) {
+      if (effectiveDocType == 96) {
         if (cleanDoc.length < 7 || cleanDoc.length > 8) {
           return false;
         }
@@ -2565,15 +2595,25 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
       Map<String, dynamic>? fiscalPayload;
       if (_isFiscalMode) {
-        final effectiveDocType =
-            (_exceedsAnonymousLimit && _fiscalDocType == 99)
-                ? 96
-                : _fiscalDocType;
+        final cleanFiscalDoc = _fiscalDocNumberCtrl.text
+            .trim()
+            .replaceAll(RegExp(r'[^0-9]'), '');
+        final int effectiveDocType;
+        if (_voucherType == 1 || _fiscalTaxCondition != 'consumidor_final') {
+          effectiveDocType = 80;
+        } else if (cleanFiscalDoc.isEmpty) {
+          effectiveDocType = _exceedsAnonymousLimit ? 96 : 99;
+        } else if (_fiscalDocType == 99) {
+          effectiveDocType = cleanFiscalDoc.length == 11 ? 80 : 96;
+        } else {
+          effectiveDocType = _fiscalDocType;
+        }
+
         if ((effectiveDocType == 96 ||
                 effectiveDocType == 80 ||
                 effectiveDocType == 86 ||
                 _exceedsAnonymousLimit) &&
-            _fiscalDocNumberCtrl.text.trim().isEmpty) {
+            cleanFiscalDoc.isEmpty) {
           SnackBarService.error(context,
               'Debe ingresar el número de documento/CUIT para autorizar en ARCA.');
           return;
@@ -2581,9 +2621,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         fiscalPayload = {
           'voucher_type': _voucherType,
           'doc_type': effectiveDocType,
-          'doc_number': _fiscalDocNumberCtrl.text
-              .trim()
-              .replaceAll(RegExp(r'[^0-9]'), ''),
+          'doc_number': effectiveDocType == 99 ? '0' : cleanFiscalDoc,
           'receiver_name': _fiscalReceiverNameCtrl.text.trim().isNotEmpty
               ? _fiscalReceiverNameCtrl.text.trim()
               : (_selectedCustomer?.name ?? 'Consumidor Final'),
@@ -2732,7 +2770,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
           // FN-F3-04: Si la venta fue asentada y luego revertida (ej. rechazo fiscal AFIP o anulación en vista previa),
           // rotamos el UUID de transacción para que el próximo intento cree una venta nueva limpia.
-          if (errMsg == 'ANNULLED' || errMsg.contains('AFIP rechazó la factura')) {
+          if (errMsg == 'ANNULLED' ||
+              errMsg.contains('ARCA rechazó la factura') ||
+              errMsg.contains('AFIP rechazó la factura')) {
             _clientTransactionId = _generateTransactionUuid();
           }
 
@@ -3223,6 +3263,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 if (val != null) {
                                   setState(() {
                                     _fiscalDocType = val;
+                                    if (val == 99) {
+                                      _fiscalDocNumberCtrl.clear();
+                                      _fiscalTaxCondition = 'consumidor_final';
+                                    }
                                     _syncPaymentsWithGrandTotal();
                                   });
                                 }
@@ -3279,6 +3323,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 if (val != null) {
                                   setState(() {
                                     _fiscalDocType = val;
+                                    if (val == 99) {
+                                      _fiscalDocNumberCtrl.clear();
+                                      _fiscalTaxCondition = 'consumidor_final';
+                                    }
                                     _syncPaymentsWithGrandTotal();
                                   });
                                 }
@@ -3404,6 +3452,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           if (val != null) {
                             setState(() {
                               _fiscalTaxCondition = val;
+                              if (val != 'consumidor_final') {
+                                _fiscalDocType = 80;
+                              }
                               _syncPaymentsWithGrandTotal();
                             });
                           }
@@ -3486,6 +3537,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           if (val != null) {
                             setState(() {
                               _fiscalTaxCondition = val;
+                              if (val != 'consumidor_final') {
+                                _fiscalDocType = 80;
+                              }
                               _syncPaymentsWithGrandTotal();
                             });
                           }
@@ -5403,7 +5457,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                             const SizedBox(
                                                                 height: 2),
                                                             Text(
-                                                              '${_selectedCustomer!.documentType == 80 ? "CUIT" : "DNI"}: ${_selectedCustomer!.documentNumber} • ${(_selectedCustomer!.isInternalAccount || _selectedCustomer!.creditLimit <= 0) ? "Crédito disp: Sin límite" : "Crédito disp: \$${_availableCredit.toCurrency()}"}',
+                                                              '${_selectedCustomer!.displayDocumentSummary} • ${(_selectedCustomer!.isInternalAccount || _selectedCustomer!.creditLimit <= 0) ? "Crédito disp: Sin límite" : "Crédito disp: \$${_availableCredit.toCurrency()}"}',
                                                               style: TextStyle(
                                                                   fontSize: 12,
                                                                   color: Colors
@@ -5738,12 +5792,31 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ? _processCheckout
                             : null,
                         child: (provider.isLoading || _isSubmitting)
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
+                            ? FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      provider.checkoutStageLabel ??
+                                          'Registrando cobro...',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               )
                             : Text(
@@ -5771,8 +5844,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Widget _buildIibbPerceptionSelectorBar() {
+    if (!_canBusinessApplyIibb) return const SizedBox.shrink();
     final settings = context.read<SettingsProvider>().settings;
-    if (settings?.isIibbPerceptionAgent != true) return const SizedBox.shrink();
     final targetCustomer = _effectiveIibbCustomer;
     final customerCondKey = targetCustomer != null
         ? IibbFiscalCalculator.normalizeTaxConditionKey(
@@ -6032,7 +6105,7 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(
-                  'ID: ${c.documentNumber} • Tel: ${c.phone ?? '-'} • Disp: $creditInfo',
+                  '${c.displayDocumentSummary} • Tel: ${(c.phone != null && c.phone!.trim().isNotEmpty) ? c.phone : '-'} • Disp: $creditInfo',
                 ),
                 trailing: IconButton(
                   icon: Icon(

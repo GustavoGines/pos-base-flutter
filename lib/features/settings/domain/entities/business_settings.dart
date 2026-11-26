@@ -88,6 +88,32 @@ class BusinessSettings extends Equatable {
   final DateTime? licenseNextPaymentAt;
   final String? licenseManageUrl;
   final bool isLifetime;
+  final bool isTrial;
+  final String? licenseBlockReason;
+  final String? licenseOtaToken;
+  final bool licenseAllowOtaUpdates;
+  final DateTime? licenseOtaUnlockedUntil;
+  final String? licenseMaxUnlockedVersion;
+  final bool demoModeActive;
+  final bool demoOnboardingDismissed;
+  final bool isFreshEmptyStore;
+  final String? demoSeededAt;
+
+  DateTime? get localLicenseExpiresAt => licenseExpiresAt?.toLocal();
+
+  int? get remainingLicenseDays {
+    if (isLifetime) return null;
+    final exp = localLicenseExpiresAt;
+    if (exp == null) return null;
+    final now = DateTime.now();
+    final expDay = DateTime(exp.year, exp.month, exp.day);
+    final nowDay = DateTime(now.year, now.month, now.day);
+    return expDay.difference(nowDay).inDays;
+  }
+
+  bool get hasActiveOtaWindow =>
+      licenseOtaUnlockedUntil != null &&
+      licenseOtaUnlockedUntil!.isAfter(DateTime.now());
   
   // [multiple-prices] Modificadores Globales y Dinámicos
   final double globalWholesalePercentage; // Ej: -15.0
@@ -223,6 +249,13 @@ class BusinessSettings extends Equatable {
       taxCondition != null &&
       taxCondition!.trim().toLowerCase().contains('inscripto');
 
+  /// True únicamente cuando el comercio emisor es elegible como IVA Responsable Inscripto
+  /// (excluyendo Monotributo, IVA Exento y valores legados inválidos como Consumidor Final)
+  /// y además tiene activo el switch de Agente de Percepción IIBB.
+  bool get isEffectiveIibbPerceptionAgent =>
+      isIibbPerceptionAgent &&
+      IibbFiscalCalculator.isIssuerEligibleForIibb(taxCondition);
+
   /// Indica si el módulo de Múltiples Listas de Precios está habilitado en el
   /// plan y activado por el usuario en Configuración -> Precios Globales.
   bool get hasMultiPriceEnabled =>
@@ -314,6 +347,16 @@ class BusinessSettings extends Equatable {
     DateTime? licenseNextPaymentAt,
     String? licenseManageUrl,
     bool? isLifetime,
+    bool? isTrial,
+    String? licenseBlockReason,
+    String? licenseOtaToken,
+    bool? licenseAllowOtaUpdates,
+    DateTime? licenseOtaUnlockedUntil,
+    String? licenseMaxUnlockedVersion,
+    bool? demoModeActive,
+    bool? demoOnboardingDismissed,
+    bool? isFreshEmptyStore,
+    String? demoSeededAt,
     String? logoPath,
     String? logoUrl,
     double? globalWholesalePercentage,
@@ -355,6 +398,20 @@ class BusinessSettings extends Equatable {
       licenseNextPaymentAt: licenseNextPaymentAt ?? this.licenseNextPaymentAt,
       licenseManageUrl: licenseManageUrl ?? this.licenseManageUrl,
       isLifetime: isLifetime ?? this.isLifetime,
+      isTrial: isTrial ?? this.isTrial,
+      licenseBlockReason: licenseBlockReason ?? this.licenseBlockReason,
+      licenseOtaToken: licenseOtaToken ?? this.licenseOtaToken,
+      licenseAllowOtaUpdates:
+          licenseAllowOtaUpdates ?? this.licenseAllowOtaUpdates,
+      licenseOtaUnlockedUntil:
+          licenseOtaUnlockedUntil ?? this.licenseOtaUnlockedUntil,
+      licenseMaxUnlockedVersion:
+          licenseMaxUnlockedVersion ?? this.licenseMaxUnlockedVersion,
+      demoModeActive: demoModeActive ?? this.demoModeActive,
+      demoOnboardingDismissed:
+          demoOnboardingDismissed ?? this.demoOnboardingDismissed,
+      isFreshEmptyStore: isFreshEmptyStore ?? this.isFreshEmptyStore,
+      demoSeededAt: demoSeededAt ?? this.demoSeededAt,
       logoPath: logoPath ?? this.logoPath,
       logoUrl: logoUrl ?? this.logoUrl,
       globalWholesalePercentage: globalWholesalePercentage ?? this.globalWholesalePercentage,
@@ -400,6 +457,16 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.isTrial = false,
+    this.licenseBlockReason,
+    this.licenseOtaToken,
+    this.licenseAllowOtaUpdates = true,
+    this.licenseOtaUnlockedUntil,
+    this.licenseMaxUnlockedVersion,
+    this.demoModeActive = false,
+    this.demoOnboardingDismissed = false,
+    this.isFreshEmptyStore = false,
+    this.demoSeededAt,
     this.logoPath,
     this.logoUrl,
     this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
@@ -443,6 +510,16 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        isTrial,
+        licenseBlockReason,
+        licenseOtaToken,
+        licenseAllowOtaUpdates,
+        licenseOtaUnlockedUntil,
+        licenseMaxUnlockedVersion,
+    demoModeActive,
+    demoOnboardingDismissed,
+    isFreshEmptyStore,
+    demoSeededAt,
         logoPath,
         logoUrl,
         globalWholesalePercentage,

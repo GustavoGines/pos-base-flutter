@@ -87,6 +87,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
   bool get _isFull => widget.isFullSystemUpdate;
 
   Future<void> _startUpdate() async {
+    if (!widget.updateInfo.canAutoUpdate ||
+        widget.updateInfo.effectiveDownloadUrl.trim().isEmpty) {
+      setState(() {
+        _isDownloading = false;
+        _status =
+            '🔒 Esta actualización no está habilitada para descarga automática en tu licencia actual.';
+      });
+      return;
+    }
+
     if (kDebugMode) {
       setState(() {
         _isDownloading = false;
@@ -337,10 +347,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
         targetDir: targetDir,
         zipPath: zipPath,
         // FRONTEND: necesita admin para escribir en C:\Program Files\
-        // BACKEND:  NO necesita admin (C:\laragon\www\ es escribible por el usuario).
-        //           Pedir UAC desde un proceso DETACHED cancela silenciosamente
-        //           porque no hay ventana padre para mostrar el dialogo UAC.
-        requireElevation: _isFrontend,
+        // BACKEND:  también solicita elevación UAC en la PC Servidor para poder refrescar
+        //           `instalar_tareas_bg.bat` (-RestartCount 999) y relanzar las tareas
+        //           programadas bajo SYSTEM (`SistemaPOS_Reverb` y `SistemaPOS_Queue`)
+        //           sin error de Access Denied.
+        requireElevation: true,
       );
 
       if (_isFrontend) {
@@ -483,17 +494,19 @@ class _UpdateDialogState extends State<UpdateDialog> {
   ///
   /// - [requireElevation] = false (BACKEND):
   ///   La aplicación Flutter permanece abierta esperando el resultado y Laragon
-  ///   es escribible sin UAC. Lanzamos `updater.exe` DIRECTAMENTE como proceso
-  ///   nativo (`Process.start(updaterPath, [...], mode: ProcessStartMode.detached)`),
-  ///   sin invocar `cmd.exe`, sin `powershell.exe` y sin escribir scripts `.ps1`
-  ///   en `%TEMP%`. Esto evita por completo las alertas heurísticas de Behavior
-  ///   Shield en Avast/AVG/Kaspersky.
+  ///   es escribible sin UAC (o hereda el token elevado durante el Auto-Resume
+  ///   de Fase 2). Lanzamos `updater.exe` DIRECTAMENTE como proceso nativo
+  ///   (`Process.start(..., workingDirectory: updaterDir, mode: ProcessStartMode.detached)`),
+  ///   sin invocar `cmd.exe` ni `powershell.exe`.
   ///
   /// - [requireElevation] = true (FRONTEND):
   ///   Necesita elevación UAC (`Start-Process -Verb RunAs`) para escribir en
-  ///   `C:\Program Files\` y sobrevivir al `exit(0)` de Flutter. Usa `cmd.exe`
-  ///   en modo `detached` ejecutando `powershell -File` sobre el `.ps1` de
-  ///   lanzamiento y limpia el script temporal automáticamente al terminar.
+  ///   `C:\Program Files\` y sobrevivir al `exit(0)` de Flutter.
+  ///   IMPORTANTE: NO usar `-WindowStyle Hidden` en `updater.exe`. La consola
+  ///   debe mantenerse VISIBLE (`-WindowStyle Normal`) mostrando el aviso de
+  ///   actualización en curso para evitar que el cajero vea el escritorio vacío
+  ///   y abra `Caja4U` manualmente a mitad de la extracción (QuickEdit Mode ya
+  ///   se desactiva vía Win32 FFI dentro de `updater.exe`).
   Future<void> _launchUpdaterDetached({
     required String updaterPath,
     required String componentArg,
@@ -501,6 +514,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
     required String zipPath,
     required bool requireElevation,
   }) async {
+    final updaterDir = p.dirname(updaterPath);
+
     if (!requireElevation) {
       await Process.start(
         updaterPath,
@@ -509,6 +524,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
           '--target-dir=$targetDir',
           '--zip-path=$zipPath',
         ],
+        workingDirectory: updaterDir,
         mode: ProcessStartMode.detached,
         runInShell: false,
       );
@@ -521,10 +537,17 @@ class _UpdateDialogState extends State<UpdateDialog> {
     String psQ(String s) => s.replaceAll("'", "''");
 
     final String ps1Content = [
-      '# OTA Launcher — Frontend (elevado con UAC)',
+      '# OTA Launcher — Elevado con UAC (Frontend y Backend), consola visible con QuickEdit desactivado por FFI',
       "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
       "try {",
-      "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -Verb RunAs -ErrorAction Stop",
+      "  Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -WorkingDirectory '${psQ(updaterDir)}' -WindowStyle Normal -Verb RunAs -ErrorAction Stop",
+      "} catch {",
+      "  if ('$componentArg' -eq 'backend') {",
+      "    \$logTarget = Join-Path '${psQ(targetDir)}' 'updater_log.txt'",
+      "    \$resTarget = Join-Path '${psQ(targetDir)}' 'ota_result.txt'",
+      "    Add-Content -LiteralPath \$logTarget -Value '[ERROR] Permiso de Administrador (UAC) cancelado o denegado al iniciar updater.exe.' -Encoding UTF8 -ErrorAction SilentlyContinue",
+      "    Set-Content -LiteralPath \$resTarget -Value '{\"status\":\"FAILED\",\"component\":\"backend\"}' -Encoding UTF8 -ErrorAction SilentlyContinue",
+      "  }",
       "} finally {",
       "  Remove-Item -LiteralPath \$MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
       "}",

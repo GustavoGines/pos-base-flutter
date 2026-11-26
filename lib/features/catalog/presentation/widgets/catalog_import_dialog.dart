@@ -13,6 +13,8 @@ import 'package:frontend_desktop/core/theme/app_theme.dart';
 import 'package:frontend_desktop/core/utils/search_text_utils.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
@@ -53,8 +55,29 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
+        final settingsProv = context.read<SettingsProvider?>();
+        final authProv = context.read<AuthProvider?>();
+        final suppliersLicensed = () {
+          try {
+            return settingsProv?.features.suppliers;
+          } catch (_) {
+            return settingsProv?.settings?.features.suppliers;
+          }
+        }() ?? true;
+        final hasSupplierPerm = () {
+          if (authProv == null) return true;
+          try {
+            return authProv.isAdmin ||
+                authProv.hasPermission(AppPermissions.viewSuppliers);
+          } catch (_) {
+            return true;
+          }
+        }();
         final supProv = context.read<SupplierProvider?>();
-        if (supProv != null && supProv.suppliers.isEmpty) {
+        if (suppliersLicensed &&
+            hasSupplierPerm &&
+            supProv != null &&
+            supProv.suppliers.isEmpty) {
           supProv.fetchSuppliers();
         }
       } catch (_) {}

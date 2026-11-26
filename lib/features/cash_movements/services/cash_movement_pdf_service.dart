@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart';
 import '../../../../core/utils/afip_fiscal_pdf_service.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/presentation/widgets/app_modal_shell.dart';
@@ -146,17 +145,11 @@ class CashMovementPdfService {
     final resolvedLogo = await AfipFiscalPdfService.resolveLogoBytes(
       businessSettings: businessSettings,
     );
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
-    } catch (_) {
-      theme = pw.ThemeData.withFont(
-        base: pw.Font.helvetica(),
-        bold: pw.Font.helveticaBold(),
-      );
-    }
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
     final pdf = pw.Document(theme: theme);
     final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
@@ -313,17 +306,11 @@ class CashMovementPdfService {
     final resolvedLogo = await AfipFiscalPdfService.resolveLogoBytes(
       businessSettings: businessSettings,
     );
-    pw.ThemeData? theme;
-    try {
-      final font = await PdfGoogleFonts.robotoRegular();
-      final fontBold = await PdfGoogleFonts.robotoBold();
-      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
-    } catch (_) {
-      theme = pw.ThemeData.withFont(
-        base: pw.Font.helvetica(),
-        bold: pw.Font.helveticaBold(),
-      );
-    }
+    final theme = await AfipFiscalPdfService.resolveCachedPdfTheme() ??
+        pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        );
 
     final pdf = pw.Document(theme: theme);
     final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;

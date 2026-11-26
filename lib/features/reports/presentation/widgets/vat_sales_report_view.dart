@@ -219,7 +219,7 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
                             Icon(Icons.account_balance_rounded, size: 16, color: Colors.indigo.shade800),
                             const SizedBox(width: 6),
                             Text(
-                              'Subdiario Fiscal ARCA / AFIP (F. 2002)',
+                              'Subdiario Fiscal ARCA (F. 2002)',
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800,
@@ -921,9 +921,9 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
         PlanUpgradeDialog.show(
           context,
           title: 'Plan Premium Requerido',
-          featureName: 'Libro IVA Digital (ARCA / AFIP)',
+          featureName: 'Libro IVA Digital (ARCA)',
           description:
-              'La generación del Libro IVA Digital para presentación impositiva ante ARCA / AFIP está disponible en el Plan Premium.',
+              'La generación del Libro IVA Digital para presentación impositiva ante ARCA está disponible en el Plan Premium.',
         );
       },
       icon: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.amber.shade800),
